@@ -376,9 +376,18 @@ async function rehomeForeignImages(editor: Editor) {
   }
 }
 
+/**
+ * 🔴 열 주소는 이 앱의 원본 주소나 http(s) 만 — `![](javascript:…)` 같은 이미지가 내려받기 링크(href)로 새면 스크립트가 돈다
+ *    (2026-10-07 보안 검토 지적).
+ */
 function showOriginal(src: string) {
+  const url = toOriginalSrc(folder, src)
+  if (!url.startsWith('/api/originals/') && !/^https?:\/\//i.test(url)) {
+    toast.add({ color: 'warning', title: '이 이미지는 원본을 열 수 없습니다' })
+    return
+  }
   originalFit.value = true
-  originalUrl.value = toOriginalSrc(folder, src)
+  originalUrl.value = url
 }
 
 function onPaste() {

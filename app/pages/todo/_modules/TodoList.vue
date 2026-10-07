@@ -55,59 +55,51 @@ async function toggle(memo: MemoMeta) {
 </script>
 
 <template>
-  <UDashboardPanel id="todo">
-    <template #header>
-      <UDashboardNavbar title="할 일">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-        <template #right>
-          <span class="text-sm text-muted" data-testid="todo-open-count">{{ openCount }}개 남음</span>
-        </template>
-      </UDashboardNavbar>
-    </template>
+  <div class="flex w-full min-w-0 flex-col gap-4 p-4 sm:gap-6 sm:p-6">
+    <Teleport to="#app-header-title" defer>할 일</Teleport>
+    <Teleport to="#app-header-actions" defer>
+      <span class="text-sm text-muted" data-testid="todo-open-count">{{ openCount }}개 남음</span>
+    </Teleport>
 
-    <template #body>
-      <div class="mx-auto flex w-full max-w-3xl flex-col gap-4">
-        <form class="flex gap-2" @submit.prevent="add">
-          <UInput
-            v-model="titleInput"
-            icon="i-material-symbols-add-task"
-            placeholder="할 일 추가"
-            :maxlength="200"
-            class="flex-1"
-            data-testid="todo-add-input"
-          />
-          <UButton type="submit" :loading="adding" :disabled="!titleInput.trim()" data-testid="todo-add-button">추가</UButton>
-        </form>
-        <p class="-mt-2 text-xs text-muted">「{{ TODO_FOLDER }}」 폴더에 생깁니다. 다른 메모는 메모 메뉴의 「할 일로 두기」로 여기에 올립니다.</p>
+    <div class="mx-auto flex w-full max-w-3xl flex-col gap-4">
+      <form class="flex gap-2" @submit.prevent="add">
+        <UInput
+          v-model="titleInput"
+          icon="i-material-symbols-add-task"
+          placeholder="할 일 추가"
+          :maxlength="200"
+          class="flex-1"
+          data-testid="todo-add-input"
+        />
+        <UButton type="submit" :loading="adding" :disabled="!titleInput.trim()" data-testid="todo-add-button">추가</UButton>
+      </form>
+      <p class="-mt-2 text-xs text-muted">「{{ TODO_FOLDER }}」 폴더에 생깁니다. 다른 메모는 메모 메뉴의 「할 일로 두기」로 여기에 올립니다.</p>
 
-        <p v-if="error" class="py-20 text-center text-error">{{ error }}</p>
-        <div v-else-if="tree && !items.length" class="flex flex-col items-center gap-3 py-20 text-center text-muted" data-testid="todo-empty">
-          <UIcon name="i-material-symbols-task-alt" class="size-10 text-dimmed" />
-          남은 할 일이 없습니다
-        </div>
-        <ul v-else class="flex flex-col divide-y divide-default" data-testid="todo-list">
-          <li v-for="memo in items" :key="memo.id" class="flex items-center gap-3 py-2.5" :data-testid="`todo-item-${memo.id}`">
-            <UCheckbox
-              :model-value="memo.done === true"
-              :disabled="todo.pending.value.includes(memo.id)"
-              :aria-label="memo.done ? '안 끝난 것으로 되돌리기' : '끝냄'"
-              size="lg"
-              data-testid="todo-check"
-              @update:model-value="toggle(memo)"
-            />
-            <NuxtLink :to="memoPath(memo.id)" class="min-w-0 flex-1">
-              <p class="truncate" :class="memo.done ? 'text-muted line-through' : 'font-medium'">{{ memo.title || '제목 없음' }}</p>
-              <p v-if="memo.date || memo.folder !== TODO_FOLDER" class="truncate text-xs text-muted">
-                <span v-if="memo.date" :class="overdue(memo) && 'text-error'">{{ dateLabel(memo) }}</span>
-                <span v-if="memo.date && memo.folder !== TODO_FOLDER"> · </span>
-                <span v-if="memo.folder !== TODO_FOLDER">{{ memo.folder || '최상위' }}</span>
-              </p>
-            </NuxtLink>
-          </li>
-        </ul>
+      <p v-if="error" class="py-20 text-center text-error">{{ error }}</p>
+      <div v-else-if="tree && !items.length" class="flex flex-col items-center gap-3 py-20 text-center text-muted" data-testid="todo-empty">
+        <UIcon name="i-material-symbols-task-alt" class="size-10 text-dimmed" />
+        남은 할 일이 없습니다
       </div>
-    </template>
-  </UDashboardPanel>
+      <ul v-else class="flex flex-col divide-y divide-default" data-testid="todo-list">
+        <li v-for="memo in items" :key="memo.id" class="flex items-center gap-3 py-2.5" :data-testid="`todo-item-${memo.id}`">
+          <UCheckbox
+            :model-value="memo.done === true"
+            :disabled="todo.pending.value.includes(memo.id)"
+            :aria-label="memo.done ? '안 끝난 것으로 되돌리기' : '끝냄'"
+            size="lg"
+            data-testid="todo-check"
+            @update:model-value="toggle(memo)"
+          />
+          <NuxtLink :to="memoPath(memo.id)" class="min-w-0 flex-1">
+            <p class="truncate" :class="memo.done ? 'text-muted line-through' : 'font-medium'">{{ memo.title || '제목 없음' }}</p>
+            <p v-if="memo.date || memo.folder !== TODO_FOLDER" class="truncate text-xs text-muted">
+              <span v-if="memo.date" :class="overdue(memo) && 'text-error'">{{ dateLabel(memo) }}</span>
+              <span v-if="memo.date && memo.folder !== TODO_FOLDER"> · </span>
+              <span v-if="memo.folder !== TODO_FOLDER">{{ memo.folder || '최상위' }}</span>
+            </p>
+          </NuxtLink>
+        </li>
+      </ul>
+    </div>
+  </div>
 </template>

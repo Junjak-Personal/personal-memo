@@ -25,6 +25,8 @@ export default defineAppConfig({
       slots: {
         base: [
           // Tables
+          // 넓은 표는 표 안에서만 민다 — 문서 패널·상단 툴바까지 가로로 움직이지 않게.
+          '[&_.tableWrapper]:max-w-full [&_.tableWrapper]:overflow-x-auto [&_.tableWrapper]:overscroll-x-contain',
           '[&_table]:w-full [&_table]:border-separate [&_table]:border-spacing-0 [&_table]:rounded-md',
           '[&_th]:py-3 [&_th]:px-4 [&_th]:font-semibold [&_th]:text-sm [&_th]:text-left [&_th]:bg-muted/50 [&_th]:border-t [&_th]:border-b [&_th]:border-e [&_th]:first:border-s [&_th]:border-muted',
           '[&_th_p]:my-0 [&_th_p]:leading-5',

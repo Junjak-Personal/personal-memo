@@ -40,9 +40,70 @@ export function inNativeShell() {
 export function useNativeBridge(getEditor: () => Editor | undefined, onLink: () => void) {
   const win = window as NativeWindow
   const channel = win.MemoNative ?? null
+  let attachedEditor: Editor | null = null
+  let resizeObserver: ResizeObserver | null = null
+  let revealTimer: ReturnType<typeof setTimeout> | null = null
+  let revealFrame = 0
 
   function post(message: Record<string, string | number | boolean>) {
     channel?.postMessage(JSON.stringify(message))
+  }
+
+  function cancelReveal() {
+    if (revealTimer !== null) clearTimeout(revealTimer)
+    if (revealFrame) cancelAnimationFrame(revealFrame)
+    revealTimer = null
+    revealFrame = 0
+  }
+
+  /** 키보드·Flutter 툴바가 자리를 잡은 뒤, 가려진 커서만 문서 패널 안에서 올린다. */
+  function revealCursor() {
+    const editor = attachedEditor
+    if (!editor || editor.isDestroyed || !editor.isFocused || !editor.state.selection.empty) return
+    const panel = editor.view.dom.closest<HTMLElement>('[data-slot="body"]')
+    if (!panel || !panel.clientHeight) return
+
+    const caret = editor.view.coordsAtPos(editor.state.selection.head)
+    const bounds = panel.getBoundingClientRect()
+    const viewport = win.visualViewport
+    // 공통 헤더는 패널 밖에 있다. 패널의 실제 상단부터가 편집 영역이다.
+    const top = Math.max(bounds.top, viewport?.offsetTop ?? 0) + 16
+    const bottom = Math.min(bounds.bottom, win.innerHeight, viewport ? viewport.offsetTop + viewport.height : win.innerHeight) - 16
+    if (bottom <= top) return
+
+    const delta = caret.top < top ? caret.top - top : caret.bottom > bottom ? caret.bottom - bottom : 0
+    if (delta) {
+      panel.scrollBy({
+        top: delta,
+        behavior: win.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      })
+    }
+  }
+
+  function queueReveal() {
+    cancelReveal()
+    // 포커스 순간에는 아직 화면이 크다. 툴바 애니메이션 중의 resize 를 모아 마지막 배치에서 잰다.
+    revealTimer = setTimeout(() => {
+      revealTimer = null
+      revealFrame = requestAnimationFrame(() => {
+        revealFrame = 0
+        revealCursor()
+      })
+    }, 120)
+  }
+
+  function onFocus() {
+    post({ type: 'focus' })
+    queueReveal()
+  }
+
+  function onBlur() {
+    cancelReveal()
+    post({ type: 'blur' })
+  }
+
+  function onTransaction() {
+    if (attachedEditor) post({ type: 'state', ...stateOf(attachedEditor) })
   }
 
   function stateOf(editor: Editor) {
@@ -103,14 +164,32 @@ export function useNativeBridge(getEditor: () => Editor | undefined, onLink: () 
   /** 에디터가 생긴 뒤 한 번 붙인다 */
   function attach(editor: Editor) {
     if (!channel) return
+    attachedEditor = editor
     win.memoEditor = { exec }
-    editor.on('focus', () => post({ type: 'focus' }))
-    editor.on('blur', () => post({ type: 'blur' }))
-    editor.on('transaction', () => post({ type: 'state', ...stateOf(editor) }))
+    editor.on('focus', onFocus)
+    editor.on('blur', onBlur)
+    editor.on('transaction', onTransaction)
+    editor.on('selectionUpdate', queueReveal)
+    win.addEventListener('resize', queueReveal)
+    win.visualViewport?.addEventListener('resize', queueReveal)
+    const panel = editor.view.dom.closest<HTMLElement>('[data-slot="body"]')
+    if (panel) {
+      resizeObserver = new ResizeObserver(queueReveal)
+      resizeObserver.observe(panel)
+    }
   }
 
   onBeforeUnmount(() => {
     if (!channel) return
+    cancelReveal()
+    resizeObserver?.disconnect()
+    win.removeEventListener('resize', queueReveal)
+    win.visualViewport?.removeEventListener('resize', queueReveal)
+    attachedEditor?.off('focus', onFocus)
+    attachedEditor?.off('blur', onBlur)
+    attachedEditor?.off('transaction', onTransaction)
+    attachedEditor?.off('selectionUpdate', queueReveal)
+    attachedEditor = null
     post({ type: 'blur' })
     delete win.memoEditor
   })

@@ -428,251 +428,244 @@ function showTableBubble({ editor, view, state }: MenuContext) {
 </script>
 
 <template>
-  <UDashboardPanel :id="`memo-${memoId}`" :ui="{ body: 'p-0 sm:p-0 gap-0' }">
-    <template #body>
-      <div v-if="error || !memo || !autosave" class="flex h-full flex-col items-center justify-center gap-3 text-center">
-        <UIcon name="i-material-symbols-error-outline" class="size-10 text-error" />
-        <p class="text-muted">{{ apiMessage(error, '메모를 열지 못했습니다') }}</p>
-        <UButton to="/" color="neutral" variant="outline">처음으로</UButton>
+  <div class="w-full min-w-0">
+    <div v-if="error || !memo || !autosave" class="flex h-full flex-col items-center justify-center gap-3 text-center">
+      <UIcon name="i-material-symbols-error-outline" class="size-10 text-error" />
+      <p class="text-muted">{{ apiMessage(error, '메모를 열지 못했습니다') }}</p>
+      <UButton to="/" color="neutral" variant="outline">처음으로</UButton>
+    </div>
+
+    <UEditor
+      v-else
+      ref="editorRef"
+      v-slot="{ editor, handlers }"
+      :model-value="content"
+      content-type="markdown"
+      :starter-kit="{ underline: false, codeBlock: false }"
+      :image="false"
+      :mention="false"
+      :extensions="extensions"
+      :handlers="customHandlers"
+      :editable="!memo.unreadable"
+      :editor-props="editorProps"
+      placeholder="내용을 입력하세요. 「/」 로 블록 넣기"
+      :ui="{ base: 'sm:px-0 pt-6 pb-32 min-h-[50dvh]', content: 'mx-auto w-full max-w-4xl px-4 sm:px-14' }"
+      @update:model-value="onContentChange"
+      @paste="onPaste"
+    >
+      <Teleport to="#app-header-toolbar" defer>
+        <UEditorToolbar :editor="editor" :items="toolbarItems" />
+      </Teleport>
+      <Teleport to="#app-header-actions" defer>
+        <MemoSaveStatus :state="saveState" @retry="autosave.save()" />
+        <MemoActions :memo-id="autosave.currentId" :title="() => savedTitle" :folder="currentFolder" />
+      </Teleport>
+
+      <!-- 좁은 화면의 브라우저(껍데기 밖)에서는 위 줄 가운데가 숨는다 — 툴바를 한 줄 아래로 내린다 -->
+      <Teleport v-if="!bridge.native" to="#app-header-secondary" defer>
+        <div class="overflow-x-auto border-b border-default px-2 py-1 lg:hidden">
+          <UEditorToolbar :editor="editor" :items="toolbarItems" />
+        </div>
+      </Teleport>
+
+      <div class="mx-auto w-full max-w-4xl px-4 pt-6 sm:px-14 sm:pt-10">
+        <UAlert
+          v-if="memo.unreadable"
+          color="warning"
+          variant="subtle"
+          icon="i-material-symbols-warning-outline"
+          title="frontmatter 를 읽을 수 없어 읽기 전용으로 엽니다"
+          description="파일을 직접 고친 뒤 다시 여세요."
+          class="mb-6"
+        />
+        <UAlert
+          v-if="autosave.state.value.status === 'conflict'"
+          color="warning"
+          variant="subtle"
+          icon="i-material-symbols-warning-outline"
+          title="다른 곳에서 먼저 수정했습니다"
+          description="다른 기기나 파일 편집기에서 이 메모를 바꿨습니다. 어느 쪽을 남길지 고르세요."
+          class="mb-6"
+          data-testid="memo-conflict-alert"
+          :actions="[
+            { label: '다시 불러오기', color: 'neutral', variant: 'outline', onClick: reloadFromServer },
+            { label: '내 내용으로 덮어쓰기', color: 'warning', onClick: () => autosave?.overwrite() },
+          ]"
+        />
+        <UAlert
+          v-if="staleDraft"
+          color="warning"
+          variant="subtle"
+          icon="i-material-symbols-cloud-off-outline"
+          :title="`이 기기에 저장하지 못한 수정이 있습니다 (${draftTime(staleDraft.savedAt)})`"
+          description="그 뒤에 다른 곳에서 이 메모가 바뀌었습니다. 어느 쪽을 남길지 고르세요."
+          class="mb-6"
+          data-testid="memo-draft-alert"
+          :actions="[
+            { label: '보관된 수정 버리기', color: 'neutral', variant: 'outline', onClick: discardStaleDraft },
+            { label: '보관된 수정으로 덮어쓰기', color: 'warning', onClick: keepStaleDraft },
+          ]"
+        />
+        <UAlert
+          v-if="autosave.state.value.status === 'format'"
+          color="warning"
+          variant="subtle"
+          icon="i-material-symbols-warning-outline"
+          title="앱에서 저장하면 이 파일의 형식이 바뀝니다"
+          description="다른 도구로 쓴 문법 중 이 앱이 모르는 것(각주, HTML 블록 등)은 저장할 때 사라지거나 글자로 바뀔 수 있습니다."
+          class="mb-6"
+          data-testid="memo-format-alert"
+          :actions="[{ label: '알겠습니다, 저장', color: 'warning', onClick: () => autosave?.acceptFormat() }]"
+        />
+        <div class="flex items-center gap-3">
+          <UCheckbox
+            v-if="todoDone !== null && autosave"
+            :model-value="todoDone"
+            :disabled="todo.pending.value.includes(autosave.currentId())"
+            :aria-label="todoDone ? '안 끝난 것으로 되돌리기' : '끝냄'"
+            size="xl"
+            data-testid="memo-todo-check"
+            @update:model-value="todo.setDone(autosave.currentId(), !todoDone)"
+          />
+          <input
+            v-model="title"
+            placeholder="제목"
+            class="min-w-0 flex-1 bg-transparent text-3xl font-bold outline-none placeholder:text-dimmed"
+            :class="todoDone && 'text-muted line-through'"
+            :readonly="memo.unreadable"
+            enterkeyhint="next"
+            data-testid="memo-title-input"
+            @input="onTitleInput"
+            @blur="commitTitle"
+            @keydown="onTitleKeydown"
+          >
+        </div>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <MemoDatePicker :date="date" :date-end="dateEnd" :disabled="memo.unreadable" @change="onDateChange" />
+          <MemoCalendarSyncBadge :memo-id="autosave.currentId()" :has-date="!!date" />
+          <span class="text-xs text-dimmed">{{ currentFolder || '최상위' }}</span>
+        </div>
+        <!-- 태그 — 공백·쉼표·Enter 로 끊는다. 한글 조합 중의 입력은 TagsInput 이 기다려 준다 -->
+        <UInputTags
+          :model-value="tags"
+          icon="i-material-symbols-sell-outline"
+          placeholder="태그 추가"
+          variant="ghost"
+          size="sm"
+          :delimiter="TAG_DELIMITER"
+          :max="MAX_TAGS"
+          :max-length="MAX_TAG_LENGTH"
+          add-on-blur
+          add-on-paste
+          duplicate
+          :disabled="memo.unreadable"
+          class="mt-2 -ms-2.5 w-full"
+          data-testid="memo-tags-input"
+          @update:model-value="onTagsChange"
+        >
+          <template #item-text="{ item }">
+            <span class="text-dimmed">#</span>{{ item }}
+          </template>
+        </UInputTags>
       </div>
 
-      <UEditor
-        v-else
-        ref="editorRef"
-        v-slot="{ editor, handlers }"
-        :model-value="content"
-        content-type="markdown"
-        :starter-kit="{ underline: false, codeBlock: false }"
-        :image="false"
-        :mention="false"
-        :extensions="extensions"
-        :handlers="customHandlers"
-        :editable="!memo.unreadable"
-        :editor-props="editorProps"
-        placeholder="내용을 입력하세요. 「/」 로 블록 넣기"
-        :ui="{ base: 'sm:px-0 pt-6 pb-32 min-h-[50dvh]', content: 'mx-auto w-full max-w-4xl px-4 sm:px-14' }"
-        @update:model-value="onContentChange"
-        @paste="onPaste"
-      >
-        <div class="sticky top-0 z-10 bg-default/85 backdrop-blur">
-          <UDashboardNavbar :ui="{ root: 'border-b-0 lg:border-b', center: 'min-w-0 overflow-x-auto' }">
-            <template #leading>
-              <UDashboardSidebarCollapse />
-            </template>
+      <UEditorToolbar :editor="editor" :items="bubbleToolbarItems" layout="bubble" :should-show="showTextBubble">
+        <template #link>
+          <LinkPopover :editor="editor" />
+        </template>
+      </UEditorToolbar>
 
-            <UEditorToolbar :editor="editor" :items="toolbarItems" />
+      <UEditorToolbar :editor="editor" :items="imageToolbarItems(editor, { showOriginal })" layout="bubble" :should-show="showImageBubble" />
 
-            <template #right>
-              <MemoSaveStatus :state="saveState" @retry="autosave.save()" />
-              <MemoActions :memo-id="autosave.currentId" :title="() => savedTitle" :folder="currentFolder" />
-            </template>
-          </UDashboardNavbar>
+      <UEditorToolbar :editor="editor" :items="tableToolbarItems(editor)" layout="bubble" :should-show="showTableBubble" />
 
-          <!-- 좁은 화면의 브라우저(껍데기 밖)에서는 위 줄 가운데가 숨는다 — 툴바를 한 줄 아래로 내린다 -->
-          <div v-if="!bridge.native" class="overflow-x-auto border-b border-default px-2 py-1 lg:hidden">
-            <UEditorToolbar :editor="editor" :items="toolbarItems" />
-          </div>
-        </div>
+      <UEditorEmojiMenu :editor="editor" :items="emojiItems" />
 
-        <div class="mx-auto w-full max-w-4xl px-4 pt-6 sm:px-14 sm:pt-10">
-          <UAlert
-            v-if="memo.unreadable"
-            color="warning"
-            variant="subtle"
-            icon="i-material-symbols-warning-outline"
-            title="frontmatter 를 읽을 수 없어 읽기 전용으로 엽니다"
-            description="파일을 직접 고친 뒤 다시 여세요."
-            class="mb-6"
-          />
-          <UAlert
-            v-if="autosave.state.value.status === 'conflict'"
-            color="warning"
-            variant="subtle"
-            icon="i-material-symbols-warning-outline"
-            title="다른 곳에서 먼저 수정했습니다"
-            description="다른 기기나 파일 편집기에서 이 메모를 바꿨습니다. 어느 쪽을 남길지 고르세요."
-            class="mb-6"
-            data-testid="memo-conflict-alert"
-            :actions="[
-              { label: '다시 불러오기', color: 'neutral', variant: 'outline', onClick: reloadFromServer },
-              { label: '내 내용으로 덮어쓰기', color: 'warning', onClick: () => autosave?.overwrite() },
-            ]"
-          />
-          <UAlert
-            v-if="staleDraft"
-            color="warning"
-            variant="subtle"
-            icon="i-material-symbols-cloud-off-outline"
-            :title="`이 기기에 저장하지 못한 수정이 있습니다 (${draftTime(staleDraft.savedAt)})`"
-            description="그 뒤에 다른 곳에서 이 메모가 바뀌었습니다. 어느 쪽을 남길지 고르세요."
-            class="mb-6"
-            data-testid="memo-draft-alert"
-            :actions="[
-              { label: '보관된 수정 버리기', color: 'neutral', variant: 'outline', onClick: discardStaleDraft },
-              { label: '보관된 수정으로 덮어쓰기', color: 'warning', onClick: keepStaleDraft },
-            ]"
-          />
-          <UAlert
-            v-if="autosave.state.value.status === 'format'"
-            color="warning"
-            variant="subtle"
-            icon="i-material-symbols-warning-outline"
-            title="앱에서 저장하면 이 파일의 형식이 바뀝니다"
-            description="다른 도구로 쓴 문법 중 이 앱이 모르는 것(각주, HTML 블록 등)은 저장할 때 사라지거나 글자로 바뀔 수 있습니다."
-            class="mb-6"
-            data-testid="memo-format-alert"
-            :actions="[{ label: '알겠습니다, 저장', color: 'warning', onClick: () => autosave?.acceptFormat() }]"
-          />
-          <div class="flex items-center gap-3">
-            <UCheckbox
-              v-if="todoDone !== null && autosave"
-              :model-value="todoDone"
-              :disabled="todo.pending.value.includes(autosave.currentId())"
-              :aria-label="todoDone ? '안 끝난 것으로 되돌리기' : '끝냄'"
-              size="xl"
-              data-testid="memo-todo-check"
-              @update:model-value="todo.setDone(autosave.currentId(), !todoDone)"
-            />
-            <input
-              v-model="title"
-              placeholder="제목"
-              class="min-w-0 flex-1 bg-transparent text-3xl font-bold outline-none placeholder:text-dimmed"
-              :class="todoDone && 'text-muted line-through'"
-              :readonly="memo.unreadable"
-              enterkeyhint="next"
-              data-testid="memo-title-input"
-              @input="onTitleInput"
-              @blur="commitTitle"
-              @keydown="onTitleKeydown"
-            >
-          </div>
-          <div class="mt-3 flex flex-wrap items-center gap-2">
-            <MemoDatePicker :date="date" :date-end="dateEnd" :disabled="memo.unreadable" @change="onDateChange" />
-            <MemoCalendarSyncBadge :memo-id="autosave.currentId()" :has-date="!!date" />
-            <span class="text-xs text-dimmed">{{ currentFolder || '최상위' }}</span>
-          </div>
-          <!-- 태그 — 공백·쉼표·Enter 로 끊는다. 한글 조합 중의 입력은 TagsInput 이 기다려 준다 -->
-          <UInputTags
-            :model-value="tags"
-            icon="i-material-symbols-sell-outline"
-            placeholder="태그 추가"
-            variant="ghost"
-            size="sm"
-            :delimiter="TAG_DELIMITER"
-            :max="MAX_TAGS"
-            :max-length="MAX_TAG_LENGTH"
-            add-on-blur
-            add-on-paste
-            duplicate
-            :disabled="memo.unreadable"
-            class="mt-2 -ms-2.5 w-full"
-            data-testid="memo-tags-input"
-            @update:model-value="onTagsChange"
-          >
-            <template #item-text="{ item }">
-              <span class="text-dimmed">#</span>{{ item }}
-            </template>
-          </UInputTags>
-        </div>
+      <UEditorSuggestionMenu :editor="editor" :items="suggestionItems" :filter-fields="['label', 'keywords']" />
 
-        <UEditorToolbar :editor="editor" :items="bubbleToolbarItems" layout="bubble" :should-show="showTextBubble">
-          <template #link>
-            <LinkPopover :editor="editor" />
-          </template>
-        </UEditorToolbar>
-
-        <UEditorToolbar :editor="editor" :items="imageToolbarItems(editor, { showOriginal })" layout="bubble" :should-show="showImageBubble" />
-
-        <UEditorToolbar :editor="editor" :items="tableToolbarItems(editor)" layout="bubble" :should-show="showTableBubble" />
-
-        <UEditorEmojiMenu :editor="editor" :items="emojiItems" />
-
-        <UEditorSuggestionMenu :editor="editor" :items="suggestionItems" :filter-fields="['label', 'keywords']" />
-
-        <UEditorDragHandle v-slot="{ ui, onClick }" :editor="editor" @node-change="onNodeChange">
+      <UEditorDragHandle v-slot="{ ui, onClick }" :editor="editor" @node-change="onNodeChange">
+        <UButton
+          icon="i-material-symbols-add"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          aria-label="블록 넣기"
+          :class="ui.handle()"
+          @click="(e: MouseEvent) => {
+            e.stopPropagation()
+            const node = onClick()
+            handlers.suggestion?.execute(editor, { pos: node?.pos }).run()
+          }"
+        />
+        <UDropdownMenu
+          v-slot="{ open }"
+          :modal="false"
+          :items="dragHandleItems(editor, selectedNode)"
+          :content="{ side: 'left' }"
+          :ui="{ content: 'w-48', label: 'text-xs' }"
+          @update:open="editor.chain().setMeta('lockDragHandle', $event).run()"
+        >
           <UButton
-            icon="i-material-symbols-add"
             color="neutral"
             variant="ghost"
+            active-variant="soft"
             size="sm"
-            aria-label="블록 넣기"
+            icon="i-material-symbols-drag-indicator"
+            aria-label="블록 메뉴 · 끌어서 옮기기"
+            :active="open"
             :class="ui.handle()"
-            @click="(e: MouseEvent) => {
-              e.stopPropagation()
-              const node = onClick()
-              handlers.suggestion?.execute(editor, { pos: node?.pos }).run()
-            }"
           />
-          <UDropdownMenu
-            v-slot="{ open }"
-            :modal="false"
-            :items="dragHandleItems(editor, selectedNode)"
-            :content="{ side: 'left' }"
-            :ui="{ content: 'w-48', label: 'text-xs' }"
-            @update:open="editor.chain().setMeta('lockDragHandle', $event).run()"
-          >
+        </UDropdownMenu>
+      </UEditorDragHandle>
+
+      <LinkDialog v-model:open="linkOpen" :editor="editor" />
+
+      <!-- 원본 보기 — 확대가 막혀 있으니 「원래 크기」로 놓고 밀어서 본다 -->
+      <UModal
+        :open="originalUrl !== null"
+        title="원본"
+        fullscreen
+        :ui="{ body: 'p-0 sm:p-0 overflow-auto' }"
+        @update:open="(v: boolean) => !v && (originalUrl = null)"
+      >
+        <template #body>
+          <div class="flex min-h-full items-center justify-center" :class="!originalFit && 'items-start justify-start'">
+            <img
+              v-if="originalUrl"
+              :src="originalUrl"
+              alt="원본 이미지"
+              :class="originalFit ? 'max-h-[calc(100dvh-8rem)] max-w-full object-contain' : 'max-w-none'"
+              data-testid="memo-original-image"
+            >
+          </div>
+        </template>
+        <template #footer>
+          <div class="flex w-full justify-end gap-2">
             <UButton
               color="neutral"
-              variant="ghost"
-              active-variant="soft"
-              size="sm"
-              icon="i-material-symbols-drag-indicator"
-              aria-label="블록 메뉴 · 끌어서 옮기기"
-              :active="open"
-              :class="ui.handle()"
-            />
-          </UDropdownMenu>
-        </UEditorDragHandle>
-
-        <LinkDialog v-model:open="linkOpen" :editor="editor" />
-
-        <!-- 원본 보기 — 확대가 막혀 있으니 「원래 크기」로 놓고 밀어서 본다 -->
-        <UModal
-          :open="originalUrl !== null"
-          title="원본"
-          fullscreen
-          :ui="{ body: 'p-0 sm:p-0 overflow-auto' }"
-          @update:open="(v: boolean) => !v && (originalUrl = null)"
-        >
-          <template #body>
-            <div class="flex min-h-full items-center justify-center" :class="!originalFit && 'items-start justify-start'">
-              <img
-                v-if="originalUrl"
-                :src="originalUrl"
-                alt="원본 이미지"
-                :class="originalFit ? 'max-h-[calc(100dvh-8rem)] max-w-full object-contain' : 'max-w-none'"
-                data-testid="memo-original-image"
-              >
-            </div>
-          </template>
-          <template #footer>
-            <div class="flex w-full justify-end gap-2">
-              <UButton
-                color="neutral"
-                variant="outline"
-                :icon="originalFit ? 'i-material-symbols-fit-screen-outline' : 'i-material-symbols-fullscreen'"
-                data-testid="memo-original-fit"
-                @click="originalFit = !originalFit"
-              >
-                {{ originalFit ? '원래 크기' : '화면에 맞춤' }}
-              </UButton>
-              <UButton
-                v-if="!coarsePointer && originalUrl"
-                color="neutral"
-                variant="outline"
-                icon="i-material-symbols-download"
-                :to="originalUrl"
-                target="_blank"
-                external
-                download
-              >
-                내려받기
-              </UButton>
-              <UButton data-testid="memo-original-close" @click="originalUrl = null">닫기</UButton>
-            </div>
-          </template>
-        </UModal>
-      </UEditor>
-    </template>
-  </UDashboardPanel>
+              variant="outline"
+              :icon="originalFit ? 'i-material-symbols-fit-screen-outline' : 'i-material-symbols-fullscreen'"
+              data-testid="memo-original-fit"
+              @click="originalFit = !originalFit"
+            >
+              {{ originalFit ? '원래 크기' : '화면에 맞춤' }}
+            </UButton>
+            <UButton
+              v-if="!coarsePointer && originalUrl"
+              color="neutral"
+              variant="outline"
+              icon="i-material-symbols-download"
+              :to="originalUrl"
+              target="_blank"
+              external
+              download
+            >
+              내려받기
+            </UButton>
+            <UButton data-testid="memo-original-close" @click="originalUrl = null">닫기</UButton>
+          </div>
+        </template>
+      </UModal>
+    </UEditor>
+  </div>
 </template>

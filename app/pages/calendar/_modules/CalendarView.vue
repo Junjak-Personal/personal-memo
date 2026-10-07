@@ -62,79 +62,71 @@ function titleOf(memoId: string) {
 </script>
 
 <template>
-  <UDashboardPanel id="calendar" :ui="{ body: 'p-0 sm:p-0 gap-0 sm:gap-0' }">
-    <template #header>
-      <UDashboardNavbar :title="monthLabel">
-        <template #leading>
-          <UDashboardSidebarCollapse />
-        </template>
-        <template #right>
-          <UButton color="neutral" variant="outline" size="sm" data-testid="calendar-today-button" @click="go(today.slice(0, 7), today)">
-            오늘
-          </UButton>
-          <UButton
-            icon="i-material-symbols-chevron-left"
-            color="neutral"
-            variant="ghost"
-            aria-label="이전 달"
-            data-testid="calendar-prev-button"
-            @click="go(shiftMonth(month, -1))"
+  <div class="flex w-full min-w-0 flex-col lg:min-h-0">
+    <Teleport to="#app-header-title" defer>{{ monthLabel }}</Teleport>
+    <Teleport to="#app-header-actions" defer>
+      <UButton color="neutral" variant="outline" size="sm" data-testid="calendar-today-button" @click="go(today.slice(0, 7), today)">
+        오늘
+      </UButton>
+      <UButton
+        icon="i-material-symbols-chevron-left"
+        color="neutral"
+        variant="ghost"
+        aria-label="이전 달"
+        data-testid="calendar-prev-button"
+        @click="go(shiftMonth(month, -1))"
+      />
+      <UButton
+        icon="i-material-symbols-chevron-right"
+        color="neutral"
+        variant="ghost"
+        aria-label="다음 달"
+        data-testid="calendar-next-button"
+        @click="go(shiftMonth(month, 1))"
+      />
+    </Teleport>
+
+    <div class="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
+      <section class="flex flex-col lg:min-h-0 lg:flex-1 lg:overflow-y-auto" :aria-busy="status === 'pending'">
+        <div class="sticky top-0 z-10 grid grid-cols-7 border-b border-default bg-default">
+          <span
+            v-for="(weekday, index) in WEEKDAYS"
+            :key="weekday"
+            class="py-1.5 text-center text-xs"
+            :class="index === 0 ? 'text-error' : 'text-muted'"
+          >
+            {{ weekday }}
+          </span>
+        </div>
+
+        <UAlert
+          v-if="error"
+          color="error"
+          variant="subtle"
+          icon="i-material-symbols-error-outline"
+          :title="apiMessage(error, '캘린더를 불러오지 못했습니다')"
+          class="m-4"
+        />
+
+        <div class="flex flex-1 flex-col transition-opacity" :class="status === 'pending' && 'opacity-60'">
+          <CalendarWeek
+            v-for="layout in layouts"
+            :key="layout.days[0]"
+            :layout="layout"
+            :month="month"
+            :today="today"
+            :selected="selected"
+            :created-count="createdCount"
+            class="min-h-24 flex-1 lg:min-h-28"
+            @select="select"
           />
-          <UButton
-            icon="i-material-symbols-chevron-right"
-            color="neutral"
-            variant="ghost"
-            aria-label="다음 달"
-            data-testid="calendar-next-button"
-            @click="go(shiftMonth(month, 1))"
-          />
-        </template>
-      </UDashboardNavbar>
-    </template>
+        </div>
+      </section>
 
-    <template #body>
-      <div class="flex min-h-full flex-col lg:h-full lg:min-h-0 lg:flex-row">
-        <section class="flex flex-col lg:min-h-0 lg:flex-1 lg:overflow-y-auto" :aria-busy="status === 'pending'">
-          <div class="sticky top-0 z-10 grid grid-cols-7 border-b border-default bg-default">
-            <span
-              v-for="(weekday, index) in WEEKDAYS"
-              :key="weekday"
-              class="py-1.5 text-center text-xs"
-              :class="index === 0 ? 'text-error' : 'text-muted'"
-            >
-              {{ weekday }}
-            </span>
-          </div>
-
-          <UAlert
-            v-if="error"
-            color="error"
-            variant="subtle"
-            icon="i-material-symbols-error-outline"
-            :title="apiMessage(error, '캘린더를 불러오지 못했습니다')"
-            class="m-4"
-          />
-
-          <div class="flex flex-1 flex-col transition-opacity" :class="status === 'pending' && 'opacity-60'">
-            <CalendarWeek
-              v-for="layout in layouts"
-              :key="layout.days[0]"
-              :layout="layout"
-              :month="month"
-              :today="today"
-              :selected="selected"
-              :created-count="createdCount"
-              class="min-h-24 flex-1 lg:min-h-28"
-              @select="select"
-            />
-          </div>
-        </section>
-
-        <aside class="flex flex-col border-t border-default lg:w-80 lg:shrink-0 lg:overflow-y-auto lg:border-t-0 lg:border-s">
-          <CalendarDayList :day="selected" :scheduled="selectedScheduled" :created="selectedCreated" />
-          <CalendarSyncPanel class="mt-auto" :title-of="titleOf" />
-        </aside>
-      </div>
-    </template>
-  </UDashboardPanel>
+      <aside class="flex flex-col border-t border-default lg:w-80 lg:shrink-0 lg:overflow-y-auto lg:border-t-0 lg:border-s">
+        <CalendarDayList :day="selected" :scheduled="selectedScheduled" :created="selectedCreated" />
+        <CalendarSyncPanel class="mt-auto" :title-of="titleOf" />
+      </aside>
+    </div>
+  </div>
 </template>

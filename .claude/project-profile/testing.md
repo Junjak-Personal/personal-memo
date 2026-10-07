@@ -5,13 +5,14 @@
 |------|-----------|--------|----------|
 | Unit | Vitest 5.0.3 (node 환경) | `vitest.config.ts` (`#shared` 별칭) | 대상 옆 `*.test.ts` — `shared/**`, `server/**`, `app/**` |
 | Integration | Vitest — 저장소를 실제 임시 폴더(mkdtemp)에 돌린다 | 같음 | `server/memo/store.test.ts` |
-| HTTP 스모크 | node 스크립트 (저장소 밖, 세션 scratchpad) | — | 미추적 |
+| 캘린더 스모크 | node 스크립트 — 실제 구글 캘린더 대상 | 파일 머리 주석 | `scripts/calendar-smoke/` |
 | E2E | 없음 (Playwright 패키지 미설치). 화면 확인은 Playwright MCP 수동 | — | — |
 
 ## Test Commands
 - All: `pnpm test` (= `vitest run`)
 - 파일 하나: `pnpm vitest run server/calendar`
 - E2E: 없음
+- 캘린더 스모크: 머리 주석의 절차대로 (dev 서버 멈춤 → 임시 데이터 폴더 서버 → 실행 → 복귀)
 - Coverage: 설정 없음
 
 ## Patterns
@@ -27,10 +28,10 @@
 
 ## E2E Fixtures
 - E2E account: 비밀번호 하나 (계정 개념 없음)
-- Credentials source: `.env.local` 의 `NUXT_ADMIN_PASSWORD_HASH` (해시만). 평문 개발 비밀번호는 오너가 안다 — [FILL: 자동 실행용 env 이름 미정]
+- Credentials source: `.env.local` 의 `E2E_PASSWORD` (개발 전용 평문, gitignore·600). 서버는 `NUXT_ADMIN_PASSWORD_HASH` 로 검사한다. 이 파일에 값을 적지 않는다
 - Test-data seed: 없음. 🔴 로컬 `data/` 는 사용자 실제 메모(「342」 폴더 등) — 시드·초기화 금지.
   격리가 필요하면 `NUXT_DATA_DIR=<임시 폴더>` 로 서버를 따로 띄운다 (별도 dotenv: `pnpm exec nuxt dev --dotenv <파일>`)
-- Fixture files: [FILL: 이미지 업로드 시험용 파일 없음]
+- Fixture files: 없음 — 브라우저 시험 자동화가 아직 없다. Vitest 는 이미지 바이트를 코드에 직접 쓴다 (`store.test.ts` 의 PNG·SVG)
 - Target env: 로컬만 (http://localhost:4700). 운영 미배포
 - Shared-resource caution: dev 서버 하나가 :4700 을 쓴다 — `.nuxt` 를 같이 써서 같은 폴더에서 둘을 동시에 못 띄운다. 폰 앱(「memo dev」)이 이 서버에 붙어 있다.
   구글 캘린더: 개발 기본 꺼짐. 실제 「메모」 캘린더로 시험하면 시작·끝 일정 수가 같은지 확인

@@ -34,7 +34,7 @@ const message = computed(() => (props.state.status === 'error' ? `${props.state.
   <component
     :is="failed ? 'button' : 'div'"
     :type="failed ? 'button' : undefined"
-    class="flex shrink-0 items-center justify-end gap-1 rounded-md text-xs sm:w-24"
+    class="flex shrink-0 items-center justify-end gap-1 rounded-md text-xs lg:w-24"
     :class="[view.class, failed && 'cursor-pointer border border-error/50 px-1.5 py-0.5 hover:bg-error/10']"
     :title="message"
     :aria-label="message"
@@ -43,6 +43,6 @@ const message = computed(() => (props.state.status === 'error' ? `${props.state.
     @click="failed && emit('retry')"
   >
     <UIcon :name="view.icon" class="size-4 shrink-0" :class="state.status === 'saving' && 'animate-spin'" />
-    <span class="hidden truncate sm:inline">{{ view.text }}</span>
+    <span class="hidden truncate lg:inline">{{ view.text }}</span>
   </component>
 </template>

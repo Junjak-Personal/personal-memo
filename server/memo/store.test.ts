@@ -235,6 +235,56 @@ describe('이동·휴지통·이미지', () => {
     expect(restored.id).toBe(second.id)
   })
 
+  it('원본을 같이 올리면 `.orig` 로 옆에 두고, 원본 주소는 원본을 — 없으면 화면 이미지를 준다', async () => {
+    const memo = await store.create({ ...input('사진'), folder: '' })
+    const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0])
+    const withOriginal = await store.saveImage(memo.id, PNG, JPEG)
+    expect(withOriginal.original).toBe(true)
+    const stem = withOriginal.src.slice(0, -'.png'.length)
+    expect((await readdir(memos('assets'))).sort()).toEqual([`${stem.slice(7)}.orig.jpg`, `${stem.slice(7)}.png`].sort())
+    const original = await store.originalImageFile(withOriginal.src)
+    expect(original).toMatchObject({ stored: true, type: 'image/jpeg' })
+
+    const plain = await store.saveImage(memo.id, PNG)
+    expect(plain.original).toBe(false)
+    expect(await store.originalImageFile(plain.src)).toMatchObject({ stored: false, type: 'image/png' })
+  })
+
+  it('원본이 이미지가 아니거나 30MB 를 넘으면 거부한다', async () => {
+    const memo = await store.create({ ...input('사진'), folder: '' })
+    await rejects(store.saveImage(memo.id, PNG, new TextEncoder().encode('heic?')), 'unsupported_type')
+    await rejects(store.saveImage(memo.id, PNG, new Uint8Array(30 * 1024 * 1024 + 1)), 'too_large')
+  })
+
+  it('정리할 때 원본은 그 화면 이미지가 참조되는 동안 남는다', async () => {
+    const keep = await store.create({ ...input('남김'), folder: '' })
+    const gone = await store.create({ ...input('버림'), folder: '' })
+    const { src: kept } = await store.saveImage(keep.id, PNG, PNG)
+    const { src: dropped } = await store.saveImage(gone.id, PNG, PNG)
+    await store.update(keep.id, { ...input('남김', `![](${kept})`), baseVersion: (await store.get(keep.id)).version })
+    await store.update(gone.id, { ...input('버림', `![](${dropped})`), baseVersion: (await store.get(gone.id)).version })
+    await store.remove(gone.id)
+    expect(await store.emptyTrash()).toEqual({ memos: 1, images: 2 })
+    const left = (await readdir(memos('assets'))).sort()
+    expect(left).toEqual([`${kept.slice(7, -4)}.orig.png`, kept.slice(7)].sort())
+  })
+
+  it('메모를 옮기면 원본도 따라간다 — 다른 메모도 쓰는 이미지면 둘 다 복사', async () => {
+    await store.createFolder('', '새곳')
+    const memo = await store.create({ ...input('이사'), folder: '' })
+    const other = await store.create({ ...input('같이 씀'), folder: '' })
+    const { src: own } = await store.saveImage(memo.id, PNG, PNG)
+    const { src: shared } = await store.saveImage(memo.id, PNG, PNG)
+    await store.update(memo.id, { ...input('이사', `![](${own})\n\n![](${shared})`), baseVersion: (await store.get(memo.id)).version })
+    await store.update(other.id, { ...input('같이 씀', `![](${shared})`), baseVersion: (await store.get(other.id)).version })
+    await store.move(memo.id, '새곳')
+    const name = (src: string) => src.slice(7)
+    const orig = (src: string) => `${src.slice(7, -4)}.orig.png`
+    expect((await readdir(memos('새곳/assets'))).sort()).toEqual([name(own), orig(own), name(shared), orig(shared)].sort())
+    // 옮긴 것은 원래 자리에서 사라지고, 같이 쓰는 것은 남는다
+    expect((await readdir(memos('assets'))).sort()).toEqual([name(shared), orig(shared)].sort())
+  })
+
   it('휴지통 비우기는 아무도 안 쓰는 이미지만 지운다', async () => {
     const keep = await store.create({ ...input('남김'), folder: '' })
     const gone = await store.create({ ...input('버림'), folder: '' })

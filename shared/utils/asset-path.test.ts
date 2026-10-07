@@ -25,4 +25,11 @@ describe('이미지 경로', () => {
     const other = toDisplaySrc('개인', 'assets/x.jpg')
     expect(toStoredSrc('업무', other)).toBe(other)
   })
+
+  it('하위 폴더의 이미지는 같은 폴더로 보지 않는다 — 최상위 메모에 붙여도 화면 주소로 남겨 다시 올린다', () => {
+    const child = toDisplaySrc('하위', 'assets/a.png')
+    expect(toStoredSrc('', child)).toBe(child)
+    const grandchild = toDisplaySrc('업무/회의', 'assets/a.png')
+    expect(toStoredSrc('업무', grandchild)).toBe(grandchild)
+  })
 })

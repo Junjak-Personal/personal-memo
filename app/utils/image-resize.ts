@@ -1,11 +1,23 @@
 /**
  * 업로드 전 브라우저에서 줄인다 — 서버에는 이미지 라이브러리가 없다 (설계문서 §4, pic-blog resize.ts 와 같은 방식).
- * 원본은 보관하지 않는다.
+ * 줄였으면 원본도 같이 올려 보관한다 (2026-10-07). 줄이지 않았으면 올린 것이 곧 원본이다.
  */
 export const DISPLAY_MAX = 2048
 
 /** 이 크기 이하이고 2048px 안이면 그대로 올린다 — 스크린샷 글자가 재압축으로 뭉개지지 않게 */
 const KEEP_AS_IS_BYTES = 2 * 1024 * 1024
+
+/** 서버가 원본으로 받는 형식 (server/memo/images.ts 의 sniffImage 와 같다). HEIC 등은 원본을 두지 못한다 */
+const ORIGINAL_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+export const MAX_ORIGINAL_BYTES = 30 * 1024 * 1024
+
+export interface PreparedImage {
+  display: Blob
+  /** 줄였을 때의 원본. 줄이지 않았으면 null (display 가 원본) */
+  original: Blob | null
+  /** 줄였지만 원본을 보관하지 못하는 이유 — 화면이 알린다 */
+  originalSkipped: 'type' | 'size' | null
+}
 
 let cachedType: 'image/webp' | 'image/jpeg' | null = null
 
@@ -21,7 +33,15 @@ function scaleTo(w: number, h: number, max: number) {
   return { w: Math.round(w * r), h: Math.round(h * r) }
 }
 
-export async function resizeForUpload(file: Blob): Promise<Blob> {
+export async function prepareImage(file: Blob): Promise<PreparedImage> {
+  const display = await resizeForUpload(file)
+  if (display === file) return { display, original: null, originalSkipped: null }
+  if (!ORIGINAL_TYPES.has(file.type)) return { display, original: null, originalSkipped: 'type' }
+  if (file.size > MAX_ORIGINAL_BYTES) return { display, original: null, originalSkipped: 'size' }
+  return { display, original: file, originalSkipped: null }
+}
+
+async function resizeForUpload(file: Blob): Promise<Blob> {
   // 움직이는 GIF 는 canvas 를 거치면 첫 장만 남는다
   if (file.type === 'image/gif') return file
   /*

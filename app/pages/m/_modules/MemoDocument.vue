@@ -13,9 +13,10 @@ import type { EditorView } from '@tiptap/pm/view'
 import type { Editor, JSONContent } from '@tiptap/vue-3'
 import { CodeBlockShiki } from 'tiptap-extension-code-block-shiki'
 import type { Memo } from '#shared/types/memo'
-import { toDisplaySrc, toStoredSrc } from '#shared/utils/asset-path'
+import { originalOfDisplay, toDisplaySrc, toOriginalSrc, toStoredSrc } from '#shared/utils/asset-path'
 import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS, TAG_DELIMITER } from '#shared/utils/tags'
 import { HtmlUnderline, MemoImage } from '~/utils/editor-extensions'
+import { prepareImage, type PreparedImage } from '~/utils/image-resize'
 import { type MemoDraft, removeDraft } from '~/utils/memo-drafts'
 import { emojiItems, MemoEmoji } from './editor/emoji'
 import { ImageUpload } from './editor/ImageUploadExtension'
@@ -76,6 +77,10 @@ const tags = ref<string[]>(memo.value?.tags ?? [])
 const currentFolder = ref(memo.value?.folder ?? '')
 const selectedNode = ref<{ node: JSONContent | null; pos: number }>()
 const linkOpen = ref(false)
+/** 원본 보기 창에 띄울 원본 주소 */
+const originalUrl = ref<string | null>(null)
+/** 원본 보기 — 화면에 맞춤 / 원래 크기 (확대가 막혀 있어서 원래 크기로 보고 밀어서 본다) */
+const originalFit = ref(true)
 
 const folder = memo.value?.folder ?? ''
 /** 터치 화면에서는 글자 말풍선 툴바를 끈다 — iOS 복사/붙여넣기 메뉴와 같은 자리에 겹친다 (설계문서 §7.3) */
@@ -302,12 +307,24 @@ async function reloadFromServer() {
   tags.value = fresh.tags
 }
 
-/** 브라우저에서 줄여서 이 메모 폴더의 assets/ 로 올린다. 본문에 넣을 상대경로를 돌려준다 */
+/** 브라우저에서 줄여서 이 메모 폴더의 assets/ 로 올린다(줄였으면 원본도). 본문에 넣을 상대경로를 돌려준다 */
 async function uploadImage(file: Blob, name = 'image') {
+  return uploadPrepared(await prepareImage(file), name)
+}
+
+async function uploadPrepared(image: PreparedImage, name = 'image') {
   const body = new FormData()
-  body.append('file', await resizeForUpload(file), name)
+  body.append('file', image.display, name)
+  if (image.original) body.append('original', image.original, name)
   const id = autosave?.currentId() ?? props.memoId
   const { src } = await $fetch<{ src: string }>(`/api/memos/${encodeURIComponent(id)}/images`, { method: 'POST', body })
+  if (image.originalSkipped) {
+    toast.add({
+      color: 'warning',
+      title: '줄인 이미지만 저장했습니다',
+      description: image.originalSkipped === 'size' ? '원본이 30MB 를 넘어 보관하지 못했습니다.' : '이 형식(HEIC 등)은 원본을 보관하지 못합니다.',
+    })
+  }
   return src
 }
 
@@ -341,7 +358,12 @@ async function rehomeForeignImages(editor: Editor) {
   })
   for (const src of foreign) {
     try {
-      const next = await uploadImage(await $fetch<Blob>(src, { responseType: 'blob' }))
+      // 원본을 따로 보관한 이미지면 원본도 같이 옮긴다 — 안 그러면 원래 메모가 이미지를 지울 때 원본이 사라진다
+      const display = await $fetch<Blob>(src, { responseType: 'blob' })
+      const originalSrc = originalOfDisplay(src)
+      const originalRes = originalSrc ? await $fetch.raw<Blob>(originalSrc, { responseType: 'blob' }) : null
+      const original = originalRes?.headers.get('x-memo-original') === 'stored' ? (originalRes._data ?? null) : null
+      const next = await uploadPrepared({ display, original, originalSkipped: null })
       // 올리는 동안 문서가 바뀌었을 수 있다 — 위치가 아니라 src 로 다시 찾는다
       editor.state.doc.descendants((node, pos) => {
         if (node.type.name === 'image' && node.attrs.src === src) {
@@ -352,6 +374,11 @@ async function rehomeForeignImages(editor: Editor) {
       toast.add({ color: 'error', title: apiMessage(e, '다른 폴더의 이미지를 가져오지 못했습니다') })
     }
   }
+}
+
+function showOriginal(src: string) {
+  originalFit.value = true
+  originalUrl.value = toOriginalSrc(folder, src)
 }
 
 function onPaste() {
@@ -524,7 +551,7 @@ function showTableBubble({ editor, view, state }: MenuContext) {
           </template>
         </UEditorToolbar>
 
-        <UEditorToolbar :editor="editor" :items="imageToolbarItems(editor)" layout="bubble" :should-show="showImageBubble" />
+        <UEditorToolbar :editor="editor" :items="imageToolbarItems(editor, { showOriginal })" layout="bubble" :should-show="showImageBubble" />
 
         <UEditorToolbar :editor="editor" :items="tableToolbarItems(editor)" layout="bubble" :should-show="showTableBubble" />
 
@@ -568,6 +595,53 @@ function showTableBubble({ editor, view, state }: MenuContext) {
         </UEditorDragHandle>
 
         <LinkDialog v-model:open="linkOpen" :editor="editor" />
+
+        <!-- 원본 보기 — 확대가 막혀 있으니 「원래 크기」로 놓고 밀어서 본다 -->
+        <UModal
+          :open="originalUrl !== null"
+          title="원본"
+          fullscreen
+          :ui="{ body: 'p-0 sm:p-0 overflow-auto' }"
+          @update:open="(v: boolean) => !v && (originalUrl = null)"
+        >
+          <template #body>
+            <div class="flex min-h-full items-center justify-center" :class="!originalFit && 'items-start justify-start'">
+              <img
+                v-if="originalUrl"
+                :src="originalUrl"
+                alt="원본 이미지"
+                :class="originalFit ? 'max-h-[calc(100dvh-8rem)] max-w-full object-contain' : 'max-w-none'"
+                data-testid="memo-original-image"
+              >
+            </div>
+          </template>
+          <template #footer>
+            <div class="flex w-full justify-end gap-2">
+              <UButton
+                color="neutral"
+                variant="outline"
+                :icon="originalFit ? 'i-material-symbols-fit-screen-outline' : 'i-material-symbols-fullscreen'"
+                data-testid="memo-original-fit"
+                @click="originalFit = !originalFit"
+              >
+                {{ originalFit ? '원래 크기' : '화면에 맞춤' }}
+              </UButton>
+              <UButton
+                v-if="!coarsePointer && originalUrl"
+                color="neutral"
+                variant="outline"
+                icon="i-material-symbols-download"
+                :to="originalUrl"
+                target="_blank"
+                external
+                download
+              >
+                내려받기
+              </UButton>
+              <UButton data-testid="memo-original-close" @click="originalUrl = null">닫기</UButton>
+            </div>
+          </template>
+        </UModal>
       </UEditor>
     </template>
   </UDashboardPanel>

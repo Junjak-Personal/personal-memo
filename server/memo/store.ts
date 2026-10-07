@@ -27,7 +27,7 @@ import { isUlid, ulid } from '../../shared/utils/ulid'
 import { MemoError } from './errors'
 import { parseMemo, serializeMemo, versionOf } from './file'
 import { exists, writeAtomic } from './fsx'
-import { extOf, IMAGE_TYPES, MAX_IMAGE_BYTES, referencedImages, sniffImage } from './images'
+import { extOf, IMAGE_TYPES, isOriginalName, MAX_IMAGE_BYTES, MAX_ORIGINAL_BYTES, referencedImages, sniffImage, stemOf } from './images'
 import {
   ASSETS_DIR,
   TRASH_DIR,
@@ -262,14 +262,20 @@ export class MemoStore {
       const images = [...referencedImages(from, entry.body)].filter((p) => p.startsWith(ownAssets) && !p.slice(ownAssets.length).includes('/'))
       const others = this.referencedBy((e) => e !== entry)
       if (images.length) await mkdir(await this.abs(joinRel(folder, ASSETS_DIR)), { recursive: true })
+      // 원본(`<이름>.orig.<ext>`)은 화면 이미지를 따라간다
+      const originals = images.length ? await this.originalsIn(joinRel(from, ASSETS_DIR)) : new Map<string, string>()
       for (const src of images) {
-        const srcAbs = await this.abs(src)
-        if (!(await exists(srcAbs))) continue
-        const dstAbs = await this.abs(joinRel(folder, `${ASSETS_DIR}/${src.slice(ownAssets.length)}`))
-        if (await exists(dstAbs)) continue
-        // 다른 메모도 쓰는 이미지는 옮기지 않고 복사한다
-        if (others.has(src)) await copyFile(srcAbs, dstAbs)
-        else await rename(srcAbs, dstAbs)
+        const shared = others.has(src)
+        const original = originals.get(stemOf(src))
+        for (const file of original ? [src, original] : [src]) {
+          const srcAbs = await this.abs(file)
+          if (!(await exists(srcAbs))) continue
+          const dstAbs = await this.abs(joinRel(folder, `${ASSETS_DIR}/${file.slice(ownAssets.length)}`))
+          if (await exists(dstAbs)) continue
+          // 다른 메모도 쓰는 이미지는 옮기지 않고 복사한다
+          if (shared) await copyFile(srcAbs, dstAbs)
+          else await rename(srcAbs, dstAbs)
+        }
       }
 
       const base = rel.slice(from ? from.length + 1 : 0).replace(/\.md$/, '')
@@ -365,17 +371,32 @@ export class MemoStore {
   /** 어떤 메모(활성 + 휴지통)도 참조하지 않는 `assets/` 이미지를 지운다. 지운 수 */
   private async removeUnreferencedImages() {
     const referenced = this.referencedBy(() => true)
+    // 원본은 본문이 참조하지 않는다 — 그 화면 이미지가 참조되는 동안 남긴다
+    const keptStems = new Set([...referenced].map(stemOf))
     let images = 0
     for (const assetsRel of await this.assetDirs(this.root, '')) {
       for (const e of await readdir(await this.abs(assetsRel), { withFileTypes: true })) {
         if (!e.isFile()) continue
         const rel = `${assetsRel}/${e.name}`
         if (referenced.has(rel)) continue
+        if (isOriginalName(e.name) && keptStems.has(stemOf(rel))) continue
         await rm(await this.abs(rel))
         images++
       }
     }
     return images
+  }
+
+  /** `assets/` 폴더 안의 원본들 — stem(확장자 뗀 경로) → 원본 경로 */
+  private async originalsIn(assetsRel: string) {
+    const out = new Map<string, string>()
+    const entries = await readdir(await this.abs(assetsRel), { withFileTypes: true }).catch(() => [])
+    for (const e of entries) {
+      if (!e.isFile() || !isOriginalName(e.name)) continue
+      const rel = `${assetsRel}/${e.name}`
+      out.set(stemOf(rel), rel)
+    }
+    return out
   }
 
   /** rel 아래의 빈 폴더를 지운다 (rel 자체는 남긴다) */
@@ -479,18 +500,40 @@ export class MemoStore {
   // ── 이미지 ──────────────────────────────────────────────────────────
 
   /** 메모 폴더의 `assets/` 에 이미지를 쓴다. 돌려주는 src 를 본문에 그대로 넣는다 */
-  saveImage(id: string, bytes: Uint8Array): Promise<{ src: string }> {
+  /**
+   * original — 화면용으로 줄이기 전의 원본 (있을 때만). 같은 이름에 `.orig` 를 붙여 옆에 둔다.
+   * 원본은 백업하지 않는다(§12) — 이 서버 디스크에만 있다.
+   */
+  saveImage(id: string, bytes: Uint8Array, original?: Uint8Array): Promise<{ src: string; original: boolean }> {
     return this.exclusive(async () => {
       if (bytes.byteLength > MAX_IMAGE_BYTES) throw new MemoError('too_large', '이미지는 10MB 까지입니다')
       const ext = sniffImage(bytes)
       if (!ext) throw new MemoError('unsupported_type', 'jpeg, png, gif, webp 만 올릴 수 있습니다')
+      let originalExt = null
+      if (original) {
+        if (original.byteLength > MAX_ORIGINAL_BYTES) throw new MemoError('too_large', '원본은 30MB 까지입니다')
+        originalExt = sniffImage(original)
+        if (!originalExt) throw new MemoError('unsupported_type', '원본은 jpeg, png, gif, webp 만 보관할 수 있습니다')
+      }
       await this.index.rescan()
       const folder = folderOf(this.requirePath(id))
-      const name = `${ulid()}.${ext}`
+      const name = ulid()
       await mkdir(await this.abs(joinRel(folder, ASSETS_DIR)), { recursive: true })
-      await writeAtomic(await this.abs(joinRel(folder, `${ASSETS_DIR}/${name}`)), bytes)
-      return { src: `${ASSETS_DIR}/${name}` }
+      await writeAtomic(await this.abs(joinRel(folder, `${ASSETS_DIR}/${name}.${ext}`)), bytes)
+      if (original && originalExt) await writeAtomic(await this.abs(joinRel(folder, `${ASSETS_DIR}/${name}.orig.${originalExt}`)), original)
+      return { src: `${ASSETS_DIR}/${name}.${ext}`, original: !!original }
     })
+  }
+
+  /**
+   * 화면 이미지(`…/assets/<ulid>.<ext>`)의 원본. 원본을 따로 두지 않은 이미지(줄이지 않고 올린 것)는 화면 이미지가 곧 원본이다.
+   * stored — 원본 파일이 따로 있었나 (다른 폴더로 붙여넣을 때 원본도 같이 옮길지 판단)
+   */
+  async originalImageFile(displayRel: string) {
+    const display = await this.imageFile(displayRel)
+    const dir = displayRel.slice(0, displayRel.lastIndexOf('/'))
+    const original = (await this.originalsIn(dir)).get(stemOf(displayRel))
+    return original ? { ...(await this.imageFile(original)), stored: true } : { ...display, stored: false }
   }
 
   /** 화면이 여는 이미지. `…/assets/<파일>` 꼴의 이미지 파일만 내준다 — 메모 원문이나 휴지통은 이 길로 안 나간다 */

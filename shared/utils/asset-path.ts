@@ -38,16 +38,30 @@ export function toDisplaySrc(folder: string, src: string) {
   return FILES_PREFIX + path.split('/').map(encodeURIComponent).join('/')
 }
 
+/** 본문 속 경로 → 원본 주소 (`/api/originals/…`). 따로 보관한 원본이 없으면 서버가 화면 이미지를 준다 */
+export function toOriginalSrc(folder: string, src: string) {
+  const display = toDisplaySrc(folder, src)
+  return display.startsWith(FILES_PREFIX) ? `/api/originals/${display.slice(FILES_PREFIX.length)}` : display
+}
+
+/** 화면 주소 → 원본 주소 */
+export function originalOfDisplay(display: string) {
+  return display.startsWith(FILES_PREFIX) ? `/api/originals/${display.slice(FILES_PREFIX.length)}` : null
+}
+
 /**
  * 화면 주소 → 본문에 쓸 경로. 복사·붙여넣기로 HTML 을 거쳐 돌아올 때 쓴다.
  *
- * 같은 폴더의 이미지만 상대경로로 되돌린다. 다른 폴더의 이미지는 화면 주소를 그대로 돌려준다 —
- * 그 경우는 붙여넣을 때 이 메모의 `assets/` 로 다시 올려야 한다 (설계문서 §4, 미결).
+ * 이 메모 폴더의 `assets/` 바로 아래 이미지만 상대경로로 되돌린다. 다른 폴더(하위 폴더 포함)의 이미지는 화면 주소를
+ * 그대로 돌려준다 — 붙여넣은 뒤 이 메모의 `assets/` 로 다시 올린다 (설계문서 §4).
+ * 🔴 «폴더 경로로 시작하면 같은 폴더»로 보면 안 된다 — 최상위 메모에 하위 폴더 이미지를 붙이면 `하위/assets/x.jpg`
+ *    라는 다른 폴더 참조가 남아, 메모를 옮기면 깨졌다 (2026-10-07 발견).
  */
 export function toStoredSrc(folder: string, src: string) {
   if (!src.startsWith(FILES_PREFIX)) return src
   const path = src.slice(FILES_PREFIX.length).split('/').map(decodeURIComponent).join('/')
   const prefix = folder ? `${folder}/` : ''
   if (!path.startsWith(prefix)) return src
-  return path.slice(prefix.length)
+  const rest = path.slice(prefix.length)
+  return /^assets\/[^/]+$/.test(rest) ? rest : src
 }

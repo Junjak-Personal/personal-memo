@@ -115,11 +115,20 @@ export const suggestionItems = [
 ] satisfies EditorSuggestionMenuItem<Handlers>[][]
 
 /** 이미지를 고르면 뜨는 툴바 */
-export function imageToolbarItems(editor: Editor): EditorToolbarItem<Handlers>[][] {
+export function imageToolbarItems(editor: Editor, actions: { showOriginal: (src: string) => void }): EditorToolbarItem<Handlers>[][] {
   const pos = editor.state.selection.from
   const node = editor.state.doc.nodeAt(pos)
   const isImage = node?.type.name === 'image'
   return [
+    [
+      {
+        icon: 'i-material-symbols-photo-size-select-actual-outline',
+        tooltip: { text: '원본 보기' },
+        onClick: () => {
+          if (isImage && typeof node.attrs.src === 'string') actions.showOriginal(node.attrs.src)
+        },
+      },
+    ],
     [
       {
         icon: 'i-material-symbols-sync',

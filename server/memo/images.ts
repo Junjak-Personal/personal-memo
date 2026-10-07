@@ -4,6 +4,8 @@
 import { isRelativeSrc, normalizePath } from '../../shared/utils/asset-path'
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+/** 원본 보관 (2026-10-07) — 아이폰 사진 원본이 넉넉히 들어가게 */
+export const MAX_ORIGINAL_BYTES = 30 * 1024 * 1024
 
 export type ImageExt = 'jpg' | 'png' | 'gif' | 'webp'
 
@@ -54,4 +56,22 @@ export function referencedImages(folder: string, body: string) {
     if (path) out.add(path)
   }
   return out
+}
+
+/**
+ * 원본 이미지 (설계문서 §4 — 2026-10-07). 화면에 쓰는 줄인 이미지 `assets/<ulid>.<ext>` 옆에 `assets/<ulid>.orig.<ext>`.
+ * 본문은 원본을 참조하지 않는다 — 원본은 «같은 이름의 화면 이미지»에 딸린 파일로 다룬다(옮기기·정리).
+ */
+const ORIGINAL = /\.orig\.[a-z0-9]+$/i
+
+export function isOriginalName(name: string) {
+  return ORIGINAL.test(name)
+}
+
+/** 확장자(원본이면 `.orig.<ext>`)를 뗀 경로 — 화면 이미지와 그 원본이 같은 값을 갖는다 */
+export function stemOf(path: string) {
+  if (ORIGINAL.test(path)) return path.replace(ORIGINAL, '')
+  const slash = path.lastIndexOf('/')
+  const dot = path.lastIndexOf('.')
+  return dot > slash ? path.slice(0, dot) : path
 }

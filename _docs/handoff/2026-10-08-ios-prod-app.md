@@ -19,6 +19,9 @@
 - 운영 릴리스 빌드 성공. Xcode 27.0 / 팀 `7D92AXK55P` 의 자동 서명으로 App ID·프로파일 생성,
   앱·확장 모두 운영 App Group 이 실제 서명과 프로파일에 있는 것을 확인했다.
   산출물: `app-ios/build/prod-dd/Build/Products/Release-iphoneos/Runner.app`.
+- iPhone 15 Pro 재연결 후 `prod-install.sh` 로 기기 설치·앱 실행 완료.
+  기기 목록에 「memo」/「memo dev」가 함께 있고 App Group 도 운영·개발로 분리돼 있다.
+  폰 화면 캡처에서 로그인된 운영 메모 화면이 열린 것을 확인했다. 운영 비밀번호는 입력하지 않았다.
 - 검증: `flutter analyze`, `pnpm typecheck`, `pnpm test` 143개, `pnpm build`, `codesign --verify --deep --strict` 통과.
   임시 명령 대역으로 설치 분기 8개 통과(운영 성공·헬스 실패·서명 실패·id 불일치·그룹 불일치,
   dev 성공·대체 설치, 기기 없음). 저장소에 테스트용 파일·의존성을 추가하지 않았다.
@@ -26,21 +29,18 @@
   사이드바·빈 화면(빈 목록을 흉내 낸 응답), 이미지 로드·favicon/Apple 아이콘 링크 확인.
 - 설계문서 §10·§13·§16 갱신.
 
-## 안 됨 / 미검증
+## 미검증
 
-- **기기 설치 실패:** 시작 때 iPhone 15 Pro 는 `available (paired)` 였으나 빌드 때 `unavailable` 로 바뀜.
-  설치 시 CoreDevice 4016 (`RequestedDeviceStates` 를 충족하지 못함).
-  폰을 맥에 연결하고 잠금을 푼 뒤 `app-ios/tool/prod-install.sh` 를 다시 실행한다.
-- **폰 확인은 미검증:** 「memo」/「memo dev」 나란히 표시, 새 아이콘·운영 로그인 화면,
+- **폰에서 남은 확인:** 홈 화면의 새 아이콘, 초기 운영 로그인 화면(캡처 때 이미 로그인된 화면),
   공유 시트 → 「받은 메모」, 사이드바 할 일 체크가 메모를 열지 않는 것, 설계문서 §16 나머지 항목.
-  운영 로그인은 사용자가 한다. 운영 데이터를 쓰는 검증은 실행하지 않았다.
+  로그인된 화면을 열고 캡처만 했으며, 운영 데이터를 바꾸는 검증은 실행하지 않았다.
 - **웹 로고 운영 반영은 미배포:** 로컬 구현·빌드·표시 확인까지 완료. push 는 사용자 지시가 있을 때만.
 
-## 다시 이어갈 때
+## 다음 확인
 
 1. `git status` 로 Claude 세션의 동시 변경을 확인한다.
-2. `xcrun devicectl list devices` 에서 아이폰이 `available (paired)` 또는 `connected` 인지 확인한다.
-3. 저장소 루트에서 `app-ios/tool/prod-install.sh` 를 실행한다.
+2. 폰에서 「memo」의 새 아이콘과 설계문서 §16 의 남은 항목을 사용자가 확인한다.
+3. 앱을 다시 설치할 때는 아이폰을 연결하고 잠금을 푼 뒤 저장소 루트에서 `app-ios/tool/prod-install.sh`.
    여러 대면 `DEVICE=<기기 id> app-ios/tool/prod-install.sh`.
-4. 「memo」 실행·운영 로그인 화면을 확인한다. 비밀번호는 사용자가 입력한다.
-5. 결과에 맞춰 이 문서와 설계문서 §13·§16 의 설치·미검증 상태를 갱신한다.
+4. 웹 로고·favicon 은 사용자 push 지시 후 운영에 반영한다.
+5. 새 확인 결과에 맞춰 이 문서와 설계문서 §13·§16 을 갱신한다.

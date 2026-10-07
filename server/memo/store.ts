@@ -22,6 +22,7 @@ import type {
 } from '../../shared/types/memo'
 import { isDateString, kstDay, nowKst } from '../../shared/utils/memo-date'
 import { hasTag, parseSearchQuery } from '../../shared/utils/tags'
+import { isScheduled } from '../../shared/utils/todo'
 import { DAY_MS, TRASH_RETENTION_DAYS } from '../../shared/utils/trash'
 import { isUlid, ulid } from '../../shared/utils/ulid'
 import { MemoError } from './errors'
@@ -154,14 +155,15 @@ export class MemoStore {
         const meta = this.index.meta(entry)
         const day = meta.created ? kstDay(meta.created) : null
         if (day && day >= from && day <= to) created.push(meta)
-        if (meta.date && meta.date <= to && (meta.dateEnd ?? meta.date) >= from) scheduled.push(meta)
+        // 끝난 할 일은 일정이 아니다 — 「이날 만든 메모」에는 남는다
+        if (isScheduled(meta) && meta.date <= to && (meta.dateEnd ?? meta.date) >= from) scheduled.push(meta)
       }
       return { created, scheduled }
     })
   }
 
   /**
-   * 구글 캘린더 대조용 (§8.3) — 메모 파일 수(휴지통 포함)와, id 가 있고 날짜가 있는 활성 메모.
+   * 구글 캘린더 대조용 (§8.3) — 메모 파일 수(휴지통 포함)와, id 가 있고 일정으로 보이는(날짜 있음 + 끝나지 않음) 활성 메모.
    * total 이 0 이면 대조가 «데이터 폴더가 빠졌다»고 보고 삭제를 미룬다. 휴지통을 세는 이유 — 하나뿐인 메모를
    * 휴지통에 넣었을 때 그 일정까지 막히지 않게 (폴더가 정말 빠졌다면 휴지통도 비어 있다).
    * `p:` 경로 id 는 빠진다. 파일 이름이 바뀌면 id 도 바뀌어 일정이 끊기므로, 앱에서 한 번 저장해 id 가 붙은 뒤부터 잇는다.
@@ -171,7 +173,7 @@ export class MemoStore {
       await this.index.rescan()
       const memos = [...this.index.active.values()]
         .map((e) => this.index.meta(e))
-        .filter((m) => m.date && !m.id.startsWith('p:'))
+        .filter((m) => isScheduled(m) && !m.id.startsWith('p:'))
       return { total: this.index.active.size + this.index.trash.size, memos }
     })
   }
@@ -186,7 +188,7 @@ export class MemoStore {
       const rel = await uniqueMdPath(input.folder, fileBaseFromTitle(input.title), this.relExists)
       const raw = serializeMemo(
         null,
-        { id: ulid(), title: input.title, created: now, updated: now, date: input.date, dateEnd: input.dateEnd, tags: input.tags ?? [] },
+        { id: ulid(), title: input.title, created: now, updated: now, date: input.date, dateEnd: input.dateEnd, tags: input.tags ?? [], done: input.done ?? null },
         input.content,
       )
       await writeAtomic(await this.abs(rel), raw)
@@ -223,6 +225,8 @@ export class MemoStore {
           date: input.date,
           dateEnd: input.dateEnd,
           tags: input.tags ?? parsed.fields.tags,
+          // 할 일 체크는 저장 입력에 없다 — 파일의 값을 그대로 둔다 (버전도 done 을 빼고 잰다)
+          done: parsed.fields.done,
         },
         input.content,
       )
@@ -245,6 +249,28 @@ export class MemoStore {
       await this.index.refresh(rel)
       if (finalRel !== rel) await this.index.refresh(finalRel)
       return this.read(finalRel)
+    })
+  }
+
+  /**
+   * 할 일 체크 — frontmatter 의 `done` 만 바꾼다 (null = 할 일 해제, 키 삭제). 본문·updated·제목은 그대로다.
+   * 버전을 받지 않는다: 버전은 done 줄을 빼고 재므로 이 변경은 누구의 저장과도 부딪히지 않는다.
+   */
+  setDone(id: string, done: boolean | null): Promise<MemoMeta> {
+    return this.exclusive(async () => {
+      await this.index.rescan()
+      const rel = this.requirePath(id)
+      const abs = await this.abs(rel)
+      const raw = await readFile(abs, 'utf8')
+      const parsed = parseMemo(raw)
+      if (!parsed.ok) {
+        throw new MemoError('unreadable', 'frontmatter 를 읽을 수 없어 바꾸지 않았습니다. 파일을 직접 고쳐 주세요')
+      }
+      if (parsed.fields.done !== done) {
+        await writeAtomic(abs, serializeMemo(parsed.doc, { ...parsed.fields, done }, parsed.body))
+        await this.index.refresh(rel)
+      }
+      return this.index.meta(this.index.active.get(rel)!)
     })
   }
 

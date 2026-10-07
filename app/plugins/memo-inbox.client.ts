@@ -35,15 +35,6 @@ export default defineNuxtPlugin((nuxtApp) => {
     if (loggedIn.value) channel?.postMessage(JSON.stringify({ type: 'pull' }))
   }
 
-  async function ensureFolder() {
-    try {
-      await $fetch('/api/folders', { method: 'POST', body: { parent: '', name: INBOX_FOLDER } })
-    } catch (e) {
-      // 이미 있다
-      if (apiStatus(e) !== 409) throw e
-    }
-  }
-
   async function deliver(raw: unknown) {
     if (!loggedIn.value || delivering || !Array.isArray(raw)) return
     const items = raw.filter((i): i is InboxItem => isInboxItem(i) && !done.has(i.id))
@@ -52,7 +43,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     const saved: string[] = []
     let last: Memo | null = null
     try {
-      await ensureFolder()
+      await ensureFolder(INBOX_FOLDER)
       for (const item of items) {
         last = await $fetch<Memo>('/api/memos', { method: 'POST', body: { folder: INBOX_FOLDER, ...memoFromShare(item) } })
         saved.push(item.id)

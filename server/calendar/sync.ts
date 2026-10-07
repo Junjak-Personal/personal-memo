@@ -9,6 +9,7 @@
 import type { CalendarSyncStatus, HeldDeletes } from '../../shared/types/calendar-sync'
 import type { MemoMeta } from '../../shared/types/memo'
 import { nowKst } from '../../shared/utils/memo-date'
+import { isScheduled } from '../../shared/utils/todo'
 import type { CalendarApi } from './google'
 import { type EventShape, memoIdOf, planSync, sameShape, shapeOfEvent, shapeOfMemo, type SyncMemo, type SyncOp } from './reconcile'
 
@@ -88,10 +89,11 @@ export class CalendarSync {
   /**
    * 앱에서 메모를 만들거나 고치거나 되살린 뒤. 캘린더에 보일 모양(제목·날짜)이 마지막으로 본 캘린더와
    * 같으면 대조하지 않는다 — 본문만 고친 저장이 1초마다 구글을 부르지 않게.
+   * 끝난 할 일은 일정이 없는 모양이다 — 제목·날짜가 그대로여도 체크하면 바로 지운다 (isScheduled).
    */
   notify(memo: MemoMeta) {
     if (memo.id.startsWith('p:')) return
-    const want = memo.date ? shapeOfMemo({ ...memo, date: memo.date }) : null
+    const want = isScheduled(memo) ? shapeOfMemo(memo) : null
     if (this.known && !this.failures.has(memo.id) && sameShape(this.known.get(memo.id) ?? null, want)) return
     this.schedule()
   }
@@ -121,7 +123,7 @@ export class CalendarSync {
       return
     }
 
-    const memos: SyncMemo[] = snapshot.memos.flatMap((m) => (m.date && !m.id.startsWith('p:') ? [{ ...m, date: m.date }] : []))
+    const memos: SyncMemo[] = snapshot.memos.filter((m): m is MemoMeta & { date: string } => isScheduled(m) && !m.id.startsWith('p:'))
     const plan = planSync({ memos, total: snapshot.total, events, siteUrl: this.deps.siteUrl, allowMassDelete })
     const byId = new Map(memos.map((m) => [m.id, m]))
     const known = new Map<string, EventShape>()

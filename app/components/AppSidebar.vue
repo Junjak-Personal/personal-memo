@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * 왼쪽 사이드바 — 검색, 폴더·메모 트리, 태그, 캘린더·휴지통 (설계문서 §7.4).
+ * 왼쪽 사이드바 — 검색, 폴더·메모 트리, 태그, 할 일·캘린더·휴지통 (설계문서 §7.4).
+ * 할 일인 메모는 트리 줄의 아이콘 자리에 체크박스가 선다 — 줄을 누르면 열고, 체크박스를 누르면 끝낸다.
  * 태그를 누르면 `#태그` 로 검색한다 — 태그 거르기와 글자 검색이 한 검색창을 쓴다.
  * PC 에서는 접을 수 있고, 모바일에서는 ≡ 를 누르면 왼쪽에서 전체 화면으로 밀려 들어온다(slideover, 폭 제한 없음).
  * (처음엔 mode="modal" 이었는데 Nuxt UI 가 전체 화면 modal 의 애니메이션을 꺼 둬서 뚝 나타났다.)
@@ -19,6 +20,7 @@ const { creating, createMemo } = useCreateMemo()
 const queue = useStructureQueue()
 const folders = useFolderActions({ onRelocated: relocate })
 const dnd = useTreeDragDrop(relocate)
+const todo = useTodo()
 
 const expanded = ref<string[]>([])
 const searchInput = ref('')
@@ -39,12 +41,21 @@ const tagCounts = computed(() => {
   return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko'))
 })
 
-/** 터치 화면에서는 끌기를 켜지 않는다 — 스크롤과 다투고 iOS 웹뷰에서 믿을 수 없다 */
-const coarsePointer = window.matchMedia('(pointer: coarse)').matches
-const links: NavigationMenuItem[] = [
+/** 안 끝난 할 일 수 — 「할 일」 옆에 보인다 */
+const openTodos = computed(() => view.value?.memos.filter((m) => m.done === false).length ?? 0)
+const links = computed<NavigationMenuItem[]>(() => [
+  {
+    label: '할 일',
+    icon: 'i-material-symbols-checklist',
+    to: '/todo',
+    badge: openTodos.value ? { label: String(openTodos.value), color: 'neutral', variant: 'subtle' } : undefined,
+  },
   { label: '캘린더', icon: 'i-material-symbols-calendar-month-outline', to: '/calendar' },
   { label: '휴지통', icon: 'i-material-symbols-delete-outline', to: '/trash' },
-]
+])
+
+/** 터치 화면에서는 끌기를 켜지 않는다 — 스크롤과 다투고 iOS 웹뷰에서 믿을 수 없다 */
+const coarsePointer = window.matchMedia('(pointer: coarse)').matches
 
 onMounted(async () => {
   // 앱을 내리거나 탭을 바꾸면 대기 중인 폴더 구조 변경을 기다리지 않고 반영한다
@@ -87,6 +98,7 @@ function memoItem(memo: MemoMeta): TreeItem {
     folder: memo.folder,
     label: memo.title || '제목 없음',
     value: memo.id,
+    done: memo.done,
     icon: memo.unreadable ? 'i-material-symbols-warning-outline' : 'i-material-symbols-description-outline',
     onSelect: () => navigateTo(memoPath(memo.id)),
   }
@@ -298,8 +310,18 @@ async function logout() {
             @dragleave="item.kind === 'folder' && dnd.leave(String(item.path))"
             @drop="item.kind === 'folder' && dnd.drop($event, String(item.path))"
           >
-            <UIcon :name="String(item.icon)" class="size-5 shrink-0" />
-            <span class="truncate">{{ item.label }}</span>
+            <!-- 할 일이면 아이콘 자리에 체크박스. 누름이 줄까지 올라가면 메모가 열리므로 여기서 멈춘다 -->
+            <span v-if="item.kind === 'memo' && item.done !== null" class="flex size-5 shrink-0 items-center justify-center" @click.stop>
+              <UCheckbox
+                :model-value="item.done === true"
+                :disabled="todo.pending.value.includes(String(item.value))"
+                :aria-label="item.done ? '안 끝난 것으로 되돌리기' : '끝냄'"
+                data-testid="sidebar-todo-check"
+                @update:model-value="todo.setDone(String(item.value), item.done !== true)"
+              />
+            </span>
+            <UIcon v-else :name="String(item.icon)" class="size-5 shrink-0" />
+            <span class="truncate" :class="item.done === true && 'text-muted line-through'">{{ item.label }}</span>
             <span v-if="item.kind === 'folder'" class="ms-auto flex shrink-0 items-center">
               <UDropdownMenu :items="folderMenu(String(item.path))" :content="{ align: 'start' }">
                 <UButton
@@ -386,7 +408,8 @@ async function logout() {
           <UButton size="xs" color="neutral" variant="outline" data-testid="sidebar-pending-cancel" @click="queue.cancel()">취소</UButton>
           <UButton size="xs" data-testid="sidebar-pending-apply" @click="queue.apply()">지금 반영</UButton>
         </div>
-        <div class="flex w-full items-center gap-1">
+        <!-- 로그아웃은 맨 아래 줄 옆에 — 항목이 셋이라 가운데 정렬이면 「캘린더」 옆에 떠 보였다 -->
+        <div class="flex w-full items-end gap-1">
           <UNavigationMenu :items="links" orientation="vertical" class="flex-1" />
           <UTooltip text="로그아웃">
             <UButton

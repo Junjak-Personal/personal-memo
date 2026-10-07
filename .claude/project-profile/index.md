@@ -69,3 +69,4 @@ Lifecycle: active/{planning,processing}/ · complete/ · reference/ · deprecate
 - 2026-10-07: 아이패드 미지원·PC/모바일 1024 경계, `E2E_PASSWORD`, 캘린더 스모크 `scripts/calendar-smoke/` 반영
 - 2026-10-07: 태그(frontmatter), 오프라인 보호(`memo-drafts`), 원본 이미지(`.orig`), 공유 시트(`MemoShare`·App Group), 휴지통 자동 비우기 추가 — 설계문서 §3.1·§3.4·§4·§7.2.1·§10.4
 - 2026-10-07: 배포 구성 추가 (Dockerfile·scripts/deploy.sh·.github/workflows/deploy.yml, memo.jun-devlog.win → :4700) — deployment.md
+- 2026-10-08: 할 일(frontmatter `done`, `PATCH /api/memos/:id/done`, `/todo`, `useTodo`, `shared/utils/todo.ts`) — 설계문서 §3.5

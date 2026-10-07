@@ -68,7 +68,16 @@ export function parseCreateInput(raw: unknown): CreateMemoInput {
   const body = asBody(raw)
   const folder = body.folder ?? ''
   if (typeof folder !== 'string') bad('folder: 문자열이어야 합니다')
-  return { ...memoInput(body), folder }
+  const done = body.done
+  if (done !== undefined && typeof done !== 'boolean') bad('done: true 나 false 여야 합니다')
+  return { ...memoInput(body), folder, ...(done === undefined ? {} : { done }) }
+}
+
+/** 할 일 체크 — `{ done: true | false | null }` (null = 할 일 해제) */
+export function parseDoneInput(raw: unknown) {
+  const done = asBody(raw).done
+  if (done !== null && typeof done !== 'boolean') bad('done: true, false, null 중 하나여야 합니다')
+  return done
 }
 
 export function parseUpdateInput(raw: unknown): UpdateMemoInput {

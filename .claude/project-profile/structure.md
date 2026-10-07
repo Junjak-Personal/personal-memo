@@ -14,6 +14,7 @@ personal-memo/
 │   │   ├── calendar/{index.vue,_modules/}
 │   │   ├── m/{[id].vue,_modules/}       # 메모 문서 (에디터)
 │   │   ├── trash/{index.vue,_modules/}
+│   │   ├── todo/{index.vue,_modules/}   # 할 일 모아 보기 (설계문서 §3.5)
 │   │   ├── index.vue, login.vue
 │   ├── plugins/              # *.client.ts
 │   └── utils/                # 순수 함수 (+ *.test.ts)

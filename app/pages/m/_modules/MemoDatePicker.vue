@@ -23,11 +23,6 @@ const label = computed(() => {
   return props.dateEnd ? `${formatDay(props.date)} ~ ${formatDay(props.dateEnd)}` : formatDay(props.date)
 })
 
-/** `2026-10-10` → `10월 10일 (토)` */
-function formatDay(day: string) {
-  return new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' }).format(new Date(`${day}T00:00:00`))
-}
-
 function onOpen(value: boolean) {
   if (value) {
     draft.value = {

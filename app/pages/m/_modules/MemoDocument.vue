@@ -53,6 +53,7 @@ const toast = useToast()
 const { refresh: refreshTree } = useMemoTree()
 const activeMemo = useActiveMemo()
 const calendarSync = useCalendarSyncStatus()
+const todo = useTodo()
 
 const { data: memo, error } = await useAsyncData(
   `memo-${props.memoId}`,
@@ -103,6 +104,8 @@ const saveState = computed<SaveState>(() => {
   return state.status === 'saved' && title.value !== savedTitle.value ? { status: 'dirty' } : state
 })
 if (autosave) activeMemo.register({ id: autosave.currentId, folder: () => currentFolder.value, flush: flushAll })
+/** 할 일 체크 — 사이드바 트리가 원본이다(useTodo). 이 메모가 할 일이 아니면 null */
+const todoDone = computed(() => (autosave ? (todo.find(autosave.currentId())?.done ?? null) : null))
 /**
  * 이 기기에 저장하지 못한 수정이 남아 있으면 (오프라인 보호 — memo-drafts):
  * - 서버가 그 뒤로 바뀌지 않았으면 바로 되살려 저장한다
@@ -520,17 +523,29 @@ function showTableBubble({ editor, view, state }: MenuContext) {
             data-testid="memo-format-alert"
             :actions="[{ label: '알겠습니다, 저장', color: 'warning', onClick: () => autosave?.acceptFormat() }]"
           />
-          <input
-            v-model="title"
-            placeholder="제목"
-            class="w-full bg-transparent text-3xl font-bold outline-none placeholder:text-dimmed"
-            :readonly="memo.unreadable"
-            enterkeyhint="next"
-            data-testid="memo-title-input"
-            @input="onTitleInput"
-            @blur="commitTitle"
-            @keydown="onTitleKeydown"
-          >
+          <div class="flex items-center gap-3">
+            <UCheckbox
+              v-if="todoDone !== null && autosave"
+              :model-value="todoDone"
+              :disabled="todo.pending.value.includes(autosave.currentId())"
+              :aria-label="todoDone ? '안 끝난 것으로 되돌리기' : '끝냄'"
+              size="xl"
+              data-testid="memo-todo-check"
+              @update:model-value="todo.setDone(autosave.currentId(), !todoDone)"
+            />
+            <input
+              v-model="title"
+              placeholder="제목"
+              class="min-w-0 flex-1 bg-transparent text-3xl font-bold outline-none placeholder:text-dimmed"
+              :class="todoDone && 'text-muted line-through'"
+              :readonly="memo.unreadable"
+              enterkeyhint="next"
+              data-testid="memo-title-input"
+              @input="onTitleInput"
+              @blur="commitTitle"
+              @keydown="onTitleKeydown"
+            >
+          </div>
           <div class="mt-3 flex flex-wrap items-center gap-2">
             <MemoDatePicker :date="date" :date-end="dateEnd" :disabled="memo.unreadable" @change="onDateChange" />
             <MemoCalendarSyncBadge :memo-id="autosave.currentId()" :has-date="!!date" />

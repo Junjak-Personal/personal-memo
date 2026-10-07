@@ -34,6 +34,7 @@ export default defineMemoHandler(async (event, store) => store.update(memoIdPara
 - 서버: 도메인은 `MemoError(code)` 를 던진다 (`server/memo/errors.ts`, code → status). `defineMemoHandler` 가 `createError({ data: { code, message, ...extra } })` 로 바꾼다
   — 🔴 statusMessage 는 ASCII 만 실리므로 한국어 문구는 `data.message`
 - 409 충돌은 `data.version` (현재 해시)을 실어 화면이 「다시 불러오기 / 덮어쓰기」를 고른다
+- 버전 해시는 frontmatter `done:` 줄을 빼고 잰다 — 할 일 체크는 `PATCH /api/memos/:id/done` 로만 바꾸고 `PUT` 은 파일의 값을 둔다 (설계문서 §3.5)
 - 화면: `apiMessage(e, '대체 문구')`, `apiStatus(e)`, `apiData(e)` (`app/utils/api-error.ts`) → 토스트·UAlert
 - 조용히 실패하지 않는다 — 실패는 화면에 이유와 다시 시도 수단을 둔다
 

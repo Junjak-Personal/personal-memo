@@ -462,3 +462,67 @@ describe('검색·캘린더', () => {
     expect(meta.date).toBeNull()
   })
 })
+
+describe('할 일 (done)', () => {
+  it('할 일로 만들면 done: false 가 붙고, 일반 메모는 null', async () => {
+    const todo = await store.create({ ...input('우유 사기', ''), done: false, folder: '' })
+    expect(todo.done).toBe(false)
+    expect(await readFile(memos('우유 사기.md'), 'utf8')).toContain('done: false\n')
+    const memo = await store.create({ ...input('그냥 메모'), folder: '' })
+    expect(memo.done).toBeNull()
+    expect(await readFile(memos('그냥 메모.md'), 'utf8')).not.toContain('done')
+  })
+
+  it('체크는 done 만 바꾼다 — 본문·updated·버전은 그대로', async () => {
+    const todo = await store.create({ ...input('보고서', '첫 줄\n\n둘째 줄'), done: false, folder: '' })
+    const before = await readFile(memos('보고서.md'), 'utf8')
+    const checked = await store.setDone(todo.id, true)
+    expect(checked).toMatchObject({ id: todo.id, done: true, updated: todo.updated })
+    const after = await readFile(memos('보고서.md'), 'utf8')
+    expect(after).toBe(before.replace('done: false', 'done: true'))
+    expect((await store.get(todo.id)).version).toBe(todo.version)
+  })
+
+  it('체크한 뒤에도 열려 있던 편집기의 저장(옛 버전)이 통과하고 done 은 그대로 남는다', async () => {
+    const todo = await store.create({ ...input('편집 중'), done: false, folder: '' })
+    await store.setDone(todo.id, true)
+    const saved = await store.update(todo.id, { ...input('편집 중', '고친 본문'), baseVersion: todo.version })
+    expect(saved).toMatchObject({ done: true, content: '고친 본문\n' })
+  })
+
+  it('null 이면 할 일을 풀어 키를 지운다. 일반 메모를 할 일로 둘 수도 있다', async () => {
+    const memo = await store.create({ ...input('메모'), folder: '' })
+    expect((await store.setDone(memo.id, false)).done).toBe(false)
+    expect(await readFile(memos('메모.md'), 'utf8')).toContain('done: false')
+    expect((await store.setDone(memo.id, null)).done).toBeNull()
+    expect(await readFile(memos('메모.md'), 'utf8')).not.toContain('done')
+  })
+
+  it('밖에서 쓴 done: yes 는 메모로 보고, 수정 저장이 그 값을 건드리지 않는다', async () => {
+    await externalWrite('밖.md', '---\ntitle: 밖\ndone: yes\n---\n\n본문\n')
+    const meta = (await store.tree()).memos[0]!
+    expect(meta.done).toBeNull()
+    const opened = await store.get(meta.id)
+    await store.update(meta.id, { ...input('밖', '고침'), baseVersion: opened.version })
+    expect(await readFile(memos('밖.md'), 'utf8')).toContain('done: yes\n')
+  })
+
+  it('frontmatter 를 읽지 못하는 파일은 체크하지 않는다', async () => {
+    await externalWrite('깨짐.md', '---\ntitle: [x\n---\n\n본문\n')
+    const meta = (await store.tree()).memos[0]!
+    await rejects(store.setDone(meta.id, true), 'unreadable')
+    await rejects(store.setDone('01JZZZZZZZZZZZZZZZZZZZZZZZ', true), 'not_found')
+  })
+
+  it('끝난 할 일은 캘린더 일정·구글 대조에서 빠지고, 「이날 만든 메모」에는 남는다', async () => {
+    const open = await store.create({ ...input('안 끝남', '', { date: '2026-10-10' }), done: false, folder: '' })
+    const finished = await store.create({ ...input('끝남', '', { date: '2026-10-11' }), done: false, folder: '' })
+    await store.setDone(finished.id, true)
+    const { scheduled } = await store.calendar('2026-10-01', '2026-10-31')
+    expect(scheduled.map((m) => m.title)).toEqual(['안 끝남'])
+    expect((await store.calendar('2000-01-01', '2100-12-31')).created).toHaveLength(2)
+    const snapshot = await store.calendarSnapshot()
+    expect(snapshot.memos.map((m) => m.id)).toEqual([open.id])
+    expect(snapshot.total).toBe(2)
+  })
+})

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { parseMemo, serializeMemo } from './file'
+import { parseMemo, serializeMemo, versionOf } from './file'
 
-const fields = { id: 'ID', title: '제목', created: null, updated: null, date: null, dateEnd: null, tags: [] as string[] }
+const fields = { id: 'ID', title: '제목', created: null, updated: null, date: null, dateEnd: null, tags: [] as string[], done: null as boolean | null }
 
 describe('frontmatter', () => {
   it('frontmatter 가 없으면 전체가 본문이다', () => {
@@ -65,5 +65,43 @@ describe('frontmatter', () => {
   it('YAML 이 깨졌거나 맵이 아니면 읽지 못한 것으로 둔다', () => {
     expect(parseMemo('---\ntitle: [x\n---\n본문').ok).toBe(false)
     expect(parseMemo('---\n- 목록\n---\n본문').ok).toBe(false)
+  })
+
+  it('할 일: done 은 true/false 만 읽고, 다른 값은 메모(null)로 본다', () => {
+    const doneOf = (yaml: string) => {
+      const parsed = parseMemo(`---\n${yaml}\n---\n본문`)
+      return parsed.ok ? parsed.fields.done : 'unreadable'
+    }
+    expect(doneOf('title: a')).toBe(null)
+    expect(doneOf('done: false')).toBe(false)
+    expect(doneOf('done: true')).toBe(true)
+    expect(doneOf('done: yes')).toBe(null)
+    expect(doneOf('done: 1')).toBe(null)
+    expect(doneOf('done:')).toBe(null)
+  })
+
+  it('할 일: 바뀌었을 때만 쓰고, null 이면 키를 지운다. 모르는 값(done: yes)은 그대로 둔다', () => {
+    const parsed = parseMemo('---\ntitle: 제목\ndone: false\n---\n\n본문\n')
+    if (!parsed.ok) throw new Error('읽지 못함')
+    expect(serializeMemo(parsed.doc, { ...fields, id: null, done: true }, '본문')).toContain('done: true\n')
+    const again = parseMemo('---\ntitle: 제목\ndone: false\n---\n\n본문\n')
+    if (!again.ok) throw new Error('읽지 못함')
+    expect(serializeMemo(again.doc, { ...fields, id: null, done: null }, '본문')).not.toContain('done')
+
+    const odd = parseMemo('---\ntitle: 제목\ndone: yes\n---\n\n본문\n')
+    if (!odd.ok) throw new Error('읽지 못함')
+    expect(serializeMemo(odd.doc, { ...fields, id: null, done: odd.fields.done }, '본문')).toContain('done: yes\n')
+  })
+
+  it('버전은 done 줄을 뺀 내용으로 잰다 — 체크해도 열린 편집기의 저장이 충돌 나지 않게', () => {
+    const base = '---\nid: X\ntitle: 제목\n---\n\n본문\n'
+    const todo = '---\nid: X\ntitle: 제목\ndone: false\n---\n\n본문\n'
+    const doneMid = '---\nid: X\ndone: true\ntitle: 제목\n---\n\n본문\n'
+    expect(versionOf(todo)).toBe(versionOf(base))
+    expect(versionOf(doneMid)).toBe(versionOf(base))
+    // 본문의 done: 줄은 내용이다
+    expect(versionOf(`${base}done: true\n`)).not.toBe(versionOf(base))
+    // 다른 키가 바뀌면 버전도 바뀐다
+    expect(versionOf(todo.replace('제목', '다른 제목'))).not.toBe(versionOf(todo))
   })
 })

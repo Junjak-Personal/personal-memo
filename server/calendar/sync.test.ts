@@ -43,7 +43,7 @@ class FakeCalendar implements CalendarApi {
 }
 
 function meta(id: string, date: string | null, title = `메모 ${id}`, dateEnd: string | null = null): MemoMeta {
-  return { id, path: `${title}.md`, folder: '', title, created: null, updated: null, date, dateEnd, tags: [], unreadable: false }
+  return { id, path: `${title}.md`, folder: '', title, created: null, updated: null, date, dateEnd, tags: [], done: null, unreadable: false }
 }
 
 let api: FakeCalendar
@@ -147,6 +147,22 @@ describe('CalendarSync', () => {
       await vi.advanceTimersByTimeAsync(500)
       expect(api.calls.filter((c) => c === 'list')).toHaveLength(1)
       expect([...api.events.values()][0]).toMatchObject({ summary: '새 제목', start: { date: '2026-10-22' } })
+    })
+
+    it('할 일을 끝내면 제목·날짜가 그대로여도 대조해 일정을 지우고, 다시 풀면 다시 만든다', async () => {
+      const finished = { ...meta('A', '2026-10-20'), done: true }
+      // 대조도 끝난 할 일을 일정으로 보지 않는다 — 스냅숏이 넘겨도 빠진다
+      memos = [finished]
+      sync.notify(finished)
+      await vi.advanceTimersByTimeAsync(500)
+      expect(api.calls).toContain('list')
+      expect(api.events.size).toBe(0)
+
+      const reopened = { ...meta('A', '2026-10-20'), done: false }
+      memos = [reopened]
+      sync.notify(reopened)
+      await vi.advanceTimersByTimeAsync(500)
+      expect([...api.events.values()][0]).toMatchObject({ summary: '메모 A', start: { date: '2026-10-20' } })
     })
 
     it('경로 id(p:)는 아직 잇지 않는다', async () => {

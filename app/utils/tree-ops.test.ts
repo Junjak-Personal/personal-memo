@@ -4,7 +4,7 @@ import { applyStructureOps } from './tree-ops'
 
 function memo(id: string, path: string): MemoMeta {
   const i = path.lastIndexOf('/')
-  return { id, path, folder: i === -1 ? '' : path.slice(0, i), title: id, created: null, updated: null, date: null, dateEnd: null, tags: [], unreadable: false }
+  return { id, path, folder: i === -1 ? '' : path.slice(0, i), title: id, created: null, updated: null, date: null, dateEnd: null, tags: [], done: null, unreadable: false }
 }
 
 const base: TreeResponse = {

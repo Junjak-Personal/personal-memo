@@ -21,13 +21,18 @@ export interface MemoMeta {
   dateEnd: string | null
   /** frontmatter `tags`. 없으면 빈 배열 */
   tags: string[]
+  /**
+   * 할 일 (frontmatter `done`, 2026-10-08). null = 할 일이 아닌 메모, false = 안 끝남, true = 끝남.
+   * `done: true/false` 가 아닌 값(`done: yes` 등)은 null 로 읽고 파일의 값은 건드리지 않는다.
+   */
+  done: boolean | null
   /** frontmatter 를 읽지 못한 파일 — 앱에서 저장하지 않는다 */
   unreadable: boolean
 }
 
 export interface Memo extends MemoMeta {
   content: string
-  /** 파일 내용 해시. 저장할 때 baseVersion 으로 돌려보낸다 */
+  /** 파일 내용 해시(`done` 줄은 빼고). 저장할 때 baseVersion 으로 돌려보낸다 */
   version: string
 }
 
@@ -40,8 +45,14 @@ export interface MemoInput {
   tags?: string[]
 }
 
+/**
+ * 할 일 체크(`done`)는 저장 입력에 없다 — 편집기가 들고 있는 내용이 아니라서다. 수정 저장은 파일의 값을 그대로 두고,
+ * 바꾸는 길은 `PATCH /api/memos/:id/done` 하나다. 새로 만들 때만 할 일로 만들 수 있다.
+ */
 export interface CreateMemoInput extends MemoInput {
   folder: string
+  /** false = 할 일로 만든다. 없으면 일반 메모 */
+  done?: boolean
 }
 
 export interface UpdateMemoInput extends MemoInput {

@@ -1,0 +1,14 @@
+# 메모 일일 백업. ops/memo-backup.sh 참조.
+# 설치: /etc/systemd/system/ 에 이 파일과 .timer 를 두고
+#       sudo systemctl daemon-reload && sudo systemctl enable --now memo-backup.timer
+[Unit]
+Description=personal-memo daily backup (memos/*.md)
+
+[Service]
+Type=oneshot
+# 메모 파일은 컨테이너의 node 와 같은 uid 1000(junja) 소유라 그대로 읽힌다. 도커는 필요 없다.
+User=junja
+ExecStart=/home/junja/ops/memo-backup.sh
+# 성공/실패가 journal 에 남는다: journalctl -u memo-backup.service
+StandardOutput=journal
+StandardError=journal

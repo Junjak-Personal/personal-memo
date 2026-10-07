@@ -1,0 +1,12 @@
+[Unit]
+Description=personal-memo 일일 백업 타이머
+
+[Timer]
+# 04:30 KST (박스는 UTC, 19:30 UTC = 익일 04:30 KST). nivoca 백업(19:10 UTC)과 겹치지 않게 20분 뒤.
+OnCalendar=*-*-* 19:30:00
+# 박스가 꺼져 있어 지나간 실행은 부팅 후 따라잡는다. 이게 없으면 재부팅 하루가 조용히 빈다.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

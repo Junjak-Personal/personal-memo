@@ -20,7 +20,12 @@
 - `.env.prd` 에 `E2E_PASSWORD`·`NUXT_GOOGLE_SERVICE_ACCOUNT_FILE` 이 있으면 deploy.sh 가 멈춘다 (개발 전용).
 - 이미지: `node:24-slim` 2단계. 런타임은 `.output` 만 — 엔트리포인트가 볼륨을 node(uid 1000)로 chown 후 setpriv 로 내려간다.
 
+## 백업
+- `ops/` (nivoca be/ops 구조): 박스 `memo-backup.sh` + systemd timer(04:30 KST, 14일), 맥 `memo-offsite-pull.sh` + launchd(06:40 KST, 60일).
+  설치는 오너 — 순서는 `ops/README.md`. 이미지(`assets/`)는 백업하지 않는다.
+
 ## 검증 (2026-10-07)
+- 첫 배포: GitHub Actions run 37636574743 성공, `https://memo.jun-devlog.win/api/health` 200, 컨테이너 데이터 폴더 junja 소유.
 - `.dockerignore` 를 적용한 컨텍스트에서 install·build, `.output` 만 둔 폴더(node_modules 없음)에서 운영 모드 API 스모크 13/13.
 - base64 키 경로: 존재하지 않는 캘린더로 띄워 구글 인증 통과 → 404 확인 (실제 캘린더 미접촉).
 - 이미지 빌드 자체는 맥에서 못 돌렸다(Docker 데몬 꺼짐) — 첫 배포 때 서버에서 처음 빌드된다.

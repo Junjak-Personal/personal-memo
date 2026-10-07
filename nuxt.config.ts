@@ -94,5 +94,9 @@ export default defineNuxtConfig({
       },
     },
   },
+  experimental: {
+    // 화면 코드를 못 받았을 때 페이지를 통째로 다시 부르지 않는다 — 오프라인이면 쓰던 화면을 잃는다 (plugins/route-chunk-error.client.ts)
+    emitRouteChunkError: 'manual',
+  },
   typescript: { strict: true, typeCheck: false },
 })

@@ -41,9 +41,14 @@ export function useActiveMemo() {
     return active ? active.flush() : true
   }
 
+  /** 이 메모가 지금 열려 있나 — 열린 메모의 보관 수정은 그 화면이 저장한다 */
+  function isOpen(id: string) {
+    return active?.id() === id
+  }
+
   function reload() {
     tick.value++
   }
 
-  return { tick, register, touches, flush, reload }
+  return { tick, register, touches, flush, isOpen, reload }
 }

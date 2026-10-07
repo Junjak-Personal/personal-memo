@@ -16,6 +16,7 @@ import type { Memo } from '#shared/types/memo'
 import { toDisplaySrc, toStoredSrc } from '#shared/utils/asset-path'
 import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS, TAG_DELIMITER } from '#shared/utils/tags'
 import { HtmlUnderline, MemoImage } from '~/utils/editor-extensions'
+import { type MemoDraft, removeDraft } from '~/utils/memo-drafts'
 import { emojiItems, MemoEmoji } from './editor/emoji'
 import { ImageUpload } from './editor/ImageUploadExtension'
 import {
@@ -97,6 +98,15 @@ const saveState = computed<SaveState>(() => {
   return state.status === 'saved' && title.value !== savedTitle.value ? { status: 'dirty' } : state
 })
 if (autosave) activeMemo.register({ id: autosave.currentId, folder: () => currentFolder.value, flush: flushAll })
+/**
+ * 이 기기에 저장하지 못한 수정이 남아 있으면 (오프라인 보호 — memo-drafts):
+ * - 서버가 그 뒤로 바뀌지 않았으면 바로 되살려 저장한다
+ * - 바뀌었거나 이미 충돌로 거절됐으면 사람이 고른다 (조용히 덮지 않는다)
+ */
+const draftOnOpen = autosave?.pendingDraft() ?? null
+const restoredDraft = !!draftOnOpen && !draftOnOpen.conflict && draftOnOpen.baseVersion === memo.value?.version
+const staleDraft = ref<MemoDraft | null>(draftOnOpen && !restoredDraft ? draftOnOpen : null)
+if (draftOnOpen && restoredDraft) applyDraft(draftOnOpen)
 const extensions = [
   HtmlUnderline,
   TaskList,
@@ -127,6 +137,10 @@ onMounted(() => {
   document.addEventListener('visibilitychange', onVisibility)
   attachBridge()
   void calendarSync.refresh()
+  if (restoredDraft) {
+    autosave?.changed()
+    toast.add({ title: '이 기기에 보관해 둔 수정을 되살려 저장합니다' })
+  }
 })
 
 onBeforeUnmount(() => {
@@ -137,6 +151,11 @@ onBeforeUnmount(() => {
 /** 다른 화면으로 가기 전에 고친 것을 저장한다. 못 하면 가지 않는다 — 조용히 버리지 않는다 */
 onBeforeRouteLeave(async (to) => {
   if (!autosave || (await flushAll())) return true
+  // 서버에 닿지 못했지만 이 기기에 보관했다 — 연결되면 보관함이 저장한다 (plugins/memo-drafts.client.ts)
+  if (autosave.state.value.status === 'offline') {
+    toast.add({ color: 'warning', title: '연결이 없어 이 기기에 보관했습니다', description: '연결되면 자동으로 저장합니다.' })
+    return true
+  }
   toast.add({
     color: 'error',
     title: '저장하지 못해서 이동하지 않았습니다',
@@ -240,6 +259,36 @@ function onDateChange(start: string | null, end: string | null) {
   date.value = start
   dateEnd.value = end
   autosave?.changed()
+}
+
+/** 보관해 둔 수정을 입력칸에 채운다. 에디터는 content 가 바뀌면 다시 그린다 */
+function applyDraft(draft: MemoDraft) {
+  title.value = draft.input.title
+  savedTitle.value = draft.input.title
+  content.value = draft.input.content
+  date.value = draft.input.date
+  dateEnd.value = draft.input.dateEnd
+  tags.value = draft.input.tags
+}
+
+/** 서버가 바뀐 뒤의 보관 수정 — 그래도 내 것으로 덮어쓴다 */
+function keepStaleDraft() {
+  const draft = staleDraft.value
+  if (!draft || !autosave) return
+  applyDraft(draft)
+  staleDraft.value = null
+  // 지금 서버 버전을 기준으로 보낸다 — 덮어쓰기를 사람이 골랐다
+  void autosave.save()
+}
+
+function discardStaleDraft() {
+  if (staleDraft.value) removeDraft(staleDraft.value.id)
+  staleDraft.value = null
+}
+
+/** `2026-10-07T02:00:00.000Z` → `10월 7일 오전 11:00` */
+function draftTime(iso: string) {
+  return new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
 }
 
 async function reloadFromServer() {
@@ -403,6 +452,20 @@ function showTableBubble({ editor, view, state }: MenuContext) {
             :actions="[
               { label: '다시 불러오기', color: 'neutral', variant: 'outline', onClick: reloadFromServer },
               { label: '내 내용으로 덮어쓰기', color: 'warning', onClick: () => autosave?.overwrite() },
+            ]"
+          />
+          <UAlert
+            v-if="staleDraft"
+            color="warning"
+            variant="subtle"
+            icon="i-material-symbols-cloud-off-outline"
+            :title="`이 기기에 저장하지 못한 수정이 있습니다 (${draftTime(staleDraft.savedAt)})`"
+            description="그 뒤에 다른 곳에서 이 메모가 바뀌었습니다. 어느 쪽을 남길지 고르세요."
+            class="mb-6"
+            data-testid="memo-draft-alert"
+            :actions="[
+              { label: '보관된 수정 버리기', color: 'neutral', variant: 'outline', onClick: discardStaleDraft },
+              { label: '보관된 수정으로 덮어쓰기', color: 'warning', onClick: keepStaleDraft },
             ]"
           />
           <UAlert

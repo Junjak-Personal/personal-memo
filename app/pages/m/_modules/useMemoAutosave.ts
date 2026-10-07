@@ -6,20 +6,27 @@
  * - 처음 저장하기 전에 왕복 검사: 이 앱이 저장하면 형식이 바뀌는 파일(밖에서 쓴 각주·HTML 블록 등)이면
  *   저장을 멈추고 확인을 받는다 (§7.1).
  * - 「저장됨」은 서버 응답을 받은 뒤에만.
+ * - 오프라인 보호: 보내기 전에 이 기기에 보관하고(memo-drafts), 서버가 받으면 지운다. 닿지 못하면 「기기에 보관」으로 두고
+ *   연결이 돌아오면(online 이벤트, 30초마다) 다시 보낸다.
  *
  * watch 로 입력을 따라가지 않는다 — 화면이 changed() 를 직접 부른다.
  */
 import type { Memo, MemoInput } from '#shared/types/memo'
+import { isNetworkError, type MemoDraft, readDraft, removeDraft, writeDraft } from '~/utils/memo-drafts'
 
 export type SaveState =
   | { status: 'saved' }
   | { status: 'dirty' }
   | { status: 'saving' }
   | { status: 'error'; message: string }
+  /** 서버에 닿지 못했다 — 이 기기에 보관해 두고 연결을 기다린다 */
+  | { status: 'offline' }
   | { status: 'conflict'; version: string }
   | { status: 'format' }
 
 const DELAY_MS = 1000
+/** 오프라인일 때 다시 보내 보는 간격 — online 이벤트를 놓쳐도 이걸로 맞춘다 */
+const OFFLINE_RETRY_MS = 30_000
 
 /**
  * 모양만 다른 차이를 걷어낸다 — 경고는 «뜻이 바뀌는» 차이에만 의미가 있다. 걷어내는 것:
@@ -45,8 +52,8 @@ export function canonicalMarkdown(markdown: string) {
 
 interface Options {
   memo: Memo
-  /** 지금 화면의 제목·본문·날짜 */
-  read: () => MemoInput
+  /** 지금 화면의 제목·본문·날짜·태그 */
+  read: () => Required<MemoInput>
   /** 에디터로 한 번 읽고 다시 쓴 마크다운 — 왕복 검사용 */
   normalize: (markdown: string) => string
   /** 저장 성공 뒤. id 나 제목이 바뀌었으면 화면이 트리·주소를 맞춘다 */
@@ -63,6 +70,7 @@ export function useMemoAutosave(options: Options) {
   let inflight: Promise<boolean> | null = null
   let again = false
   let formatChecked = false
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
 
   const busy = computed(() => state.value.status === 'conflict' || state.value.status === 'format')
 
@@ -106,26 +114,55 @@ export function useMemoAutosave(options: Options) {
 
   async function request(baseVersion: string) {
     state.value = { status: 'saving' }
+    const draft: MemoDraft = { id, baseVersion, input: options.read(), savedAt: new Date().toISOString() }
+    // 보내기 전에 보관한다 — 응답을 기다리는 사이에 앱이 꺼져도 남도록
+    writeDraft(draft)
     try {
       const saved = await $fetch<Memo>(`/api/memos/${encodeURIComponent(id)}`, {
         method: 'PUT',
-        body: { ...options.read(), baseVersion },
+        body: { ...draft.input, baseVersion },
       })
       const previous = last
+      removeDraft(draft.id)
       id = saved.id
       version = saved.version
       last = saved
+      stopRetry()
       state.value = again ? { status: 'dirty' } : { status: 'saved' }
       options.onSaved(saved, previous)
       return true
     } catch (e) {
       const data = apiData(e)
-      state.value =
-        apiStatus(e) === 409 && data.version
-          ? { status: 'conflict', version: data.version }
-          : { status: 'error', message: apiMessage(e, '저장하지 못했습니다') }
+      if (apiStatus(e) === 409 && data.version) {
+        // 사람이 고를 때까지 보관함이 대신 저장하지 않게 표시한다
+        writeDraft({ ...draft, conflict: true })
+        state.value = { status: 'conflict', version: data.version }
+      } else if (isNetworkError(e)) {
+        state.value = { status: 'offline' }
+        waitForConnection()
+      } else {
+        state.value = { status: 'error', message: apiMessage(e, '저장하지 못했습니다') }
+      }
       return false
     }
+  }
+
+  function onOnline() {
+    if (state.value.status === 'offline') void save()
+  }
+
+  /** 연결이 돌아오면 다시 보낸다. online 이벤트를 못 받는 경우를 위해 주기적으로도 해 본다 */
+  function waitForConnection() {
+    window.removeEventListener('online', onOnline)
+    window.addEventListener('online', onOnline, { once: true })
+    if (retryTimer) clearTimeout(retryTimer)
+    retryTimer = setTimeout(onOnline, OFFLINE_RETRY_MS)
+  }
+
+  function stopRetry() {
+    window.removeEventListener('online', onOnline)
+    if (retryTimer) clearTimeout(retryTimer)
+    retryTimer = null
   }
 
   /** 나가기·숨김·이동·삭제 전에 — 고친 게 남아 있으면 지금 저장한다 */
@@ -135,9 +172,10 @@ export function useMemoAutosave(options: Options) {
     return save()
   }
 
-  /** 충돌 — 서버의 내용으로 되돌린다. 화면은 돌려받은 메모로 입력칸을 다시 채운다 */
+  /** 충돌 — 서버의 내용으로 되돌린다. 화면은 돌려받은 메모로 입력칸을 다시 채운다. 보관해 둔 수정은 버린다 */
   async function reload() {
     const fresh = await $fetch<Memo>(`/api/memos/${encodeURIComponent(id)}`)
+    removeDraft(id)
     version = fresh.version
     last = fresh
     state.value = { status: 'saved' }
@@ -159,7 +197,15 @@ export function useMemoAutosave(options: Options) {
     return save()
   }
 
-  onBeforeUnmount(clearTimer)
+  onBeforeUnmount(() => {
+    clearTimer()
+    stopRetry()
+  })
 
-  return { state, changed, save, flush, reload, overwrite, acceptFormat, currentId: () => id }
+  /** 이 기기에 보관된, 아직 서버에 없는 수정 (열 때 되살리기 판단용) */
+  function pendingDraft() {
+    return readDraft(id)
+  }
+
+  return { state, changed, save, flush, reload, overwrite, acceptFormat, pendingDraft, currentId: () => id }
 }

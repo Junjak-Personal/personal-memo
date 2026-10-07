@@ -19,6 +19,8 @@ const view = computed(() => {
       return { icon: 'i-material-symbols-progress-activity', text: '저장 중…', class: 'text-muted' }
     case 'error':
       return { icon: 'i-material-symbols-cloud-off-outline', text: '저장 실패', class: 'text-error' }
+    case 'offline':
+      return { icon: 'i-material-symbols-cloud-off-outline', text: '기기에 보관', class: 'text-warning' }
     case 'conflict':
       return { icon: 'i-material-symbols-warning-outline', text: '충돌', class: 'text-warning' }
     case 'format':
@@ -27,7 +29,11 @@ const view = computed(() => {
 })
 
 const failed = computed(() => props.state.status === 'error')
-const message = computed(() => (props.state.status === 'error' ? `${props.state.message} — 눌러서 다시 시도` : undefined))
+const message = computed(() => {
+  if (props.state.status === 'error') return `${props.state.message} — 눌러서 다시 시도`
+  if (props.state.status === 'offline') return '서버에 닿지 않아 이 기기에 보관했습니다. 연결되면 저장합니다'
+  return undefined
+})
 </script>
 
 <template>

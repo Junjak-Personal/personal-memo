@@ -1,0 +1,88 @@
+/**
+ * 메모 파일 = frontmatter(YAML) + 본문 (설계문서 §3.1).
+ *
+ * 다른 도구(vim, Obsidian)도 이 파일을 고친다. 그래서:
+ * - 앱이 모르는 키(`tags`, `aliases` …)와 주석은 지우지 않는다 — YAML 을 값이 아니라 문서(Document)로 다룬다.
+ * - frontmatter 를 읽지 못하면 그 파일은 «앱에서 저장하지 않는다». 고쳐 쓰다가 남의 내용을 날리는 것보다
+ *   저장을 거부하는 편이 낫다.
+ */
+import { createHash } from 'node:crypto'
+import { Document, isMap, parseDocument } from 'yaml'
+
+export interface MemoFields {
+  id: string | null
+  title: string | null
+  created: string | null
+  updated: string | null
+  date: string | null
+  dateEnd: string | null
+}
+
+export type ParsedMemo =
+  | { ok: true; doc: Document | null; fields: MemoFields; body: string }
+  | { ok: false; body: string }
+
+const EMPTY: MemoFields = { id: null, title: null, created: null, updated: null, date: null, dateEnd: null }
+
+/** 맨 앞의 `---` … `---` 블록. 비어 있는 frontmatter(`---\n---`)도 받는다 */
+const FRONTMATTER = /^---\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/
+
+/** YAML 이 숫자·불리언으로 읽은 제목(`title: 123`)도 문자열로 되돌린다 */
+function text(value: unknown) {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return null
+}
+
+export function parseMemo(raw: string): ParsedMemo {
+  const match = FRONTMATTER.exec(raw)
+  if (!match) return { ok: true, doc: null, fields: { ...EMPTY }, body: raw }
+
+  // 본문 앞의 빈 줄 하나는 frontmatter 와의 구분이다 — 쓸 때 다시 붙인다
+  const body = raw.slice(match[0].length).replace(/^\r?\n/, '')
+  const yamlText = match[1] ?? ''
+  const doc = parseDocument(yamlText)
+  if (doc.errors.length || (doc.contents !== null && !isMap(doc.contents))) return { ok: false, body }
+
+  return {
+    ok: true,
+    doc,
+    fields: {
+      id: text(doc.get('id')),
+      title: text(doc.get('title')),
+      created: text(doc.get('created')),
+      updated: text(doc.get('updated')),
+      date: text(doc.get('date')),
+      dateEnd: text(doc.get('date_end')),
+    },
+    body,
+  }
+}
+
+/**
+ * 아는 키만 고치고 나머지는 그대로 둔 채 파일 내용을 만든다.
+ * 이미 있는 키는 제자리에서 바뀌고(순서 유지), 없던 키는 아래 순서로 뒤에 붙는다.
+ */
+export function serializeMemo(doc: Document | null, fields: MemoFields, body: string) {
+  const target = doc ?? new Document({})
+  const pairs: [string, string | null][] = [
+    ['id', fields.id],
+    ['title', fields.title],
+    ['created', fields.created],
+    ['updated', fields.updated],
+    ['date', fields.date],
+    ['date_end', fields.dateEnd],
+  ]
+  for (const [key, value] of pairs) {
+    if (value === null) target.delete(key)
+    else target.set(key, value)
+  }
+  const yaml = target.toString({ lineWidth: 0 })
+  const content = body.endsWith('\n') ? body : `${body}\n`
+  return `---\n${yaml}---\n\n${content}`
+}
+
+/** 파일 내용 해시 — 저장 충돌 판정용 (설계문서 §3.3) */
+export function versionOf(raw: string) {
+  return createHash('sha256').update(raw).digest('hex').slice(0, 32)
+}

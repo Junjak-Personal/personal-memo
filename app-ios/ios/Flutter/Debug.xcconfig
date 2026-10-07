@@ -1,0 +1,10 @@
+#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
+#include "Generated.xcconfig"
+
+// 앱의 정체. dev 빌드가 xcodebuild 인자로 덮어써서 운영용과 나란히 설치된다 (tool/dev-install.sh)
+//
+// 🔴 PRODUCT_BUNDLE_IDENTIFIER 를 직접 덮어쓰면 안 된다. 명령줄 빌드 설정은 «모든 타깃»에 걸려
+//    플러그인 프레임워크까지 같은 id 를 갖게 되고 설치가 DuplicateIdentifier 로 거부된다 (pic-blog 에서 실측).
+//    그래서 이 전용 변수를 두고 Runner 타깃만 참조하게 한다.
+APP_BUNDLE_ID = win.jundevlog.memo
+APP_DISPLAY_NAME = memo

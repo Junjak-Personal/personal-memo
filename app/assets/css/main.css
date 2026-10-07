@@ -1,0 +1,76 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+@theme static {
+  /* Pretendard 는 nuxt.config 의 CDN 링크로 들어온다 (pic-blog 와 같음) */
+  --font-sans: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  /* 남색 — Tailwind 에 없는 색이라 직접 둔다. app.config 의 primary: 'navy' 가 이 이름을 쓴다 */
+  --color-navy-50: #eef2fa;
+  --color-navy-100: #d9e1f2;
+  --color-navy-200: #b7c6e6;
+  --color-navy-300: #8ba3d4;
+  --color-navy-400: #5f7fc0;
+  --color-navy-500: #3d5fa8;
+  --color-navy-600: #2e4a8a;
+  --color-navy-700: #253c70;
+  --color-navy-800: #1f325b;
+  --color-navy-900: #1b2a4b;
+  --color-navy-950: #111a30;
+
+  /* 폴더를 펼칠 때 하위 목록이 위에서 살짝 내려오며 나타난다 (사이드바 트리) */
+  --animate-tree-open: tree-open 160ms ease-out;
+
+  @keyframes tree-open {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+}
+
+/* 화면 사이 이동 — 짧은 페이드 (nuxt.config 의 app.pageTransition) */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 120ms ease;
+}
+
+.page-enter-from,
+.page-leave-to {
+  opacity: 0;
+}
+
+/* 시스템의 「동작 줄이기」 를 켰으면 애니메이션을 끈다 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * Nuxt UI 기본은 밝은 테마에서 500, 어두운 테마에서 400 을 강조색으로 쓴다.
+ * 500 은 남색보다 파랑에 가까워 밝은 테마는 700, 어두운 테마는 300 으로 내린다.
+ */
+:root {
+  --ui-primary: var(--ui-color-primary-700);
+}
+
+/* 다크 바탕은 기본(neutral-900)보다 한 단계 진하게 — 2026-10-07 사용자가 둘을 비교해 보고 고름 */
+.dark {
+  --ui-primary: var(--ui-color-primary-300);
+  --ui-bg: var(--ui-color-neutral-950);
+}
+
+/*
+ * 두 번 탭해서 확대하는 동작을 끈다 (앱처럼 쓰기 위한 요청, pic-blog 와 같음).
+ * touch-action 은 «가장 가까운 스크롤 상자까지»만 조상의 값을 합치므로 body 하나로는 패널 안쪽에 닿지 않는다 —
+ * 모든 요소에 건다. :where 로 우선순위를 0 으로 두어 컴포넌트가 따로 건 값이 이긴다.
+ * 두 손가락 확대는 viewport(nuxt.config)와 plugins/no-pinch-zoom.client.ts 가 막는다.
+ */
+:where(*) {
+  touch-action: manipulation;
+}

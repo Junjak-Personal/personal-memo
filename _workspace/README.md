@@ -1,0 +1,14 @@
+# _workspace/ — throwaway run output
+
+Gitignored except this file. Everything here is disposable; delete freely.
+**Before writing here, read this file** — it says which context folder a file belongs in.
+**After adding a new context folder, add a row here** so the next session reuses it.
+
+| Folder | What goes in it |
+|--------|-----------------|
+| `e2e/` | Playwright/E2E run output — `<YYYY-MM-DD>-<test-name>/{screenshots,artifacts,report}/`, run.log |
+| `spike/` | 0단계 스파이크 실행 기록 (S1 로그 등) |
+| `ui/` | 화면 확인 스크린샷 — `NN-<화면>-<폭>[-dark].png` |
+
+Rules: one folder per purpose, named for that purpose. A bare file at `_workspace/` root
+or at the repo root is a defect. Vendor state paths win (Playwright auth → `playwright/.auth/`).

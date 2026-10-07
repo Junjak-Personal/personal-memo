@@ -1,0 +1,472 @@
+<script setup lang="ts">
+/**
+ * 메모 한 장 — 위 툴바 + 가운데 문서 (설계문서 §7.4, 에디터 템플릿과 같은 배치).
+ * 에디터 기능은 nuxt-ui-templates/editor 에 있는 것 전부에서 멘션·AI·공동 편집을 뺀 것이다 (§7.3.1).
+ * 저장은 useMemoAutosave, 폰의 네이티브 툴바는 useNativeBridge 가 맡는다.
+ */
+import type { Editor as CoreEditor } from '@tiptap/core'
+import { TaskItem, TaskList } from '@tiptap/extension-list'
+import { TableKit } from '@tiptap/extension-table'
+import type { EditorState } from '@tiptap/pm/state'
+import { CellSelection } from '@tiptap/pm/tables'
+import type { EditorView } from '@tiptap/pm/view'
+import type { Editor, JSONContent } from '@tiptap/vue-3'
+import { CodeBlockShiki } from 'tiptap-extension-code-block-shiki'
+import type { Memo } from '#shared/types/memo'
+import { toDisplaySrc, toStoredSrc } from '#shared/utils/asset-path'
+import { HtmlUnderline, MemoImage } from '~/utils/editor-extensions'
+import { emojiItems, MemoEmoji } from './editor/emoji'
+import { ImageUpload } from './editor/ImageUploadExtension'
+import {
+  bubbleToolbarItems,
+  customHandlers,
+  dragHandleItems,
+  imageToolbarItems,
+  suggestionItems,
+  tableToolbarItems,
+  toolbarItems,
+} from './editor/items'
+import LinkDialog from './editor/LinkDialog.vue'
+import LinkPopover from './editor/LinkPopover.vue'
+import MemoActions from './MemoActions.vue'
+import MemoCalendarSyncBadge from './MemoCalendarSyncBadge.vue'
+import MemoDatePicker from './MemoDatePicker.vue'
+import MemoSaveStatus from './MemoSaveStatus.vue'
+import { canonicalMarkdown, type SaveState, useMemoAutosave } from './useMemoAutosave'
+import { useNativeBridge } from './useNativeBridge'
+
+interface MenuContext {
+  // 말풍선 툴바의 shouldShow 는 vue-3 Editor 가 아니라 core Editor 를 넘긴다
+  editor: CoreEditor
+  view: EditorView
+  state: EditorState
+}
+
+const props = defineProps<{ memoId: string }>()
+
+const emit = defineEmits<{ renamed: [from: string, to: string] }>()
+
+const toast = useToast()
+const { refresh: refreshTree } = useMemoTree()
+const activeMemo = useActiveMemo()
+const calendarSync = useCalendarSyncStatus()
+
+const { data: memo, error } = await useAsyncData(
+  `memo-${props.memoId}`,
+  () => $fetch<Memo>(`/api/memos/${encodeURIComponent(props.memoId)}`),
+  // 열 때마다 서버에서 새로 받는다 — 옮기거나 밖에서 고친 뒤 다시 세울 때 옛 내용이 나오면 안 된다
+  { getCachedData: () => undefined },
+)
+
+// 타입을 적는다 — 템플릿이 autosave 를 쓰고 autosave 가 editorRef 를 써서 추론이 순환한다
+const editorRef = useTemplateRef<{ editor?: Editor }>('editorRef')
+/** 입력칸의 제목 */
+const title = ref(memo.value?.title ?? '')
+/**
+ * 저장에 싣는 제목. 제목이 바뀌면 파일 이름도 바뀌므로, 치는 도중의 「회」「회의」 마다 파일 이름이 바뀌지 않게
+ * 입력이 5초 멈추거나 제목 칸을 벗어날 때만 확정한다 (본문은 1초 — 2026-10-07 사용자 요청).
+ */
+const savedTitle = ref(memo.value?.title ?? '')
+const content = ref(memo.value?.content ?? '')
+const date = ref(memo.value?.date ?? null)
+const dateEnd = ref(memo.value?.dateEnd ?? null)
+const currentFolder = ref(memo.value?.folder ?? '')
+const selectedNode = ref<{ node: JSONContent | null; pos: number }>()
+const linkOpen = ref(false)
+
+const folder = memo.value?.folder ?? ''
+/** 터치 화면에서는 글자 말풍선 툴바를 끈다 — iOS 복사/붙여넣기 메뉴와 같은 자리에 겹친다 (설계문서 §7.3) */
+const coarsePointer = window.matchMedia('(pointer: coarse)').matches
+const autosave = memo.value
+  ? useMemoAutosave({
+      memo: memo.value,
+      read: () => ({ title: savedTitle.value, content: content.value, date: date.value, dateEnd: dateEnd.value }),
+      normalize: (markdown) => {
+        const manager = editorRef.value?.editor?.markdown
+        return manager ? manager.serialize(manager.parse(markdown)) : markdown
+      },
+      onSaved,
+    })
+  : null
+const bridge = useNativeBridge(() => editorRef.value?.editor, () => (linkOpen.value = true))
+/** 제목을 확정하지 않은 채면 「저장됨」 대신 「고치는 중」 */
+const saveState = computed<SaveState>(() => {
+  const state = autosave?.state.value ?? { status: 'saved' }
+  return state.status === 'saved' && title.value !== savedTitle.value ? { status: 'dirty' } : state
+})
+if (autosave) activeMemo.register({ id: autosave.currentId, folder: () => currentFolder.value, flush: flushAll })
+const extensions = [
+  HtmlUnderline,
+  TaskList,
+  TaskItem.configure({
+    nested: true,
+    a11y: { checkboxLabel: (node, checked) => `${checked ? '완료' : '할 일'}: ${node.textContent || '빈 항목'}` },
+  }),
+  TableKit,
+  CodeBlockShiki.configure({
+    defaultTheme: 'material-theme',
+    themes: { light: 'material-theme-lighter', dark: 'material-theme-palenight' },
+  }),
+  MemoEmoji,
+  ImageUpload.configure({ upload: uploadImage }),
+  MemoImage.configure({
+    toDisplay: (src: string) => toDisplaySrc(folder, src),
+    toStored: (src: string) => toStoredSrc(folder, src),
+  }),
+]
+const editorProps = {
+  attributes: { autocorrect: 'on', autocapitalize: 'off' },
+  handlePaste: (_view: EditorView, event: ClipboardEvent) => insertImageFiles([...(event.clipboardData?.files ?? [])]),
+  handleDrop: (view: EditorView, event: DragEvent, _slice: unknown, moved: boolean) =>
+    !moved && insertImageFiles([...(event.dataTransfer?.files ?? [])], view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos),
+}
+
+onMounted(() => {
+  document.addEventListener('visibilitychange', onVisibility)
+  attachBridge()
+  void calendarSync.refresh()
+})
+
+onBeforeUnmount(() => {
+  if (titleTimer) clearTimeout(titleTimer)
+  document.removeEventListener('visibilitychange', onVisibility)
+})
+
+/** 다른 화면으로 가기 전에 고친 것을 저장한다. 못 하면 가지 않는다 — 조용히 버리지 않는다 */
+onBeforeRouteLeave(async (to) => {
+  if (!autosave || (await flushAll())) return true
+  toast.add({
+    color: 'error',
+    title: '저장하지 못해서 이동하지 않았습니다',
+    actions: [
+      { label: '다시 시도', color: 'neutral', variant: 'outline', onClick: () => void autosave.save() },
+      { label: '저장 안 하고 이동', color: 'error', variant: 'outline', onClick: () => void leaveWithoutSaving(to.fullPath) },
+    ],
+  })
+  return false
+})
+
+let discarding = false
+
+/** UEditor 가 editor 를 만든 뒤에 네이티브 툴바를 붙인다. 몇 프레임 늦을 수 있어 기다린다 */
+function attachBridge(tries = 30) {
+  const editor = editorRef.value?.editor
+  if (editor) bridge.attach(editor)
+  else if (tries > 0) requestAnimationFrame(() => attachBridge(tries - 1))
+}
+
+async function leaveWithoutSaving(path: string) {
+  discarding = true
+  await navigateTo(path)
+}
+
+function onVisibility() {
+  // 앱이 뒤로 가거나 탭을 바꾸면 기다리지 않고 저장한다
+  if (document.visibilityState === 'hidden' && !discarding) void flushAll()
+}
+
+function onSaved(saved: Memo, previous: Memo) {
+  currentFolder.value = saved.folder
+  if (saved.title !== previous.title || saved.path !== previous.path || saved.date !== previous.date) void refreshTree()
+  // 캘린더에 보이는 것(제목·날짜)이 바뀌었으면 서버의 대조가 끝난 뒤 반영 실패 여부를 다시 본다
+  if (saved.title !== previous.title || saved.date !== previous.date || saved.dateEnd !== previous.dateEnd) calendarSync.recheckSoon()
+  if (saved.id !== previous.id) emit('renamed', previous.id, saved.id)
+}
+
+let baseline: string | null = null
+
+/**
+ * 에디터는 처음 뜰 때도 변경을 한 번 알린다(문서 끝에 빈 줄을 붙이는 등). 그건 사람의 수정이 아니다 —
+ * 원본을 에디터로 한 번 정리한 결과와 같으면 저장하지 않는다. 열기만 해도 파일이 바뀌면 안 된다.
+ */
+function onContentChange(value: string) {
+  const editor = editorRef.value?.editor
+  if (baseline === null && editor?.markdown) {
+    baseline = canonicalMarkdown(editor.markdown.serialize(editor.markdown.parse(memo.value?.content ?? '')))
+  }
+  const untouched = canonicalMarkdown(value) === canonicalMarkdown(content.value) || canonicalMarkdown(value) === baseline
+  content.value = value
+  if (!untouched) autosave?.changed()
+}
+
+const TITLE_DELAY_MS = 5000
+let titleTimer: ReturnType<typeof setTimeout> | null = null
+
+function onTitleInput() {
+  if (titleTimer) clearTimeout(titleTimer)
+  titleTimer = setTimeout(commitTitle, TITLE_DELAY_MS)
+}
+
+/** 입력칸의 제목을 저장에 싣는다. 저장(과 파일 이름 변경)은 자동저장이 이어서 한다 */
+function commitTitle() {
+  if (titleTimer) clearTimeout(titleTimer)
+  titleTimer = null
+  if (title.value === savedTitle.value) return
+  savedTitle.value = title.value
+  autosave?.changed()
+}
+
+/** 나가기·숨김·옮기기 전 — 확정 안 된 제목까지 실어서 지금 저장한다 */
+function flushAll() {
+  commitTitle()
+  return autosave ? autosave.flush() : Promise.resolve(true)
+}
+
+/** 제목에서 Enter → 본문 첫 줄로. 한글 조합 중의 Enter 는 글자 확정이라 건드리지 않는다 */
+function onTitleKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.isComposing) return
+  event.preventDefault()
+  editorRef.value?.editor?.commands.focus('start')
+}
+
+function onDateChange(start: string | null, end: string | null) {
+  date.value = start
+  dateEnd.value = end
+  autosave?.changed()
+}
+
+async function reloadFromServer() {
+  if (!autosave) return
+  const fresh = await autosave.reload()
+  title.value = fresh.title
+  savedTitle.value = fresh.title
+  content.value = fresh.content
+  date.value = fresh.date
+  dateEnd.value = fresh.dateEnd
+}
+
+/** 브라우저에서 줄여서 이 메모 폴더의 assets/ 로 올린다. 본문에 넣을 상대경로를 돌려준다 */
+async function uploadImage(file: Blob, name = 'image') {
+  const body = new FormData()
+  body.append('file', await resizeForUpload(file), name)
+  const id = autosave?.currentId() ?? props.memoId
+  const { src } = await $fetch<{ src: string }>(`/api/memos/${encodeURIComponent(id)}/images`, { method: 'POST', body })
+  return src
+}
+
+/** 붙여넣기·끌어 놓기로 들어온 이미지 파일. 이미지가 없으면 false — 원래 동작에 맡긴다 */
+function insertImageFiles(files: File[], at?: number) {
+  const images = files.filter((f) => f.type.startsWith('image/'))
+  const editor = editorRef.value?.editor
+  if (!images.length || !editor) return false
+  void (async () => {
+    for (const file of images) {
+      try {
+        const src = await uploadImage(file, file.name)
+        const chain = editor.chain().focus()
+        ;(at === undefined ? chain.setImage({ src }) : chain.insertContentAt(at, { type: 'image', attrs: { src } })).run()
+      } catch (e) {
+        toast.add({ color: 'error', title: apiMessage(e, `「${file.name}」 을 올리지 못했습니다`) })
+      }
+    }
+  })()
+  return true
+}
+
+/**
+ * 다른 폴더의 이미지를 붙여넣으면 상대경로로 되돌릴 수 없어 화면 주소(/api/files/…)가 남는다.
+ * 그 이미지를 받아 이 메모 폴더에 다시 올리고 src 를 바꾼다 (설계문서 §4 — 이미지는 항상 같은 폴더의 assets/).
+ */
+async function rehomeForeignImages(editor: Editor) {
+  const foreign = new Set<string>()
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === 'image' && typeof node.attrs.src === 'string' && node.attrs.src.startsWith('/api/files/')) foreign.add(node.attrs.src)
+  })
+  for (const src of foreign) {
+    try {
+      const next = await uploadImage(await $fetch<Blob>(src, { responseType: 'blob' }))
+      // 올리는 동안 문서가 바뀌었을 수 있다 — 위치가 아니라 src 로 다시 찾는다
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'image' && node.attrs.src === src) {
+          editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: next }))
+        }
+      })
+    } catch (e) {
+      toast.add({ color: 'error', title: apiMessage(e, '다른 폴더의 이미지를 가져오지 못했습니다') })
+    }
+  }
+}
+
+function onPaste() {
+  const editor = editorRef.value?.editor
+  if (editor) setTimeout(() => rehomeForeignImages(editor))
+}
+
+function onNodeChange(event: { node: JSONContent | null; pos: number }) {
+  selectedNode.value = event
+}
+
+function showTextBubble({ editor, view, state }: MenuContext) {
+  if (coarsePointer) return false
+  if (editor.isActive('imageUpload') || editor.isActive('image') || state.selection instanceof CellSelection) return false
+  return view.hasFocus() && !state.selection.empty
+}
+
+function showImageBubble({ editor, view }: MenuContext) {
+  return editor.isActive('image') && view.hasFocus()
+}
+
+/**
+ * 템플릿은 칸을 여러 개 끌어 골랐을 때(CellSelection)만 띄운다. 표 안에 커서만 있어도 띄운다 —
+ * 행·열을 더하려고 칸을 끌어 고르는 사람은 없다. 글자를 고르면 글자 말풍선이 대신 뜬다.
+ */
+function showTableBubble({ editor, view, state }: MenuContext) {
+  if (!view.hasFocus()) return false
+  return state.selection instanceof CellSelection || (editor.isActive('table') && state.selection.empty)
+}
+</script>
+
+<template>
+  <UDashboardPanel :id="`memo-${memoId}`" :ui="{ body: 'p-0 sm:p-0 gap-0' }">
+    <template #body>
+      <div v-if="error || !memo || !autosave" class="flex h-full flex-col items-center justify-center gap-3 text-center">
+        <UIcon name="i-material-symbols-error-outline" class="size-10 text-error" />
+        <p class="text-muted">{{ apiMessage(error, '메모를 열지 못했습니다') }}</p>
+        <UButton to="/" color="neutral" variant="outline">처음으로</UButton>
+      </div>
+
+      <UEditor
+        v-else
+        ref="editorRef"
+        v-slot="{ editor, handlers }"
+        :model-value="content"
+        content-type="markdown"
+        :starter-kit="{ underline: false, codeBlock: false }"
+        :image="false"
+        :mention="false"
+        :extensions="extensions"
+        :handlers="customHandlers"
+        :editable="!memo.unreadable"
+        :editor-props="editorProps"
+        placeholder="내용을 입력하세요. 「/」 로 블록 넣기"
+        :ui="{ base: 'sm:px-0 pt-6 pb-32 min-h-[50dvh]', content: 'mx-auto w-full max-w-4xl px-4 sm:px-14' }"
+        @update:model-value="onContentChange"
+        @paste="onPaste"
+      >
+        <div class="sticky top-0 z-10 bg-default/85 backdrop-blur">
+          <UDashboardNavbar :ui="{ root: 'border-b-0 lg:border-b', center: 'min-w-0 overflow-x-auto' }">
+            <template #leading>
+              <UDashboardSidebarCollapse />
+            </template>
+
+            <UEditorToolbar :editor="editor" :items="toolbarItems" />
+
+            <template #right>
+              <MemoSaveStatus :state="saveState" @retry="autosave.save()" />
+              <MemoActions :memo-id="autosave.currentId" :title="() => savedTitle" :folder="currentFolder" />
+            </template>
+          </UDashboardNavbar>
+
+          <!-- 좁은 화면의 브라우저(껍데기 밖)에서는 위 줄 가운데가 숨는다 — 툴바를 한 줄 아래로 내린다 -->
+          <div v-if="!bridge.native" class="overflow-x-auto border-b border-default px-2 py-1 lg:hidden">
+            <UEditorToolbar :editor="editor" :items="toolbarItems" />
+          </div>
+        </div>
+
+        <div class="mx-auto w-full max-w-4xl px-4 pt-6 sm:px-14 sm:pt-10">
+          <UAlert
+            v-if="memo.unreadable"
+            color="warning"
+            variant="subtle"
+            icon="i-material-symbols-warning-outline"
+            title="frontmatter 를 읽을 수 없어 읽기 전용으로 엽니다"
+            description="파일을 직접 고친 뒤 다시 여세요."
+            class="mb-6"
+          />
+          <UAlert
+            v-if="autosave.state.value.status === 'conflict'"
+            color="warning"
+            variant="subtle"
+            icon="i-material-symbols-warning-outline"
+            title="다른 곳에서 먼저 수정했습니다"
+            description="다른 기기나 파일 편집기에서 이 메모를 바꿨습니다. 어느 쪽을 남길지 고르세요."
+            class="mb-6"
+            data-testid="memo-conflict-alert"
+            :actions="[
+              { label: '다시 불러오기', color: 'neutral', variant: 'outline', onClick: reloadFromServer },
+              { label: '내 내용으로 덮어쓰기', color: 'warning', onClick: () => autosave?.overwrite() },
+            ]"
+          />
+          <UAlert
+            v-if="autosave.state.value.status === 'format'"
+            color="warning"
+            variant="subtle"
+            icon="i-material-symbols-warning-outline"
+            title="앱에서 저장하면 이 파일의 형식이 바뀝니다"
+            description="다른 도구로 쓴 문법 중 이 앱이 모르는 것(각주, HTML 블록 등)은 저장할 때 사라지거나 글자로 바뀔 수 있습니다."
+            class="mb-6"
+            data-testid="memo-format-alert"
+            :actions="[{ label: '알겠습니다, 저장', color: 'warning', onClick: () => autosave?.acceptFormat() }]"
+          />
+          <input
+            v-model="title"
+            placeholder="제목"
+            class="w-full bg-transparent text-3xl font-bold outline-none placeholder:text-dimmed"
+            :readonly="memo.unreadable"
+            enterkeyhint="next"
+            data-testid="memo-title-input"
+            @input="onTitleInput"
+            @blur="commitTitle"
+            @keydown="onTitleKeydown"
+          >
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <MemoDatePicker :date="date" :date-end="dateEnd" :disabled="memo.unreadable" @change="onDateChange" />
+            <MemoCalendarSyncBadge :memo-id="autosave.currentId()" :has-date="!!date" />
+            <span class="text-xs text-dimmed">{{ currentFolder || '최상위' }}</span>
+          </div>
+        </div>
+
+        <UEditorToolbar :editor="editor" :items="bubbleToolbarItems" layout="bubble" :should-show="showTextBubble">
+          <template #link>
+            <LinkPopover :editor="editor" />
+          </template>
+        </UEditorToolbar>
+
+        <UEditorToolbar :editor="editor" :items="imageToolbarItems(editor)" layout="bubble" :should-show="showImageBubble" />
+
+        <UEditorToolbar :editor="editor" :items="tableToolbarItems(editor)" layout="bubble" :should-show="showTableBubble" />
+
+        <UEditorEmojiMenu :editor="editor" :items="emojiItems" />
+
+        <UEditorSuggestionMenu :editor="editor" :items="suggestionItems" :filter-fields="['label', 'keywords']" />
+
+        <UEditorDragHandle v-slot="{ ui, onClick }" :editor="editor" @node-change="onNodeChange">
+          <UButton
+            icon="i-material-symbols-add"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            aria-label="블록 넣기"
+            :class="ui.handle()"
+            @click="(e: MouseEvent) => {
+              e.stopPropagation()
+              const node = onClick()
+              handlers.suggestion?.execute(editor, { pos: node?.pos }).run()
+            }"
+          />
+          <UDropdownMenu
+            v-slot="{ open }"
+            :modal="false"
+            :items="dragHandleItems(editor, selectedNode)"
+            :content="{ side: 'left' }"
+            :ui="{ content: 'w-48', label: 'text-xs' }"
+            @update:open="editor.chain().setMeta('lockDragHandle', $event).run()"
+          >
+            <UButton
+              color="neutral"
+              variant="ghost"
+              active-variant="soft"
+              size="sm"
+              icon="i-material-symbols-drag-indicator"
+              aria-label="블록 메뉴 · 끌어서 옮기기"
+              :active="open"
+              :class="ui.handle()"
+            />
+          </UDropdownMenu>
+        </UEditorDragHandle>
+
+        <LinkDialog v-model:open="linkOpen" :editor="editor" />
+      </UEditor>
+    </template>
+  </UDashboardPanel>
+</template>

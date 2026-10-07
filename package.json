@@ -1,0 +1,44 @@
+{
+  "name": "personal-memo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.6.0",
+  "scripts": {
+    "dev": "nuxt dev --dotenv .env.local",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@internationalized/date": "^3.12.4",
+    "@nuxt/ui": "^4.11.3",
+    "@tiptap/core": "3.31.4",
+    "@tiptap/extension-emoji": "3.31.4",
+    "@tiptap/extension-image": "3.31.4",
+    "@tiptap/extension-list": "3.31.4",
+    "@tiptap/extension-table": "3.31.4",
+    "@tiptap/extension-underline": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/vue-3": "3.31.4",
+    "nuxt": "^4.6.0",
+    "nuxt-auth-utils": "0.5.30",
+    "reka-ui": "2.10.5",
+    "shiki": "4.5.0",
+    "tailwindcss": "^4.3.3",
+    "tiptap-extension-code-block-shiki": "1.2.0",
+    "vue": "^3.5.43",
+    "vue-router": "^5.3.1",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@adonisjs/hash": "9.1.1",
+    "@iconify-json/lucide": "^1.2.140",
+    "@iconify-json/material-symbols": "^1.2.94",
+    "@types/node": "^26.6.4",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3",
+    "vue-tsc": "^3.3.12"
+  }
+}

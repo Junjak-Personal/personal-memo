@@ -1,0 +1,21 @@
+node_modules
+.nuxt
+.output
+.data
+dist
+data/
+.DS_Store
+*.log
+.playwright-mcp
+
+# 환경변수 — .env.example 만 추적한다 (순서 중요: 마지막 매치가 이긴다)
+.env
+.env.*
+!.env.example
+
+# 작업 부산물. 배치 규칙인 README.md 만 추적한다
+_workspace/*
+!_workspace/README.md
+
+# 에이전트 세션별 런타임 상태
+.claude/session-state/

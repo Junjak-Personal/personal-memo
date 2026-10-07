@@ -42,9 +42,12 @@ ssh junserver 'systemctl list-timers memo-backup.timer --no-pager'
 mkdir -p ~/memo-backups
 cp ops/win.jun-devlog.memo.offsite-pull.plist ~/Library/LaunchAgents/
 launchctl load  ~/Library/LaunchAgents/win.jun-devlog.memo.offsite-pull.plist
-launchctl start win.jun-devlog.memo.offsite-pull     # 즉시 1회 실행해 검증 (박스에 백업이 하나는 있어야 한다)
+launchctl kickstart gui/$(id -u)/win.jun-devlog.memo.offsite-pull   # 즉시 1회 실행해 검증 (박스에 백업이 하나는 있어야 한다)
 cat ~/memo-backups/offsite-pull.log
 ```
+
+`load` 가 「Load failed: 5: Input/output error」 를 띄워도 등록됐을 수 있다 (2026-10-07, macOS 27 에서 실제로 그랬다).
+`launchctl print gui/$(id -u)/win.jun-devlog.memo.offsite-pull` 에 나오면 등록된 것이다.
 
 ⚠ plist 의 경로는 이 저장소의 체크아웃 위치(`~/develop/personal/personal-memo`)에 묶여 있다. 옮기면 같이 고친다.
 

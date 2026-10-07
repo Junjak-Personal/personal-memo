@@ -20,7 +20,7 @@ const { creating, createMemo } = useCreateMemo()
 
       <template #body>
         <div class="flex h-full flex-col items-center justify-center gap-4 text-center">
-          <UIcon name="i-material-symbols-edit-note-outline" class="size-12 text-dimmed" />
+          <img src="/memo-logo.png" alt="" aria-hidden="true" width="80" height="80" class="size-20 object-contain" />
           <p class="text-muted">
             <span class="hidden lg:inline">왼쪽 목록에서 메모를 고르거나 새로 만드세요</span>
             <span class="lg:hidden">≡ 를 눌러 목록을 열거나 새로 만드세요</span>

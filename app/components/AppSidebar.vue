@@ -211,8 +211,8 @@ async function logout() {
   >
     <template #header>
       <div class="flex w-full items-center justify-between gap-2">
-        <NuxtLink to="/" class="flex items-center gap-1.5 font-semibold">
-          <UIcon name="i-material-symbols-edit-note-outline" class="size-5 text-primary" />
+        <NuxtLink to="/" class="flex items-center gap-1.5 font-semibold" data-testid="sidebar-home-link">
+          <img src="/memo-logo.png" alt="" aria-hidden="true" width="28" height="28" class="size-7 object-contain" />
           memo
         </NuxtLink>
         <div class="flex items-center">

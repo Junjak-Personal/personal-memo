@@ -13,10 +13,10 @@ import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 /// 잡고, 버튼은 명령만 웹으로 보낸다 — 서식 로직은 웹에만 있다.
 const kSite = String.fromEnvironment(
   'SITE',
-  defaultValue: 'http://localhost:4700',
+  defaultValue: 'https://memo.jun-devlog.win',
 );
 
-/// 운영 주소가 정해지면 defaultValue 를 바꾼다 (설계문서 §13 미정). 지금은 dev-install.sh 가 SITE 를 넘긴다.
+/// 기본값은 운영 주소(설계문서 §13). 개발용은 dev-install.sh 가 맥의 dev 서버 주소를 SITE 로 넘긴다.
 
 /// 껍데기의 색 — 웹(Nuxt UI, neutral)과 같은 값. 시스템 다크·라이트를 따른다.
 /// 웹뷰 밖(상태바 영역, 키보드 위 툴바, 연결 실패 화면)이 웹과 다른 색이면 띠처럼 보인다.

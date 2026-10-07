@@ -28,7 +28,7 @@ async function submit() {
     <UCard class="w-full max-w-sm">
       <form class="space-y-5" @submit.prevent="submit">
         <div class="flex items-center gap-2">
-          <UIcon name="i-material-symbols-edit-note-outline" class="size-6 text-primary" />
+          <img src="/memo-logo.png" alt="" aria-hidden="true" width="40" height="40" class="size-10 object-contain" />
           <h1 class="text-lg font-semibold">memo</h1>
         </div>
         <UFormField label="비밀번호" :error="error ?? undefined">

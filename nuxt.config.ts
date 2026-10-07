@@ -36,6 +36,8 @@ export default defineNuxtConfig({
       title: 'memo',
       htmlAttrs: { lang: 'ko' },
       link: [
+        { rel: 'icon', type: 'image/png', sizes: '64x64', href: '/favicon.png' },
+        { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
         { rel: 'preconnect', href: 'https://cdn.jsdelivr.net', crossorigin: '' },
         {
           rel: 'stylesheet',

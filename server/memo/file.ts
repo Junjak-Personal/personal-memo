@@ -2,12 +2,14 @@
  * 메모 파일 = frontmatter(YAML) + 본문 (설계문서 §3.1).
  *
  * 다른 도구(vim, Obsidian)도 이 파일을 고친다. 그래서:
- * - 앱이 모르는 키(`tags`, `aliases` …)와 주석은 지우지 않는다 — YAML 을 값이 아니라 문서(Document)로 다룬다.
+ * - 앱이 모르는 키(`aliases` …)와 주석은 지우지 않는다 — YAML 을 값이 아니라 문서(Document)로 다룬다.
+ * - `tags` 는 앱도 쓴다. 바뀌었을 때만 고쳐 쓴다 — 밖에서 쓴 모양(`tags: a, b`, 블록 목록)은 그대로 남는다.
  * - frontmatter 를 읽지 못하면 그 파일은 «앱에서 저장하지 않는다». 고쳐 쓰다가 남의 내용을 날리는 것보다
  *   저장을 거부하는 편이 낫다.
  */
 import { createHash } from 'node:crypto'
-import { Document, isMap, parseDocument } from 'yaml'
+import { Document, isMap, isSeq, parseDocument } from 'yaml'
+import { cleanTags, sameTags } from '../../shared/utils/tags'
 
 export interface MemoFields {
   id: string | null
@@ -16,13 +18,15 @@ export interface MemoFields {
   updated: string | null
   date: string | null
   dateEnd: string | null
+  /** 없으면 빈 배열 */
+  tags: string[]
 }
 
 export type ParsedMemo =
   | { ok: true; doc: Document | null; fields: MemoFields; body: string }
   | { ok: false; body: string }
 
-const EMPTY: MemoFields = { id: null, title: null, created: null, updated: null, date: null, dateEnd: null }
+const EMPTY: MemoFields = { id: null, title: null, created: null, updated: null, date: null, dateEnd: null, tags: [] }
 
 /** 맨 앞의 `---` … `---` 블록. 비어 있는 frontmatter(`---\n---`)도 받는다 */
 const FRONTMATTER = /^---\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/
@@ -32,6 +36,17 @@ function text(value: unknown) {
   if (typeof value === 'string') return value
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
   return null
+}
+
+/**
+ * `tags: [a, b]` · 블록 목록 · `tags: a, b`(문자열) 모두 받는다. 밖에서 쓴 파일이라 너그럽게 읽는다.
+ * YAML 이 컬렉션은 노드로 돌려주므로 값으로 바꿔서 본다.
+ */
+function tagsOf(value: unknown) {
+  const raw = isSeq(value) ? value.toJSON() : value
+  if (Array.isArray(raw)) return cleanTags(raw.flatMap((v) => text(v) ?? []))
+  if (typeof raw === 'string') return cleanTags(raw.split(/[,\s]+/))
+  return []
 }
 
 export function parseMemo(raw: string): ParsedMemo {
@@ -54,6 +69,7 @@ export function parseMemo(raw: string): ParsedMemo {
       updated: text(doc.get('updated')),
       date: text(doc.get('date')),
       dateEnd: text(doc.get('date_end')),
+      tags: tagsOf(doc.get('tags')),
     },
     body,
   }
@@ -77,7 +93,13 @@ export function serializeMemo(doc: Document | null, fields: MemoFields, body: st
     if (value === null) target.delete(key)
     else target.set(key, value)
   }
-  const yaml = target.toString({ lineWidth: 0 })
+  // 태그는 바뀌었을 때만 쓴다. 새로 쓸 때는 한 줄 목록(`tags: [업무, 회의]`)
+  if (!sameTags(tagsOf(target.get('tags')), fields.tags)) {
+    if (fields.tags.length) target.set('tags', target.createNode(fields.tags, { flow: true }))
+    else target.delete('tags')
+  }
+  // 한 줄 목록은 손으로 쓰는 모양(`[a, b]`)으로 — 기본값은 `[ a, b ]` 라 저장할 때마다 사람이 쓴 목록까지 바뀐다
+  const yaml = target.toString({ lineWidth: 0, flowCollectionPadding: false })
   const content = body.endsWith('\n') ? body : `${body}\n`
   return `---\n${yaml}---\n\n${content}`
 }

@@ -93,7 +93,7 @@ describe('생성·수정', () => {
     await store.update(memo.id, { ...input('외부', '바뀐 본문'), baseVersion: memo.version })
     const raw = await readFile(memos('외부.md'), 'utf8')
     expect(raw).toContain('# 주석')
-    expect(raw).toContain('tags: [ a, b ]')
+    expect(raw).toContain('tags: [a, b]') // 사람이 쓴 모양 그대로
     expect(raw).toContain('- 별칭')
     expect(raw).toContain('바뀐 본문')
   })
@@ -381,6 +381,27 @@ describe('검색·캘린더', () => {
     const only = await store.create({ ...input('하나', '', { date: '2026-10-10' }), folder: '' })
     await store.remove(only.id)
     expect(await store.calendarSnapshot()).toEqual({ total: 1, memos: [] })
+  })
+
+  it('태그를 저장하고, 수정에 태그가 없으면 파일의 태그를 그대로 둔다', async () => {
+    const memo = await store.create({ ...input('태그'), tags: ['업무', '#회의'], folder: '' })
+    expect(memo.tags).toEqual(['업무', '회의'])
+    const kept = await store.update(memo.id, { ...input('태그', '본문만 고침'), baseVersion: memo.version })
+    expect(kept.tags).toEqual(['업무', '회의'])
+    const cleared = await store.update(memo.id, { ...input('태그'), tags: [], baseVersion: kept.version })
+    expect(cleared.tags).toEqual([])
+    expect(await readFile(memos('태그.md'), 'utf8')).not.toContain('tags')
+  })
+
+  it('#태그 로 거르고, 글자와 같이 쓰면 둘 다 맞는 것만', async () => {
+    await store.create({ ...input('회의록', '분기 계획'), tags: ['업무'], folder: '' })
+    await store.create({ ...input('장보기', '회의 끝나고 장보기'), tags: ['개인'], folder: '' })
+    await store.create({ ...input('Plan', '계획'), tags: ['Work', '업무'], folder: '' })
+    expect((await store.search('#업무')).map((h) => h.title).sort()).toEqual(['Plan', '회의록'])
+    expect((await store.search('#work')).map((h) => h.title)).toEqual(['Plan'])
+    expect((await store.search('#업무 분기')).map((h) => h.title)).toEqual(['회의록'])
+    expect((await store.search('#개인 #업무')).map((h) => h.title)).toEqual([])
+    expect((await store.search('#업무'))[0]!.tags.length).toBeGreaterThan(0)
   })
 
   it('끝 날짜가 시작과 같거나 잘못된 frontmatter 날짜는 무시한다', async () => {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * 왼쪽 사이드바 — 검색, 폴더·메모 트리, 캘린더·휴지통 (설계문서 §7.4).
+ * 왼쪽 사이드바 — 검색, 폴더·메모 트리, 태그, 캘린더·휴지통 (설계문서 §7.4).
+ * 태그를 누르면 `#태그` 로 검색한다 — 태그 거르기와 글자 검색이 한 검색창을 쓴다.
  * PC 에서는 접을 수 있고, 모바일에서는 ≡ 를 누르면 왼쪽에서 전체 화면으로 밀려 들어온다(slideover, 폭 제한 없음).
  * (처음엔 mode="modal" 이었는데 Nuxt UI 가 전체 화면 modal 의 애니메이션을 꺼 둬서 뚝 나타났다.)
  * PC 에서는 메모·폴더를 끌어 다른 폴더나 최상위로 옮긴다 (useTreeDragDrop). 폰은 메뉴로 옮긴다.
@@ -31,6 +32,12 @@ const view = queue.view
 const currentFolder = computed(() => view.value?.memos.find((m) => m.id === currentId.value)?.folder ?? '')
 const items = computed(() => (view.value ? toItems(view.value.folders, view.value.memos, '') : []))
 const selected = computed(() => findItem(items.value, currentId.value))
+/** 태그별 메모 수 — 많은 것부터 */
+const tagCounts = computed(() => {
+  const counts = new Map<string, number>()
+  for (const memo of view.value?.memos ?? []) for (const tag of memo.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko'))
+})
 
 /** 터치 화면에서는 끌기를 켜지 않는다 — 스크롤과 다투고 iOS 웹뷰에서 믿을 수 없다 */
 const coarsePointer = window.matchMedia('(pointer: coarse)').matches
@@ -149,6 +156,11 @@ async function applySearch() {
   }
 }
 
+function searchTag(tag: string) {
+  searchInput.value = `#${tag}`
+  void applySearch()
+}
+
 function resetSearch() {
   searchInput.value = ''
   appliedQuery.value = ''
@@ -250,6 +262,7 @@ async function logout() {
       >
         <p class="truncate text-sm font-medium">{{ hit.title || '제목 없음' }}</p>
         <p class="truncate text-xs text-muted">{{ hit.snippet }}</p>
+        <p v-if="hit.tags.length" class="truncate text-xs text-dimmed">{{ hit.tags.map((t) => `#${t}`).join(' ') }}</p>
       </NuxtLink>
       <p v-if="!results.length && !searching" class="px-1 py-4 text-center text-sm text-muted">찾은 메모가 없습니다</p>
     </div>
@@ -323,6 +336,24 @@ async function logout() {
       >
         여기에 놓으면 최상위로 옮깁니다
       </div>
+
+      <section v-if="tagCounts.length" class="mt-2 flex flex-col gap-1.5 px-1" data-testid="sidebar-tags">
+        <p class="text-xs text-muted">태그</p>
+        <div class="flex flex-wrap gap-1">
+          <UButton
+            v-for="[tag, count] in tagCounts"
+            :key="tag"
+            color="neutral"
+            variant="outline"
+            size="xs"
+            :data-testid="`sidebar-tag-${tag}`"
+            @click="searchTag(tag)"
+          >
+            #{{ tag }}
+            <span class="text-dimmed">{{ count }}</span>
+          </UButton>
+        </div>
+      </section>
     </template>
 
     <FolderPickDialog

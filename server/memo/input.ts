@@ -3,6 +3,7 @@
  */
 import type { CreateMemoInput, MemoInput, UpdateMemoInput } from '../../shared/types/memo'
 import { isDateString } from '../../shared/utils/memo-date'
+import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS } from '../../shared/utils/tags'
 import { MemoError } from './errors'
 
 const MAX_TITLE = 200
@@ -33,6 +34,24 @@ function dateOrNull(body: Body, key: string) {
   return v
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((v) => typeof v === 'string')
+}
+
+/** 없으면 undefined — 수정에서는 «그대로 둔다», 새 메모에서는 «태그 없음» */
+function tagsOrUndefined(body: Body, key: string) {
+  const v = body[key]
+  if (v === undefined) return undefined
+  if (!isStringArray(v)) bad(`${key}: 문자열 배열이어야 합니다`)
+  const tags = cleanTags(v)
+  if (tags.length > MAX_TAGS) bad(`태그는 ${MAX_TAGS}개까지입니다`)
+  for (const tag of tags) {
+    if (tag.length > MAX_TAG_LENGTH) bad(`태그는 ${MAX_TAG_LENGTH}자까지입니다: ${tag.slice(0, 20)}…`)
+    if (/\p{Cc}/u.test(tag)) bad('태그에 쓸 수 없는 문자가 있습니다')
+  }
+  return tags
+}
+
 function memoInput(body: Body): MemoInput {
   const title = str(body, 'title', MAX_TITLE).trim()
   const content = str(body, 'content', MAX_CONTENT)
@@ -42,7 +61,7 @@ function memoInput(body: Body): MemoInput {
   if (date && dateEnd && dateEnd < date) bad('끝 날짜가 시작 날짜보다 앞섭니다')
   // 하루짜리는 끝 날짜를 두지 않는다 — 같은 뜻을 두 가지로 적지 않기 위해
   if (dateEnd === date) dateEnd = null
-  return { title, content, date, dateEnd }
+  return { title, content, date, dateEnd, tags: tagsOrUndefined(body, 'tags') }
 }
 
 export function parseCreateInput(raw: unknown): CreateMemoInput {

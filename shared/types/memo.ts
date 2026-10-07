@@ -19,6 +19,8 @@ export interface MemoMeta {
   date: string | null
   /** `YYYY-MM-DD`, 끝 날짜 포함 */
   dateEnd: string | null
+  /** frontmatter `tags`. 없으면 빈 배열 */
+  tags: string[]
   /** frontmatter 를 읽지 못한 파일 — 앱에서 저장하지 않는다 */
   unreadable: boolean
 }
@@ -34,6 +36,8 @@ export interface MemoInput {
   content: string
   date: string | null
   dateEnd: string | null
+  /** 새 메모: 없으면 태그 없음. 수정: 없으면 파일의 태그를 그대로 둔다 (옛 화면이 보낸 저장이 태그를 지우지 않게) */
+  tags?: string[]
 }
 
 export interface CreateMemoInput extends MemoInput {

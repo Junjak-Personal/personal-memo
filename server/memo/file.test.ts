@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseMemo, serializeMemo } from './file'
 
-const fields = { id: 'ID', title: '제목', created: null, updated: null, date: null, dateEnd: null }
+const fields = { id: 'ID', title: '제목', created: null, updated: null, date: null, dateEnd: null, tags: [] as string[] }
 
 describe('frontmatter', () => {
   it('frontmatter 가 없으면 전체가 본문이다', () => {
@@ -33,6 +33,33 @@ describe('frontmatter', () => {
     expect(first.ok && first.fields.dateEnd).toBe('2026-10-12')
     const raw = serializeMemo(first.ok ? first.doc : null, fields, '')
     expect(raw).not.toContain('date')
+  })
+
+  it('태그는 한 줄 목록·블록 목록·쉼표 문자열 모두 읽는다', () => {
+    const tagsOf = (yaml: string) => {
+      const parsed = parseMemo(`---\n${yaml}\n---\n본문`)
+      return parsed.ok ? parsed.fields.tags : null
+    }
+    expect(tagsOf('tags: [업무, "#회의"]')).toEqual(['업무', '회의'])
+    expect(tagsOf('tags:\n  - 업무\n  - 2026')).toEqual(['업무', '2026'])
+    expect(tagsOf('tags: 업무, 회의')).toEqual(['업무', '회의'])
+    expect(tagsOf('title: 없음')).toEqual([])
+  })
+
+  it('새로 쓰는 태그는 한 줄 목록, 비우면 키를 지운다', () => {
+    const raw = serializeMemo(null, { ...fields, tags: ['업무', '회의'] }, '본문')
+    expect(raw).toContain('tags: [업무, 회의]')
+    const parsed = parseMemo(raw)
+    if (!parsed.ok) throw new Error('읽지 못함')
+    expect(serializeMemo(parsed.doc, { ...fields, tags: [] }, '본문')).not.toContain('tags')
+  })
+
+  it('태그가 그대로면 밖에서 쓴 모양(블록 목록·주석)을 건드리지 않는다', () => {
+    const original = '---\ntitle: 제목\ntags:\n  - 업무 # 회사 일\n  - 회의\n---\n\n본문\n'
+    const parsed = parseMemo(original)
+    if (!parsed.ok) throw new Error('읽지 못함')
+    const raw = serializeMemo(parsed.doc, { ...fields, id: null, title: '제목', tags: ['업무', '회의'] }, '본문')
+    expect(raw).toContain('tags:\n  - 업무 # 회사 일\n  - 회의\n')
   })
 
   it('YAML 이 깨졌거나 맵이 아니면 읽지 못한 것으로 둔다', () => {

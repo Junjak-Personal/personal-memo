@@ -14,6 +14,7 @@ import type { Editor, JSONContent } from '@tiptap/vue-3'
 import { CodeBlockShiki } from 'tiptap-extension-code-block-shiki'
 import type { Memo } from '#shared/types/memo'
 import { toDisplaySrc, toStoredSrc } from '#shared/utils/asset-path'
+import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS, TAG_DELIMITER } from '#shared/utils/tags'
 import { HtmlUnderline, MemoImage } from '~/utils/editor-extensions'
 import { emojiItems, MemoEmoji } from './editor/emoji'
 import { ImageUpload } from './editor/ImageUploadExtension'
@@ -70,6 +71,7 @@ const savedTitle = ref(memo.value?.title ?? '')
 const content = ref(memo.value?.content ?? '')
 const date = ref(memo.value?.date ?? null)
 const dateEnd = ref(memo.value?.dateEnd ?? null)
+const tags = ref<string[]>(memo.value?.tags ?? [])
 const currentFolder = ref(memo.value?.folder ?? '')
 const selectedNode = ref<{ node: JSONContent | null; pos: number }>()
 const linkOpen = ref(false)
@@ -80,7 +82,7 @@ const coarsePointer = window.matchMedia('(pointer: coarse)').matches
 const autosave = memo.value
   ? useMemoAutosave({
       memo: memo.value,
-      read: () => ({ title: savedTitle.value, content: content.value, date: date.value, dateEnd: dateEnd.value }),
+      read: () => ({ title: savedTitle.value, content: content.value, date: date.value, dateEnd: dateEnd.value, tags: tags.value }),
       normalize: (markdown) => {
         const manager = editorRef.value?.editor?.markdown
         return manager ? manager.serialize(manager.parse(markdown)) : markdown
@@ -167,7 +169,15 @@ function onVisibility() {
 
 function onSaved(saved: Memo, previous: Memo) {
   currentFolder.value = saved.folder
-  if (saved.title !== previous.title || saved.path !== previous.path || saved.date !== previous.date) void refreshTree()
+  // 사이드바가 쓰는 것(제목·경로·날짜·태그)이 바뀌었을 때만 트리를 다시 받는다
+  if (
+    saved.title !== previous.title ||
+    saved.path !== previous.path ||
+    saved.date !== previous.date ||
+    saved.tags.join('\n') !== previous.tags.join('\n')
+  ) {
+    void refreshTree()
+  }
   // 캘린더에 보이는 것(제목·날짜)이 바뀌었으면 서버의 대조가 끝난 뒤 반영 실패 여부를 다시 본다
   if (saved.title !== previous.title || saved.date !== previous.date || saved.dateEnd !== previous.dateEnd) calendarSync.recheckSoon()
   if (saved.id !== previous.id) emit('renamed', previous.id, saved.id)
@@ -219,6 +229,13 @@ function onTitleKeydown(event: KeyboardEvent) {
   editorRef.value?.editor?.commands.focus('start')
 }
 
+function onTagsChange(value: string[]) {
+  const next = cleanTags(value)
+  if (next.join('\n') === tags.value.join('\n')) return
+  tags.value = next
+  autosave?.changed()
+}
+
 function onDateChange(start: string | null, end: string | null) {
   date.value = start
   dateEnd.value = end
@@ -233,6 +250,7 @@ async function reloadFromServer() {
   content.value = fresh.content
   date.value = fresh.date
   dateEnd.value = fresh.dateEnd
+  tags.value = fresh.tags
 }
 
 /** 브라우저에서 줄여서 이 메모 폴더의 assets/ 로 올린다. 본문에 넣을 상대경로를 돌려준다 */
@@ -414,6 +432,27 @@ function showTableBubble({ editor, view, state }: MenuContext) {
             <MemoCalendarSyncBadge :memo-id="autosave.currentId()" :has-date="!!date" />
             <span class="text-xs text-dimmed">{{ currentFolder || '최상위' }}</span>
           </div>
+          <!-- 태그 — 공백·쉼표·Enter 로 끊는다. 한글 조합 중의 입력은 TagsInput 이 기다려 준다 -->
+          <UInputTags
+            :model-value="tags"
+            icon="i-material-symbols-sell-outline"
+            placeholder="태그 추가"
+            variant="ghost"
+            size="sm"
+            :delimiter="TAG_DELIMITER"
+            :max="MAX_TAGS"
+            :max-length="MAX_TAG_LENGTH"
+            add-on-blur
+            add-on-paste
+            :disabled="memo.unreadable"
+            class="mt-2 -ms-2.5 w-full"
+            data-testid="memo-tags-input"
+            @update:model-value="onTagsChange"
+          >
+            <template #item-text="{ item }">
+              <span class="text-dimmed">#</span>{{ item }}
+            </template>
+          </UInputTags>
         </div>
 
         <UEditorToolbar :editor="editor" :items="bubbleToolbarItems" layout="bubble" :should-show="showTextBubble">

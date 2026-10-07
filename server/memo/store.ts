@@ -21,6 +21,7 @@ import type {
   UpdateMemoInput,
 } from '../../shared/types/memo'
 import { isDateString, kstDay, nowKst } from '../../shared/utils/memo-date'
+import { hasTag, parseSearchQuery } from '../../shared/utils/tags'
 import { DAY_MS, TRASH_RETENTION_DAYS } from '../../shared/utils/trash'
 import { isUlid, ulid } from '../../shared/utils/ulid'
 import { MemoError } from './errors'
@@ -118,17 +119,20 @@ export class MemoStore {
     })
   }
 
+  /** 제목 + 본문. `#` 으로 시작하는 낱말은 태그로 거른다 (`#업무 회의` = 업무 태그 중 「회의」가 든 것) */
   search(query: string): Promise<SearchHit[]> {
     return this.exclusive(async () => {
-      const q = query.trim().toLowerCase()
-      if (!q) return []
+      const { tags, text } = parseSearchQuery(query)
+      const q = text.toLowerCase()
+      if (!q && !tags.length) return []
       await this.index.rescan()
       const hits: SearchHit[] = []
       for (const entry of this.index.active.values()) {
         const meta = this.index.meta(entry)
-        const inTitle = meta.title.toLowerCase().includes(q)
-        const at = entry.body.toLowerCase().indexOf(q)
-        if (!inTitle && at === -1) continue
+        if (!tags.every((t) => hasTag(meta.tags, t))) continue
+        const inTitle = q !== '' && meta.title.toLowerCase().includes(q)
+        const at = q ? entry.body.toLowerCase().indexOf(q) : -1
+        if (q && !inTitle && at === -1) continue
         const snippet =
           at === -1
             ? entry.body.slice(0, SNIPPET_RADIUS * 2).trim()
@@ -182,7 +186,7 @@ export class MemoStore {
       const rel = await uniqueMdPath(input.folder, fileBaseFromTitle(input.title), this.relExists)
       const raw = serializeMemo(
         null,
-        { id: ulid(), title: input.title, created: now, updated: now, date: input.date, dateEnd: input.dateEnd },
+        { id: ulid(), title: input.title, created: now, updated: now, date: input.date, dateEnd: input.dateEnd, tags: input.tags ?? [] },
         input.content,
       )
       await writeAtomic(await this.abs(rel), raw)
@@ -218,6 +222,7 @@ export class MemoStore {
           updated: now,
           date: input.date,
           dateEnd: input.dateEnd,
+          tags: input.tags ?? parsed.fields.tags,
         },
         input.content,
       )

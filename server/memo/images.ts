@@ -68,6 +68,11 @@ export function isOriginalName(name: string) {
   return ORIGINAL.test(name)
 }
 
+/** 내려받을 때의 파일 이름 — 원본이면 `.orig` 를 뺀다: `…/<ulid>.orig.jpg` → `<ulid>.jpg` */
+export function downloadNameOf(path: string) {
+  return path.slice(path.lastIndexOf('/') + 1).replace(/\.orig(\.[a-z0-9]+)$/i, '$1')
+}
+
 /** 확장자(원본이면 `.orig.<ext>`)를 뗀 경로 — 화면 이미지와 그 원본이 같은 값을 갖는다 */
 export function stemOf(path: string) {
   if (ORIGINAL.test(path)) return path.replace(ORIGINAL, '')

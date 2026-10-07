@@ -14,7 +14,7 @@ import type { Editor, JSONContent } from '@tiptap/vue-3'
 import { CodeBlockShiki } from 'tiptap-extension-code-block-shiki'
 import type { Memo } from '#shared/types/memo'
 import { originalOfDisplay, toDisplaySrc, toOriginalSrc, toStoredSrc } from '#shared/utils/asset-path'
-import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS, TAG_DELIMITER } from '#shared/utils/tags'
+import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS, sameTags, TAG_DELIMITER } from '#shared/utils/tags'
 import { HtmlUnderline, MemoImage } from '~/utils/editor-extensions'
 import { prepareImage, type PreparedImage } from '~/utils/image-resize'
 import { type MemoDraft, removeDraft } from '~/utils/memo-drafts'
@@ -253,11 +253,16 @@ function onTitleKeydown(event: KeyboardEvent) {
   editorRef.value?.editor?.commands.focus('start')
 }
 
+/**
+ * 입력칸은 중복을 받아들이게 두고(duplicate) 여기서 뺀다. 거절하게 두면 이미 있는 태그를 치고 Enter 를 눌렀을 때
+ * 아무 표시 없이 글자가 남고, 이어 친 글자와 붙어 `웹킷사파리` 같은 태그가 생긴다 (2026-10-07 실측).
+ * 결과가 같아도 새 배열을 넣는다 — 그래야 입력칸이 방금 받은 중복·`#한글` 칩을 지우고 정리한 값으로 다시 그린다.
+ */
 function onTagsChange(value: string[]) {
   const next = cleanTags(value)
-  if (next.join('\n') === tags.value.join('\n')) return
+  const changed = !sameTags(next, tags.value)
   tags.value = next
-  autosave?.changed()
+  if (changed) autosave?.changed()
 }
 
 function onDateChange(start: string | null, end: string | null) {
@@ -543,6 +548,7 @@ function showTableBubble({ editor, view, state }: MenuContext) {
             :max-length="MAX_TAG_LENGTH"
             add-on-blur
             add-on-paste
+            duplicate
             :disabled="memo.unreadable"
             class="mt-2 -ms-2.5 w-full"
             data-testid="memo-tags-input"

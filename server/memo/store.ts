@@ -27,7 +27,7 @@ import { isUlid, ulid } from '../../shared/utils/ulid'
 import { MemoError } from './errors'
 import { parseMemo, serializeMemo, versionOf } from './file'
 import { exists, writeAtomic } from './fsx'
-import { extOf, IMAGE_TYPES, isOriginalName, MAX_IMAGE_BYTES, MAX_ORIGINAL_BYTES, referencedImages, sniffImage, stemOf } from './images'
+import { downloadNameOf, extOf, IMAGE_TYPES, isOriginalName, MAX_IMAGE_BYTES, MAX_ORIGINAL_BYTES, referencedImages, sniffImage, stemOf } from './images'
 import {
   ASSETS_DIR,
   TRASH_DIR,
@@ -533,7 +533,9 @@ export class MemoStore {
     const display = await this.imageFile(displayRel)
     const dir = displayRel.slice(0, displayRel.lastIndexOf('/'))
     const original = (await this.originalsIn(dir)).get(stemOf(displayRel))
-    return original ? { ...(await this.imageFile(original)), stored: true } : { ...display, stored: false }
+    return original
+      ? { ...(await this.imageFile(original)), stored: true, name: downloadNameOf(original) }
+      : { ...display, stored: false, name: downloadNameOf(displayRel) }
   }
 
   /** 화면이 여는 이미지. `…/assets/<파일>` 꼴의 이미지 파일만 내준다 — 메모 원문이나 휴지통은 이 길로 안 나간다 */

@@ -243,11 +243,13 @@ describe('이동·휴지통·이미지', () => {
     const stem = withOriginal.src.slice(0, -'.png'.length)
     expect((await readdir(memos('assets'))).sort()).toEqual([`${stem.slice(7)}.orig.jpg`, `${stem.slice(7)}.png`].sort())
     const original = await store.originalImageFile(withOriginal.src)
-    expect(original).toMatchObject({ stored: true, type: 'image/jpeg' })
+    // 주소는 화면 이미지(.png)지만 내려받는 이름은 원본의 확장자 — 내용과 이름이 어긋나지 않게
+    expect(original).toMatchObject({ stored: true, type: 'image/jpeg', name: `${stem.slice(7)}.jpg` })
 
     const plain = await store.saveImage(memo.id, PNG)
     expect(plain.original).toBe(false)
-    expect(await store.originalImageFile(plain.src)).toMatchObject({ stored: false, type: 'image/png' })
+    const plainStem = plain.src.slice(7, -'.png'.length)
+    expect(await store.originalImageFile(plain.src)).toMatchObject({ stored: false, type: 'image/png', name: `${plainStem}.png` })
   })
 
   it('원본이 이미지가 아니거나 30MB 를 넘으면 거부한다', async () => {

@@ -122,7 +122,7 @@ export function imageToolbarItems(editor: Editor, actions: { showOriginal: (src:
   return [
     [
       {
-        icon: 'i-material-symbols-photo-size-select-actual-outline',
+        icon: 'i-material-symbols-open-in-full',
         tooltip: { text: '원본 보기' },
         onClick: () => {
           if (isImage && typeof node.attrs.src === 'string') actions.showOriginal(node.attrs.src)

@@ -1,0 +1,143 @@
+name: Deploy
+
+# pic-blog .github/workflows/deploy.yml 복제 (설계문서 §13). 맥에서 직접 하려면 scripts/deploy.sh.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '_docs/**'
+      - '**.md'
+      - '.gitignore'
+      # 폰 껍데기는 서버 이미지와 무관하다
+      - 'app-ios/**'
+
+# 같은 브랜치 배포가 겹치면 차례로 — 두 배포가 동시에 컨테이너를 갈아치우면 어느 이미지가 떠 있는지 알 수 없게 된다.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+# 저장소를 읽기만 한다 — GITHUB_TOKEN 이 쓰기 권한을 갖지 않게
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # 버전은 package.json 의 packageManager 를 읽는다 — 여기에 따로 적지 않는다
+      # GitHub 바깥 액션은 커밋 SHA 로 고정한다 — 태그는 옮겨질 수 있다 (actions/* 는 GitHub 것이라 태그로 둔다)
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # Dockerfile 이 node:24-slim 이다. CI 도 24 로 맞춰야 여기서 통과한 게 이미지 빌드에서도 통과한다.
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # 저장소(경로 검사·충돌·frontmatter 보존·휴지통)와 구글 대조의 회귀 검사
+      - name: Unit tests
+        run: pnpm test
+
+      # 빌드는 이미지 안에서 다시 하지만, 실패를 운영 머신까지 끌고 가지 않으려고 먼저 본다.
+      - name: Build
+        run: pnpm build
+
+  deploy:
+    needs: verify
+    # 러너가 둘 등록돼 있다(raspi=ARM64, junserver=X64/n100). 맨 self-hosted 만 쓰면 노는 쪽이 잡히는데,
+    # 메모 볼륨과 Cloudflare 터널(memo.jun-devlog.win → localhost:4700)은 junserver 에만 있다. 머신 라벨로 못 박는다.
+    runs-on: [self-hosted, n100]
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # BuildKit 을 끄는 이유: 러너의 docker-buildx-plugin 이 낡으면 BuildKit 빌드가
+      # "buildx component is missing or broken" 으로 통째로 죽는다. 이 Dockerfile 은 BuildKit 전용 문법을 안 쓴다.
+      - name: Build image
+        run: DOCKER_BUILDKIT=0 docker build -t personal-memo:prd .
+
+      # 🔴 볼륨은 러너 작업공간이 아니라 고정 절대경로다. $GITHUB_WORKSPACE 아래에 두면
+      #    다음 체크아웃에서 메모가 통째로 날아간다. scripts/deploy.sh 와 같은 경로다.
+      - name: Deploy container
+        env:
+          DATA_DIR: /home/junja/apps/personal-memo/data
+          # 값을 run 스크립트에 ${{ }} 로 직접 박지 않는다. NUXT_ADMIN_PASSWORD_HASH 는 `$scrypt$n=16384...` 형태라
+          # 스크립트 본문에 들어가면 셸이 $scrypt / $n 을 변수로 읽어 해시를 망가뜨린다(로그인이 항상 실패하는데
+          # 로그엔 아무것도 안 남는다). env 로 넘기고 "$VAR" 로 참조하면 값 안의 $ 는 그대로 남는다.
+          NUXT_SESSION_PASSWORD: ${{ secrets.NUXT_SESSION_PASSWORD }}
+          NUXT_ADMIN_PASSWORD_HASH: ${{ secrets.NUXT_ADMIN_PASSWORD_HASH }}
+          NUXT_GOOGLE_SERVICE_ACCOUNT: ${{ secrets.NUXT_GOOGLE_SERVICE_ACCOUNT }}
+          NUXT_GOOGLE_CALENDAR_ID: ${{ vars.NUXT_GOOGLE_CALENDAR_ID }}
+          NUXT_SITE_URL: ${{ vars.NUXT_SITE_URL }}
+        run: |
+          set -euo pipefail
+
+          case "$NUXT_ADMIN_PASSWORD_HASH" in
+            '$scrypt$'*) ;;
+            *) echo "중단: NUXT_ADMIN_PASSWORD_HASH 가 scrypt 해시가 아니다 (평문을 넣지 않았는지 확인)"; exit 1 ;;
+          esac
+          [ "${#NUXT_SESSION_PASSWORD}" -ge 32 ] || { echo "중단: NUXT_SESSION_PASSWORD 가 32자 미만"; exit 1; }
+          case "$NUXT_SITE_URL" in
+            https://*) ;;
+            *) echo "중단: NUXT_SITE_URL 은 https:// 로 시작해야 한다"; exit 1 ;;
+          esac
+          # 구글 연동은 둘 다 있어야 켜진다 — 하나만 있으면 조용히 꺼지므로 막는다 (설계문서 §8)
+          if [ -n "$NUXT_GOOGLE_CALENDAR_ID" ] && [ -n "$NUXT_GOOGLE_SERVICE_ACCOUNT" ]; then
+            echo "구글 캘린더 연동: 켬"
+          elif [ -z "$NUXT_GOOGLE_CALENDAR_ID" ] && [ -z "$NUXT_GOOGLE_SERVICE_ACCOUNT" ]; then
+            echo "::warning::구글 캘린더 연동: 끔 (NUXT_GOOGLE_CALENDAR_ID·NUXT_GOOGLE_SERVICE_ACCOUNT 없음)"
+          else
+            echo "중단: NUXT_GOOGLE_CALENDAR_ID 와 NUXT_GOOGLE_SERVICE_ACCOUNT 는 둘 다 넣거나 둘 다 비운다"; exit 1
+          fi
+
+          mkdir -p "$DATA_DIR"
+
+          # 이미지 빌드가 끝난 뒤에 내린다 — 빌드가 실패하면 옛 컨테이너가 계속 서비스한다.
+          docker rm -f personal-memo 2>/dev/null || true
+
+          docker run -d \
+            --name personal-memo \
+            --restart unless-stopped \
+            -p 127.0.0.1:4700:4700 \
+            -v "$DATA_DIR":/app/data \
+            -e NUXT_DATA_DIR=/app/data \
+            -e NUXT_SESSION_PASSWORD="$NUXT_SESSION_PASSWORD" \
+            -e NUXT_ADMIN_PASSWORD_HASH="$NUXT_ADMIN_PASSWORD_HASH" \
+            -e NUXT_SITE_URL="$NUXT_SITE_URL" \
+            -e NUXT_GOOGLE_CALENDAR_ID="$NUXT_GOOGLE_CALENDAR_ID" \
+            -e NUXT_GOOGLE_SERVICE_ACCOUNT="$NUXT_GOOGLE_SERVICE_ACCOUNT" \
+            personal-memo:prd
+
+      # 200 이 뜰 때까지 기다린다. 컨테이너가 떴다는 것과 앱이 산다는 건 다르다 — 볼륨 권한 문제는 여기서만 드러난다.
+      - name: Health check
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if body=$(curl -fsS --max-time 3 http://127.0.0.1:4700/api/health); then
+              echo "정상: $body"
+              docker logs --tail 5 personal-memo
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "헬스체크 실패 — 아래는 컨테이너 로그다"
+          docker logs --tail 60 personal-memo
+          exit 1
+
+      - name: Prune dangling images
+        if: always()
+        run: docker image prune -f

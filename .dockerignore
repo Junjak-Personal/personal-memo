@@ -1,0 +1,30 @@
+# 빌드 컨텍스트에서 뺀다. 이미지 크기보다 «들어가면 안 되는 것» 이 중요하다.
+
+# 시크릿 — 서비스 계정 키·비밀번호 해시. 이미지에 절대 넣지 않는다 (docker run 의 env 로 런타임에 넣는다)
+.env
+.env.*
+
+# 런타임 데이터 — 볼륨으로 마운트된다. 이미지에 구워지면 안 된다
+data
+
+# 빌드 산출물 / 설치물 — 컨테이너 안에서 다시 만든다 (맥은 arm64, junserver 는 x86_64)
+node_modules
+.nuxt
+.output
+.data
+dist
+
+# 네이티브 껍데기 — 서버 이미지와 무관하고 빌드 산출물까지 1GB 다
+app-ios
+
+# 저장소 부산물
+.git
+.gitignore
+_workspace
+_docs
+.claude
+.playwright-mcp
+.DS_Store
+*.log
+Dockerfile
+.dockerignore

@@ -30,7 +30,7 @@ Status tokens: `✅` scanned-from-code · `⏭️` Skipped (not applicable) · `
 | [state-management.md](./state-management.md) | MEDIUM | ✅ | useState composable, 대기열, watch 기피 |
 | [testing.md](./testing.md) | HIGH | ✅ | Vitest 패턴, 픽스처 주의, agentic adapter |
 | [ui-components.md](./ui-components.md) | MEDIUM | ✅ | Nuxt UI, 아이콘, 토큰, 버튼 규칙 |
-| deployment.md | — | ⏭️ Skipped (CI/CD·Dockerfile 아직 없음 — 설계문서 §13) | — |
+| [deployment.md](./deployment.md) | MEDIUM | ✅ | Docker·deploy.sh·GitHub Actions(n100)·Cloudflare 터널 |
 
 ## Key Conventions for Agents
 
@@ -68,3 +68,4 @@ Lifecycle: active/{planning,processing}/ · complete/ · reference/ · deprecate
 - 2026-10-07: 첫 생성 (1·2·4·5단계 완료 시점)
 - 2026-10-07: 아이패드 미지원·PC/모바일 1024 경계, `E2E_PASSWORD`, 캘린더 스모크 `scripts/calendar-smoke/` 반영
 - 2026-10-07: 태그(frontmatter), 오프라인 보호(`memo-drafts`), 원본 이미지(`.orig`), 공유 시트(`MemoShare`·App Group), 휴지통 자동 비우기 추가 — 설계문서 §3.1·§3.4·§4·§7.2.1·§10.4
+- 2026-10-07: 배포 구성 추가 (Dockerfile·scripts/deploy.sh·.github/workflows/deploy.yml, memo.jun-devlog.win → :4700) — deployment.md

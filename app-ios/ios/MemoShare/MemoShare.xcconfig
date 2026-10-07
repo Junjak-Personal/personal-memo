@@ -1,0 +1,4 @@
+// 공유 확장 — 버전(FLUTTER_BUILD_*)과 앱의 정체를 Runner 와 같은 곳에서 가져온다.
+// Runner 의 xcconfig 는 쓰지 않는다 — Pods 설정(플러그인 프레임워크 링크)까지 딸려 와 확장에 맞지 않는다.
+#include? "../Flutter/Generated.xcconfig"
+#include "../AppIdentity.xcconfig"

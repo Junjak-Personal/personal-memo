@@ -52,13 +52,27 @@ echo "▸ 기기   $DEVICE"
 flutter build ios --release --config-only --dart-define="SITE=$SITE"
 
 # 2) 번들 id·이름은 여기서 덮어쓴다. -allowProvisioningUpdates 가 새 번들 id 의 프로파일을 만든다.
-xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner \
-  -configuration Release -destination "generic/platform=iOS" \
-  -derivedDataPath build/dev-dd \
-  -allowProvisioningUpdates \
-  APP_BUNDLE_ID="$BUNDLE_ID" \
-  APP_DISPLAY_NAME="$APP_NAME" \
-  build
+build() {
+  xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner \
+    -configuration Release -destination "generic/platform=iOS" \
+    -derivedDataPath build/dev-dd \
+    -allowProvisioningUpdates \
+    APP_BUNDLE_ID="$BUNDLE_ID" \
+    APP_DISPLAY_NAME="$APP_NAME" \
+    "$@" \
+    build
+}
+
+# 🔴 공유 시트(MemoShare)는 App Group 이 있어야 앱과 보관함을 나눠 쓴다. App Group 은 와일드카드 프로파일로는 서명이
+#    안 되고, Xcode 에 Apple ID 가 로그인돼 있어야 -allowProvisioningUpdates 가 App ID·그룹·프로파일을 만든다
+#    (2026-10-07: Xcode 에 계정이 없어 「No Accounts」 로 실패). 그때는 App Group 을 빼고 설치한다 —
+#    공유 시트는 「보관하지 못했습니다」 를 띄우고 나머지는 그대로 된다. 조용히 넘어가지 않게 끝에 크게 알린다.
+NO_GROUP=""
+if ! build; then
+  echo "⚠ App Group 서명에 실패했습니다 — App Group 없이 다시 빌드합니다 (공유 시트는 이 설치에서 동작하지 않음)" >&2
+  build CODE_SIGN_ENTITLEMENTS=NoAppGroup.entitlements APP_GROUP_ID=
+  NO_GROUP=1
+fi
 
 APP="build/dev-dd/Build/Products/Release-iphoneos/Runner.app"
 [ -d "$APP" ] || { echo "✗ 빌드 산출물이 없습니다: $APP" >&2; exit 1; }
@@ -74,3 +88,6 @@ fi
 
 xcrun devicectl device install app --device "$DEVICE" "$APP"
 echo "✓ 설치 완료 — 홈 화면의 «${APP_NAME}» 을 여세요"
+if [ -n "$NO_GROUP" ]; then
+  echo "⚠ 공유 시트 없이 설치했습니다. Xcode → Settings → Accounts 에 Apple ID 를 넣고 다시 실행하면 같이 설치됩니다." >&2
+fi

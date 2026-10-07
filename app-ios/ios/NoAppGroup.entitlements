@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- dev-install.sh 의 대체 빌드용 — App Group 을 서명할 수 없을 때(Xcode 에 계정 없음) 이것으로 바꿔 끼운다 -->
+<plist version="1.0">
+<dict/>
+</plist>

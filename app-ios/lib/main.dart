@@ -60,6 +60,13 @@ class Palette {
 /// 페이지가 부르는 이름. 웹쪽은 이 한 이름만 안다.
 const kChannel = 'MemoNative';
 
+/// 공유 시트 보관함 (설계문서 §10.4). 툴바 브리지(kChannel)의 모양을 바꾸지 않으려고 따로 둔다 — 새 정보는 새 창으로.
+/// 웹 → `{type:'pull'}` (꺼내 줘) · `{type:'ack', ids}` (서버에 저장했음)
+const kInboxChannel = 'MemoInbox';
+
+/// 보관함을 들고 있는 네이티브 쪽 (ios/Shared/MemoInbox.swift, App Group)
+const _inbox = MethodChannel('memo/inbox');
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MemoApp());
@@ -120,7 +127,7 @@ class Shell extends StatefulWidget {
   State<Shell> createState() => _ShellState();
 }
 
-class _ShellState extends State<Shell> {
+class _ShellState extends State<Shell> with WidgetsBindingObserver {
   late final WebViewController _web;
 
   /// 에디터에 포커스가 있는가 — 웹이 알려준다
@@ -136,12 +143,17 @@ class _ShellState extends State<Shell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _web = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setOnConsoleMessage((m) => debugPrint('[web] ${m.message}'))
       ..addJavaScriptChannel(
         kChannel,
         onMessageReceived: (m) => _onMessage(m.message),
+      )
+      ..addJavaScriptChannel(
+        kInboxChannel,
+        onMessageReceived: (m) => _onInboxMessage(m.message),
       )
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -191,6 +203,41 @@ class _ShellState extends State<Shell> {
         setState(() => _focused = false);
       case 'state':
         setState(() => _state = EditorState.fromJson(msg));
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// 공유 시트에서 돌아오면 웹에 보관함을 확인하라고 알린다 (웹이 로그인돼 있으면 pull 한다)
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _web.runJavaScript('window.memoInbox && window.memoInbox.pull()');
+    }
+  }
+
+  Future<void> _onInboxMessage(String raw) async {
+    Map<String, dynamic> msg;
+    try {
+      msg = jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return;
+    }
+    switch (msg['type']) {
+      case 'pull':
+        final items = await _inbox.invokeMethod<String>('peek') ?? '[]';
+        if (items == '[]') return;
+        // JSON 은 그대로 JS 식이다
+        await _web.runJavaScript(
+          'window.memoInbox && window.memoInbox.deliver($items)',
+        );
+      case 'ack':
+        final ids = (msg['ids'] as List?)?.whereType<String>().toList() ?? [];
+        if (ids.isNotEmpty) await _inbox.invokeMethod('remove', ids);
     }
   }
 

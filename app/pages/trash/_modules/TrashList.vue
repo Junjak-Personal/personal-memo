@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
  * 휴지통 (설계문서 §3.4). 복원은 원래 위치로, 비우기는 되돌릴 수 없으니 확인을 받는다.
- * 비우면 이제 아무 메모도 쓰지 않는 이미지도 같이 지워진다.
+ * 비우면 이제 아무 메모도 쓰지 않는 이미지도 같이 지워진다. 30일이 지난 메모는 서버가 하루 한 번 지운다.
  */
 import type { MemoMeta, TrashItem } from '#shared/types/memo'
+import { daysUntilPurge, TRASH_RETENTION_DAYS } from '#shared/utils/trash'
 
 const toast = useToast()
 const { refresh: refreshTree } = useMemoTree()
@@ -17,6 +18,11 @@ const restoring = ref<string | null>(null)
 /** `2026-10-07T00:34:00+09:00` → `10월 7일 00:34` */
 function formatTime(iso: string) {
   return new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
+}
+
+function purgeLabel(item: TrashItem) {
+  const days = daysUntilPurge(item.trashedAt)
+  return days === 0 ? '곧 자동 삭제' : `${days}일 뒤 자동 삭제`
 }
 
 async function restore(item: TrashItem) {
@@ -79,26 +85,34 @@ async function emptyTrash() {
         <UIcon name="i-material-symbols-delete-outline" class="size-10 text-dimmed" />
         휴지통이 비었습니다
       </div>
-      <ul v-else class="mx-auto flex w-full max-w-3xl flex-col divide-y divide-default" data-testid="trash-list">
-        <li v-for="item in items" :key="item.path" class="flex items-center gap-3 py-3">
-          <UIcon name="i-material-symbols-description-outline" class="size-5 shrink-0 text-dimmed" />
-          <div class="min-w-0 flex-1">
-            <p class="truncate font-medium">{{ item.title || '제목 없음' }}</p>
-            <p class="truncate text-xs text-muted">{{ item.path }} · {{ formatTime(item.trashedAt) }}</p>
-          </div>
-          <UButton
-            color="neutral"
-            variant="outline"
-            size="sm"
-            icon="i-material-symbols-restore-from-trash-outline"
-            :loading="restoring === item.path"
-            data-testid="trash-restore-button"
-            @click="restore(item)"
-          >
-            복원
-          </UButton>
-        </li>
-      </ul>
+      <template v-else>
+        <p class="mx-auto w-full max-w-3xl text-sm text-muted">
+          휴지통에 들어간 지 {{ TRASH_RETENTION_DAYS }}일이 지난 메모는 자동으로 지워집니다.
+        </p>
+        <ul class="mx-auto flex w-full max-w-3xl flex-col divide-y divide-default" data-testid="trash-list">
+          <li v-for="item in items" :key="item.path" class="flex items-center gap-3 py-3">
+            <UIcon name="i-material-symbols-description-outline" class="size-5 shrink-0 text-dimmed" />
+            <div class="min-w-0 flex-1">
+              <p class="truncate font-medium">{{ item.title || '제목 없음' }}</p>
+              <p class="truncate text-xs text-muted">
+                {{ item.path }} · {{ formatTime(item.trashedAt) }} ·
+                <span :data-testid="`trash-purge-days-${item.path}`">{{ purgeLabel(item) }}</span>
+              </p>
+            </div>
+            <UButton
+              color="neutral"
+              variant="outline"
+              size="sm"
+              icon="i-material-symbols-restore-from-trash-outline"
+              :loading="restoring === item.path"
+              data-testid="trash-restore-button"
+              @click="restore(item)"
+            >
+              복원
+            </UButton>
+          </li>
+        </ul>
+      </template>
 
       <!-- 페이지 최상위 요소를 하나로 둔다 — 화면 전환 애니메이션(pageTransition)의 조건 -->
       <UModal v-model:open="confirmOpen" title="휴지통을 비울까요?" description="지운 메모는 되돌릴 수 없습니다. 이제 어떤 메모도 쓰지 않는 이미지도 같이 지워집니다.">

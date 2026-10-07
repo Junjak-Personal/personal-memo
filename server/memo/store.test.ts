@@ -248,6 +248,37 @@ describe('이동·휴지통·이미지', () => {
     expect(await readdir(memos('assets'))).toEqual([kept.slice(7)])
   })
 
+  it('30일이 지난 휴지통 메모만 자동으로 지우고, 그 메모만 쓰던 이미지와 빈 폴더도 정리한다', async () => {
+    await store.createFolder('', '일')
+    const old = await store.create({ ...input('오래됨'), folder: '일' })
+    const recent = await store.create({ ...input('최근'), folder: '' })
+    const { src } = await store.saveImage(old.id, PNG)
+    await store.update(old.id, { ...input('오래됨', `![](${src})`), baseVersion: (await store.get(old.id)).version })
+    const { trashPath: oldPath } = await store.remove(old.id)
+    await store.remove(recent.id)
+
+    const now = Date.now()
+    const day = 24 * 60 * 60 * 1000
+    const aged = new Date(now - 31 * day)
+    await utimes(memos(`.trash/${oldPath}`), aged, aged)
+
+    expect(await store.purgeTrash(now)).toEqual({ memos: 1, images: 1 })
+    expect((await store.trashList()).map((t) => t.title)).toEqual(['최근'])
+    expect(await readdir(memos('.trash'))).toEqual(['최근.md'])
+    expect(await readdir(memos('일/assets'))).toEqual([])
+    // 지울 것이 없으면 아무것도 하지 않는다
+    expect(await store.purgeTrash(now)).toEqual({ memos: 0, images: 0 })
+  })
+
+  it('딱 30일이 안 된 메모는 남긴다', async () => {
+    const memo = await store.create({ ...input('경계'), folder: '' })
+    const { trashPath } = await store.remove(memo.id)
+    const now = Date.now()
+    const almost = new Date(now - (30 * 24 * 60 * 60 * 1000 - 60_000))
+    await utimes(memos(`.trash/${trashPath}`), almost, almost)
+    expect(await store.purgeTrash(now)).toEqual({ memos: 0, images: 0 })
+  })
+
   it('SVG 와 이미지가 아닌 파일을 거부한다', async () => {
     const memo = await store.create({ ...input('그림'), folder: '' })
     await rejects(store.saveImage(memo.id, SVG), 'unsupported_type')

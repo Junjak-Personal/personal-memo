@@ -21,6 +21,7 @@ import type {
   UpdateMemoInput,
 } from '../../shared/types/memo'
 import { isDateString, kstDay, nowKst } from '../../shared/utils/memo-date'
+import { DAY_MS, TRASH_RETENTION_DAYS } from '../../shared/utils/trash'
 import { isUlid, ulid } from '../../shared/utils/ulid'
 import { MemoError } from './errors'
 import { parseMemo, serializeMemo, versionOf } from './file'
@@ -334,20 +335,52 @@ export class MemoStore {
       await rm(await this.abs(TRASH_DIR), { recursive: true, force: true })
       await mkdir(await this.abs(TRASH_DIR), { recursive: true })
       await this.index.rescan()
-
-      const referenced = this.referencedBy(() => true)
-      let images = 0
-      for (const assetsRel of await this.assetDirs(this.root, '')) {
-        for (const e of await readdir(await this.abs(assetsRel), { withFileTypes: true })) {
-          if (!e.isFile()) continue
-          const rel = `${assetsRel}/${e.name}`
-          if (referenced.has(rel)) continue
-          await rm(await this.abs(rel))
-          images++
-        }
-      }
-      return { memos, images }
+      return { memos, images: await this.removeUnreferencedImages() }
     })
+  }
+
+  /**
+   * 휴지통에 들어간 지 {@link TRASH_RETENTION_DAYS}일이 지난 메모를 지운다 (서버 플러그인이 하루 한 번).
+   * 들어간 시각 = mtime. 앱 밖에서 `.trash/` 로 옮긴 파일은 마지막 수정 시각이 기준이라 더 일찍 지워질 수 있다.
+   * 지운 뒤 아무도 참조하지 않게 된 이미지와 빈 폴더도 정리한다.
+   */
+  purgeTrash(now = Date.now()): Promise<{ memos: number; images: number }> {
+    return this.exclusive(async () => {
+      await this.index.rescan()
+      const cutoff = now - TRASH_RETENTION_DAYS * DAY_MS
+      const expired = [...this.index.trash.entries()].filter(([, e]) => e.mtimeMs < cutoff).map(([rel]) => rel)
+      if (!expired.length) return { memos: 0, images: 0 }
+      for (const rel of expired) await rm(await this.abs(joinRel(TRASH_DIR, rel)), { force: true })
+      await this.removeEmptyDirs(TRASH_DIR)
+      await this.index.rescan()
+      return { memos: expired.length, images: await this.removeUnreferencedImages() }
+    })
+  }
+
+  /** 어떤 메모(활성 + 휴지통)도 참조하지 않는 `assets/` 이미지를 지운다. 지운 수 */
+  private async removeUnreferencedImages() {
+    const referenced = this.referencedBy(() => true)
+    let images = 0
+    for (const assetsRel of await this.assetDirs(this.root, '')) {
+      for (const e of await readdir(await this.abs(assetsRel), { withFileTypes: true })) {
+        if (!e.isFile()) continue
+        const rel = `${assetsRel}/${e.name}`
+        if (referenced.has(rel)) continue
+        await rm(await this.abs(rel))
+        images++
+      }
+    }
+    return images
+  }
+
+  /** rel 아래의 빈 폴더를 지운다 (rel 자체는 남긴다) */
+  private async removeEmptyDirs(rel: string) {
+    for (const e of await readdir(await this.abs(rel), { withFileTypes: true })) {
+      if (!e.isDirectory()) continue
+      const child = joinRel(rel, e.name)
+      await this.removeEmptyDirs(child)
+      if (!(await readdir(await this.abs(child))).length) await rm(await this.abs(child), { recursive: true })
+    }
   }
 
   /** 메모들(활성 + 휴지통)이 참조하는 이미지 경로. 휴지통 항목은 원래 폴더 기준으로 푼다 */

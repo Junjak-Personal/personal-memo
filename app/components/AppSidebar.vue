@@ -287,11 +287,12 @@ async function logout() {
     }"
   >
     <template #toggle="{ toggle }">
+      <!-- 테두리 없는 아이콘 버튼 — 테두리 있는 44px 칸은 폰에서 너무 크게 보였다 (2026-10-15 사용자 지적) -->
       <UButton
         icon="i-material-symbols-close"
         color="neutral"
-        variant="outline"
-        class="size-11 shrink-0 justify-center"
+        variant="ghost"
+        class="size-10 shrink-0 justify-center"
         aria-label="메뉴 닫기"
         data-testid="sidebar-menu-close"
         @click="toggle"
@@ -444,9 +445,9 @@ async function logout() {
                   v-if="item.kind === 'folder'"
                   :icon="expanded.includes(String(item.value)) ? 'i-material-symbols-keyboard-arrow-up' : 'i-material-symbols-keyboard-arrow-down'"
                   color="neutral"
-                  variant="outline"
+                  variant="ghost"
                   size="xs"
-                  class="size-11 justify-center lg:size-6"
+                  class="size-9 justify-center lg:size-6"
                   :aria-label="expanded.includes(String(item.value)) ? '폴더 접기' : '폴더 펼치기'"
                   :aria-expanded="expanded.includes(String(item.value))"
                   data-testid="sidebar-folder-toggle"

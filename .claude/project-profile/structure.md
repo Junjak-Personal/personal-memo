@@ -15,6 +15,8 @@ personal-memo/
 │   │   ├── m/{[id].vue,_modules/}       # 메모 문서 (에디터)
 │   │   ├── trash/{index.vue,_modules/}
 │   │   ├── todo/{index.vue,_modules/}   # 할 일 모아 보기 (설계문서 §3.5)
+│   │   ├── ai/{index.vue,_modules/}     # AI 연결 관리 (설계문서 §11.1)
+│   │   ├── oauth/consent.vue          # AI 연결 승인 화면
 │   │   ├── tags/{index.vue,_modules/}   # 태그별 메모 탐색 (선택은 ?tag=)
 │   │   ├── index.vue, login.vue
 │   ├── plugins/              # *.client.ts

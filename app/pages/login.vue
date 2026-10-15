@@ -1,6 +1,7 @@
 <script setup lang="ts">
 definePageMeta({ layout: false })
 
+const route = useRoute()
 const { fetch: fetchSession } = useUserSession()
 
 const password = ref('')
@@ -14,7 +15,7 @@ async function submit() {
   try {
     await $fetch('/api/auth/login', { method: 'POST', body: { password: password.value } })
     await fetchSession()
-    await navigateTo('/')
+    await navigateTo(safeNext(route.query.next))
   } catch (e) {
     error.value = apiMessage(e, '로그인하지 못했습니다')
   } finally {

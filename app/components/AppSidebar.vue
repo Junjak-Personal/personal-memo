@@ -520,12 +520,23 @@ async function logout() {
           aria-label="메모 탐색"
           data-testid="sidebar-navigation"
         />
-        <div class="border-t border-default pt-2">
+        <!-- AI 연결(MCP) 관리와 로그아웃 — 메모 탐색과 떨어진 계정·연결 줄 -->
+        <div class="grid grid-cols-2 gap-2 border-t border-default pt-2">
+          <UButton
+            to="/ai"
+            icon="i-material-symbols-smart-toy-outline"
+            color="neutral"
+            variant="outline"
+            class="min-h-11 justify-center text-muted hover:text-highlighted"
+            data-testid="sidebar-ai-link"
+          >
+            AI 연결
+          </UButton>
           <UButton
             icon="i-material-symbols-logout"
             color="neutral"
             variant="outline"
-            class="min-h-11 w-full justify-center text-muted hover:text-highlighted"
+            class="min-h-11 justify-center text-muted hover:text-highlighted"
             data-testid="sidebar-logout-button"
             @click="logout"
           >

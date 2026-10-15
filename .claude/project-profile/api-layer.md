@@ -42,3 +42,9 @@ export default defineMemoHandler(async (event, store) => store.update(memoIdPara
 - `server/calendar/google.ts`: 서비스 계정 JWT → 토큰(캐시, 만료 1분 전 갱신) → events list/insert/patch/delete
 - 설정: `NUXT_GOOGLE_CALENDAR_ID` + (`NUXT_GOOGLE_SERVICE_ACCOUNT` base64 | `NUXT_GOOGLE_SERVICE_ACCOUNT_FILE`). 없으면 꺼짐
 - 🔴 개발에서 운영 캘린더를 켜지 않는다 — 대조가 모르는 memoId 일정을 지운다
+
+## AI 연결 (MCP + OAuth, 2026-10-16)
+- `POST /mcp` — `server/mcp/tools.ts` 의 도구 11개가 MemoStore 를 그대로 쓴다(영구 삭제 없음, update 는 version 필수). 요청마다 서버 생성, 세션 없음.
+- 앱이 자기 OAuth 인증 서버: `server/oauth/{client,grants}.ts`(Nuxt 없이 Vitest), 찾기 문서는 `server/middleware/oauth-discovery.ts`.
+  CIMD 만, 허용 출처 `runtimeConfig.mcp.clientOrigins`(기본 https://claude.ai), PKCE S256, 접근 1h·갱신 60일 회전, `<dataDir>/oauth/`.
+- 🔴 응답 헤더 값은 ASCII 만 (WWW-Authenticate 에 한국어 → 500). 설계문서 §11.1.

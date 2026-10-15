@@ -78,6 +78,13 @@ export default defineNuxtConfig({
       /** 서비스 계정 키 파일 경로 — 개발 */
       serviceAccountFile: '',
     },
+    /**
+     * AI 연결(MCP, 설계: _docs/active/planning/2026-10-16-mcp-connector.md). 승인 요청을 받아 주는 클라이언트 신원 문서의 출처 —
+     * 기본 claude.ai (웹·폰·Desktop·Claude Code). 쉼표로 여럿. NUXT_MCP_CLIENT_ORIGINS
+     */
+    mcp: {
+      clientOrigins: 'https://claude.ai',
+    },
     session: {
       name: 'memo-session',
       password: '',

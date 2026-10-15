@@ -64,6 +64,32 @@ describe('클라이언트 확인 (Client ID Metadata Document)', () => {
     await expect(loadClient(CLAUDE_CODE, { origins: ORIGINS, fetch: jsonFetch({}, 404) })).rejects.toThrow('읽지 못했습니다')
   })
 
+  it('돌아갈 주소는 신원 문서와 같은 출처나 루프백만 — 허용 출처의 문서라도 바깥으로 코드를 보내지 않는다', async () => {
+    const fetch = jsonFetch({ client_id: CLAUDE_CODE, redirect_uris: ['https://evil.example/cb', 'https://claude.ai/api/mcp/auth_callback', 'http://localhost/callback'] })
+    const client = await loadClient(CLAUDE_CODE, { origins: ORIGINS, fetch })
+    expect(client.redirectUris).toEqual(['https://claude.ai/api/mcp/auth_callback', 'http://localhost/callback'])
+    expect(redirectAllowed('https://evil.example/cb', client.redirectUris)).toBe(false)
+    clearClientCache()
+    await expect(loadClient(CLAUDE_CODE, { origins: ORIGINS, fetch: jsonFetch({ client_id: CLAUDE_CODE, redirect_uris: ['https://evil.example/cb'] }) })).rejects.toThrow('같은 출처')
+  })
+
+  it('큰 문서는 상한에서 끊는다 — Content-Length 가 없어도', async () => {
+    let pulled = 0
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled++
+        controller.enqueue(new Uint8Array(16 * 1024).fill(32))
+      },
+    })
+    const fetch = vi.fn(async () => new Response(endless, { status: 200 }))
+    await expect(loadClient(CLAUDE_CODE, { origins: ORIGINS, fetch })).rejects.toThrow('너무 큽니다')
+    // 64KB 를 넘는 순간 멈췄다 — 끝없이 읽지 않았다
+    expect(pulled).toBeLessThan(10)
+    clearClientCache()
+    const declared = vi.fn(async () => new Response('{}', { status: 200, headers: { 'content-length': String(10 * 1024 * 1024) } }))
+    await expect(loadClient(CLAUDE_CODE, { origins: ORIGINS, fetch: declared })).rejects.toThrow('너무 큽니다')
+  })
+
   it('돌아갈 주소: 정확히 같아야 하고, 루프백만 포트를 보지 않는다', () => {
     const registered = ['https://claude.ai/api/mcp/auth_callback', 'http://localhost/callback', 'http://127.0.0.1/callback']
     expect(redirectAllowed('https://claude.ai/api/mcp/auth_callback', registered)).toBe(true)

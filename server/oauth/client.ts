@@ -55,8 +55,7 @@ export async function loadClient(
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   }).catch(() => null)
   if (!res?.ok) throw new OAuthClientError('클라이언트 신원 문서를 읽지 못했습니다')
-  const text = await res.text()
-  if (text.length > MAX_DOCUMENT_BYTES) throw new OAuthClientError('클라이언트 신원 문서가 너무 큽니다')
+  const text = await readCapped(res, MAX_DOCUMENT_BYTES)
 
   let doc: unknown
   try {
@@ -81,12 +80,54 @@ export async function loadClient(
   if (method !== undefined && method !== 'none' && !supported.includes('none')) {
     throw new OAuthClientError('공개 클라이언트(token_endpoint_auth_method: none)만 받습니다')
   }
-  const client = { clientId, host: new URL(clientId).host, redirectUris }
+  /*
+   * 돌아갈 주소는 신원 문서와 같은 출처이거나 루프백만 받는다 (2026-10-16 보안 검토, Claude 문서 권고).
+   * 출처 단위로 허용하므로 그 출처 어딘가가 남의 JSON 을 내준다면, 이 규칙이 없을 때 승인 코드가 바깥 사이트로 갈 수 있다.
+   */
+  const origin = new URL(clientId).origin
+  const safe = redirectUris.filter((uri) => isLoopback(uri) || sameOrigin(uri, origin))
+  if (!safe.length) throw new OAuthClientError('돌아갈 주소가 클라이언트와 같은 출처가 아닙니다')
+  const client = { clientId, host: new URL(clientId).host, redirectUris: safe }
   cache.set(clientId, { client, at: now })
   return client
 }
 
+/**
+ * 본문을 상한까지만 읽는다 — 다 읽은 뒤 크기를 보면 상한이 막지 못한다 (2026-10-16 보안 검토).
+ * Content-Length 가 이미 크면 읽지 않고, 읽는 도중 넘으면 그 자리에서 끊는다.
+ */
+async function readCapped(res: Response, max: number) {
+  const tooBig = () => new OAuthClientError('클라이언트 신원 문서가 너무 큽니다')
+  if (Number(res.headers.get('content-length') ?? 0) > max) {
+    await res.body?.cancel()
+    throw tooBig()
+  }
+  const reader = res.body?.getReader()
+  if (!reader) return ''
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > max) {
+      await reader.cancel()
+      throw tooBig()
+    }
+    chunks.push(value)
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks))
+}
+
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+function sameOrigin(uri: string, origin: string) {
+  try {
+    return new URL(uri).origin === origin
+  } catch {
+    return false
+  }
+}
 
 /** 루프백 주소인가 — Claude Code 같은 데스크톱 앱이 이 컴퓨터의 임시 포트로 받는다 */
 export function isLoopback(uri: string) {

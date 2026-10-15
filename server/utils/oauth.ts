@@ -21,13 +21,22 @@ export async function useOAuthGrants() {
   return grants
 }
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+
 /**
  * 앱 주소. 운영은 NUXT_SITE_URL(https://memo.jun-devlog.win) — 터널 뒤라 요청 주소는 http://localhost 로 보인다.
- * 개발처럼 비어 있으면 요청에서 짐작한다.
+ * 🔴 비어 있으면 요청에서 짐작하되 로컬 주소일 때만, X-Forwarded-* 는 믿지 않는다 — 요청의 Host 를 그대로 발급자로 쓰면 남이 만든
+ *    Host 로 찾기 문서·토큰의 받을 곳을 바꿀 수 있다 (2026-10-16 보안 검토). 운영에서 설정이 빠졌으면 AI 연결을 멈춘다.
  */
 export function oauthUrls(event: H3Event) {
   const { siteUrl } = useRuntimeConfig()
-  const issuer = (siteUrl || getRequestURL(event, { xForwardedHost: true, xForwardedProto: true }).origin).replace(/\/+$/, '')
+  let origin = siteUrl
+  if (!origin) {
+    const url = getRequestURL(event)
+    if (!LOCAL_HOSTS.has(url.hostname)) throw createError({ statusCode: 503, data: { message: 'NUXT_SITE_URL 이 없어 AI 연결을 쓸 수 없습니다' } })
+    origin = url.origin
+  }
+  const issuer = origin.replace(/\/+$/, '')
   return {
     issuer,
     resource: `${issuer}/mcp`,

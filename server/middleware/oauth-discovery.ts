@@ -10,7 +10,8 @@ export default defineEventHandler((event) => {
   const path = getRequestURL(event).pathname
   if (!path.startsWith('/.well-known/oauth-')) return
   const { issuer, resource } = oauthUrls(event)
-  setResponseHeader(event, 'cache-control', 'public, max-age=300')
+  // 중간 캐시에 남기지 않는다 — 문서는 가볍고, 주소가 바뀌면 바로 반영돼야 한다 (Claude 는 스스로 5분쯤 캐시한다)
+  setResponseHeader(event, 'cache-control', 'no-store')
 
   if (path === '/.well-known/oauth-protected-resource' || path === '/.well-known/oauth-protected-resource/mcp') {
     return {

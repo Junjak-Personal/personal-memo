@@ -45,13 +45,13 @@ export function useTodo() {
     }
   }
 
-  /** 「할 일」 폴더에 새 할 일을 만든다. 제목만 받는다 — 날짜·본문은 열어서 쓴다 */
-  async function addTodo(title: string): Promise<Memo> {
+  /** 「할 일」 폴더에 새 할 일을 만든다. 제목과 날짜만 받는다 — 본문은 열어서 쓴다 */
+  async function addTodo(title: string, date: string | null = null, dateEnd: string | null = null): Promise<Memo> {
     // 폴더가 이미 보이면 만들지 않는다 — 매번 보내면 409 가 콘솔에 쌓인다
     if (!tree.value?.folders.some((f) => f.path === TODO_FOLDER)) await ensureFolder(TODO_FOLDER)
     const memo = await $fetch<Memo>('/api/memos', {
       method: 'POST',
-      body: { folder: TODO_FOLDER, title, content: '', date: null, dateEnd: null, done: false },
+      body: { folder: TODO_FOLDER, title, content: '', date, dateEnd, done: false },
     })
     await refresh()
     return memo

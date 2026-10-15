@@ -13,6 +13,9 @@ const { tree, error } = useMemoTree()
 const todo = useTodo()
 
 const titleInput = ref('')
+/** 새 할 일의 날짜 — 기본은 오늘. 추가한 뒤에도 그대로 둔다(같은 날 할 일을 이어서 넣기 좋게). 지우면 날짜 없는 할 일 */
+const newDate = ref<string | null>(todayKst())
+const newDateEnd = ref<string | null>(null)
 const adding = ref(false)
 /** 이 화면에서 끝낸 할 일 — 떠날 때까지 목록에 남긴다 */
 const finishedHere = ref<string[]>([])
@@ -38,13 +41,18 @@ async function add() {
   if (!title || adding.value) return
   adding.value = true
   try {
-    await todo.addTodo(title)
+    await todo.addTodo(title, newDate.value, newDateEnd.value)
     titleInput.value = ''
   } catch (e) {
     toast.add({ color: 'error', title: apiMessage(e, '할 일을 추가하지 못했습니다') })
   } finally {
     adding.value = false
   }
+}
+
+function onNewDate(date: string | null, dateEnd: string | null) {
+  newDate.value = date
+  newDateEnd.value = dateEnd
 }
 
 async function toggle(memo: MemoMeta) {
@@ -72,6 +80,7 @@ async function toggle(memo: MemoMeta) {
           data-testid="todo-add-input"
         />
         <UButton type="submit" :loading="adding" :disabled="!titleInput.trim()" data-testid="todo-add-button">추가</UButton>
+        <MemoDatePicker :date="newDate" :date-end="newDateEnd" size="md" test-id="todo-date" @change="onNewDate" />
       </form>
       <p class="-mt-2 text-xs text-muted">「{{ TODO_FOLDER }}」 폴더에 생깁니다. 다른 메모는 메모 메뉴의 「할 일로 두기」로 여기에 올립니다.</p>
 

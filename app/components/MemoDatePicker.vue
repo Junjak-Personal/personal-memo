@@ -1,12 +1,24 @@
 <script setup lang="ts">
 /**
  * 날짜 — 종일 하루 또는 기간 (설계문서 §8). 첫 클릭이 하루, 두 번째 클릭이 기간의 끝.
+ * 메모 화면과 「할 일」 화면(새 할 일의 날짜)이 같이 쓴다.
  * 날짜는 시간대 없는 CalendarDate 로만 다룬다 — JS Date 로 바꾸면 UTC 에서 하루 밀린다.
  */
 import { parseDate } from '@internationalized/date'
 import type { DateRange } from 'reka-ui'
 
-const props = defineProps<{ date: string | null; dateEnd: string | null; disabled?: boolean }>()
+const props = withDefaults(
+  defineProps<{
+    date: string | null
+    dateEnd: string | null
+    disabled?: boolean
+    /** 단추 크기 — 옆 입력칸과 높이를 맞출 때 */
+    size?: 'sm' | 'md'
+    /** data-testid 앞부분 — `<testId>-button` 등 */
+    testId?: string
+  }>(),
+  { size: 'sm', testId: 'memo-date' },
+)
 
 const emit = defineEmits<{ change: [date: string | null, dateEnd: string | null] }>()
 
@@ -53,9 +65,9 @@ function clear() {
       icon="i-material-symbols-calendar-today-outline"
       color="neutral"
       variant="outline"
-      size="sm"
+      :size="size"
       :disabled="disabled"
-      data-testid="memo-date-button"
+      :data-testid="`${testId}-button`"
     >
       {{ label }}
     </UButton>
@@ -65,10 +77,10 @@ function clear() {
         <UCalendar range :model-value="draft" :week-starts-on="0" @update:model-value="onSelect" />
         <p class="px-1 text-xs text-muted">한 번 누르면 하루, 한 번 더 누르면 기간입니다</p>
         <div class="flex justify-end gap-2">
-          <UButton color="neutral" variant="outline" size="sm" :disabled="!date" data-testid="memo-date-clear" @click="clear">
+          <UButton color="neutral" variant="outline" size="sm" :disabled="!date" :data-testid="`${testId}-clear`" @click="clear">
             날짜 지우기
           </UButton>
-          <UButton size="sm" data-testid="memo-date-done" @click="open = false">확인</UButton>
+          <UButton size="sm" :data-testid="`${testId}-done`" @click="open = false">확인</UButton>
         </div>
       </div>
     </template>

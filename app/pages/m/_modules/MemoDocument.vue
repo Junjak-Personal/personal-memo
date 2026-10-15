@@ -33,7 +33,6 @@ import LinkDialog from './editor/LinkDialog.vue'
 import LinkPopover from './editor/LinkPopover.vue'
 import MemoActions from './MemoActions.vue'
 import MemoCalendarSyncBadge from './MemoCalendarSyncBadge.vue'
-import MemoDatePicker from './MemoDatePicker.vue'
 import MemoSaveStatus from './MemoSaveStatus.vue'
 import { canonicalMarkdown, type SaveState, useMemoAutosave } from './useMemoAutosave'
 import { useNativeBridge } from './useNativeBridge'
@@ -136,7 +135,8 @@ const extensions = [
 ]
 const editorProps = {
   attributes: { autocorrect: 'on', autocapitalize: 'off' },
-  handlePaste: (_view: EditorView, event: ClipboardEvent) => insertImageFiles([...(event.clipboardData?.files ?? [])]),
+  // 이미지 파일이 먼저, 그다음 마크다운 원문 글 (pasteMarkdown)
+  handlePaste: (_view: EditorView, event: ClipboardEvent) => insertImageFiles([...(event.clipboardData?.files ?? [])]) || pasteMarkdown(event),
   handleDrop: (view: EditorView, event: DragEvent, _slice: unknown, moved: boolean) =>
     !moved && insertImageFiles([...(event.dataTransfer?.files ?? [])], view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos),
 }
@@ -396,6 +396,19 @@ function showOriginal(src: string) {
   }
   originalFit.value = true
   originalUrl.value = url
+}
+
+/**
+ * 마크다운 원문을 붙여 넣으면 서식으로 넣는다 (2026-10-15 사용자 요청). 언제 기본 붙여넣기에 맡기는지는 utils/markdown-paste.ts.
+ * 코드 블록 안에서는 코드를 글자 그대로 둔다.
+ */
+function pasteMarkdown(event: ClipboardEvent) {
+  const editor = editorRef.value?.editor
+  const data = event.clipboardData
+  if (!editor || !data || editor.isActive('codeBlock')) return false
+  const text = data.getData('text/plain')
+  if (!text || isRichHtml(data.getData('text/html')) || !looksLikeMarkdown(text)) return false
+  return editor.chain().focus().insertContent(text, { contentType: 'markdown' }).run()
 }
 
 function onPaste() {

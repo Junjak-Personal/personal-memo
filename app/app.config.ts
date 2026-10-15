@@ -9,6 +9,14 @@ export default defineAppConfig({
       primary: 'emerald',
       neutral: 'neutral'
     },
+    /*
+     * 목록 접기·펼치기는 겹 쉐브론 — 접기 «, 펼치기 ». PC 접기 버튼과 폰의 열기·닫기가 같은 모양 (2026-10-15 사용자 요청).
+     * 홑 쉐브론(‹)은 「뒤로 가기」로 읽혀서 겹으로 둔다.
+     */
+    icons: {
+      panelOpen: 'i-lucide-chevrons-right',
+      panelClose: 'i-lucide-chevrons-left'
+    },
     // 짙은 주 버튼은 밝은 글씨로, 선택·포커스·강조 글씨는 테마별 primary 밝기를 쓴다.
     button: {
       compoundVariants: [

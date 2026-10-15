@@ -6,8 +6,9 @@
       <template #header>
         <div class="shrink-0 bg-default" data-testid="app-header">
           <UDashboardNavbar :ui="{ center: 'min-w-0 overflow-x-auto' }">
+            <!-- 폰에서 목록을 여는 버튼 — PC 의 펼치기와 같은 » (≡ 대신, 2026-10-15 사용자 요청) -->
             <template #toggle>
-              <UDashboardSidebarToggle class="size-11 justify-center" data-testid="app-sidebar-toggle" />
+              <UDashboardSidebarToggle icon="i-lucide-chevrons-right" class="size-11 justify-center" data-testid="app-sidebar-toggle" />
             </template>
             <template #leading>
               <UDashboardSidebarCollapse data-testid="app-sidebar-collapse" />

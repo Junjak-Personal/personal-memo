@@ -287,9 +287,12 @@ async function logout() {
     }"
   >
     <template #toggle="{ toggle }">
-      <!-- 테두리 없는 아이콘 버튼 — 테두리 있는 44px 칸은 폰에서 너무 크게 보였다 (2026-10-15 사용자 지적) -->
+      <!--
+        폰에서 목록을 닫는 버튼. X 대신 PC 의 「접기」와 같은 « — 여는 버튼(»)과 짝이다 (2026-10-15 사용자 요청).
+        테두리 없는 아이콘 버튼 — 테두리 있는 44px 칸은 폰에서 너무 크게 보였다.
+      -->
       <UButton
-        icon="i-material-symbols-close"
+        icon="i-lucide-chevrons-left"
         color="neutral"
         variant="ghost"
         class="size-10 shrink-0 justify-center"

@@ -1,6 +1,11 @@
+import type { AnyExtension } from '@tiptap/core'
 import Image from '@tiptap/extension-image'
 import type { ImageOptions } from '@tiptap/extension-image'
+import { TaskItem, TaskList } from '@tiptap/extension-list'
+import { TableKit } from '@tiptap/extension-table'
 import Underline from '@tiptap/extension-underline'
+import { CodeBlockShiki } from 'tiptap-extension-code-block-shiki'
+import { MemoEmoji } from './editor-emoji'
 
 /**
  * 밑줄 — 마크다운에는 `<u>text</u>` 로 쓴다.
@@ -66,3 +71,26 @@ export const MemoImage = Image.extend<MemoImageOptions>({
     }
   },
 })
+
+/**
+ * 메모 본문을 읽고 그리는 확장 — 편집기(MemoDocument)와 외부 공개 화면(/ext)이 같은 것을 쓴다. 둘이 다르면 같은 마크다운이
+ * 다르게 보인다. editOnly 는 편집기만 쓰는 것(이미지 올리기 자리표시)이고, 원래 순서대로 이미지 앞에 둔다.
+ */
+export function memoExtensions(image: Pick<MemoImageOptions, 'toDisplay' | 'toStored'>, editOnly: AnyExtension[] = []): AnyExtension[] {
+  return [
+    HtmlUnderline,
+    TaskList,
+    TaskItem.configure({
+      nested: true,
+      a11y: { checkboxLabel: (node, checked) => `${checked ? '완료' : '할 일'}: ${node.textContent || '빈 항목'}` },
+    }),
+    TableKit,
+    CodeBlockShiki.configure({
+      defaultTheme: 'material-theme',
+      themes: { light: 'material-theme-lighter', dark: 'material-theme-palenight' },
+    }),
+    MemoEmoji,
+    ...editOnly,
+    MemoImage.configure(image),
+  ]
+}

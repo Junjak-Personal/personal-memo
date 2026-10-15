@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * 메모 메뉴 — 할 일로 두기/해제, 폴더 이동, 휴지통으로.
+ * 메모 메뉴 — 할 일로 두기/해제, 외부 공개, 폴더 이동, 휴지통으로.
+ * 외부 공개 중이면 메뉴 옆에 「공개 중」 버튼을 늘 보여 준다 — 누르면 링크를 복사한다 (usePublicMemo).
  * 할 일로 두면 frontmatter 에 `done: false` 가 붙고 「할 일」 화면에 모인다. 해제하면 키를 지워 일반 메모로 (useTodo).
  * 폴더 이동은 대기열에 넣는다 — 사이드바엔 바로 보이고 파일은 3초 뒤 옮겨진다 (useStructureQueue).
  * 휴지통은 바로 한다 — 고친 게 남아 있으면 먼저 저장한다.
@@ -20,12 +21,14 @@ const { refresh } = useMemoTree()
 const activeMemo = useActiveMemo()
 const queue = useStructureQueue()
 const todo = useTodo()
+const share = usePublicMemo()
 
 const moveOpen = ref(false)
 const removing = ref(false)
 
 /** 트리에 아직 없으면(방금 만든 메모) null — 일반 메모로 본다 */
 const done = computed(() => todo.find(props.memoId())?.done ?? null)
+const isPublic = computed(() => share.isPublic(props.memoId()))
 
 const items = computed<DropdownMenuItem[][]>(() => [
   [
@@ -33,6 +36,12 @@ const items = computed<DropdownMenuItem[][]>(() => [
       ? { label: '할 일로 두기', icon: 'i-material-symbols-add-task', onSelect: () => void todo.setDone(props.memoId(), false) }
       : { label: '할 일 해제', icon: 'i-material-symbols-remove-done', onSelect: () => void todo.setDone(props.memoId(), null) },
   ],
+  isPublic.value
+    ? [
+        { label: '공개 링크 복사', icon: 'i-material-symbols-link', onSelect: () => void share.copyLink(props.memoId()) },
+        { label: '외부 공개 끄기', icon: 'i-material-symbols-public-off', onSelect: () => void share.setPublic(props.memoId(), false) },
+      ]
+    : [{ label: '외부 공개', icon: 'i-material-symbols-public', onSelect: () => void share.setPublic(props.memoId(), true) }],
   [{ label: '폴더 이동', icon: 'i-material-symbols-drive-file-move-outline', onSelect: () => (moveOpen.value = true) }],
   [{ label: '휴지통으로', icon: 'i-material-symbols-delete-outline', color: 'error', onSelect: remove }],
 ])
@@ -79,6 +88,20 @@ async function restore(trashPath: string) {
 </script>
 
 <template>
+  <UTooltip v-if="isPublic" text="공개 링크 복사">
+    <UButton
+      icon="i-material-symbols-public"
+      color="primary"
+      variant="outline"
+      size="sm"
+      aria-label="외부 공개 중 — 공개 링크 복사"
+      data-testid="memo-public-badge"
+      @click="share.copyLink(props.memoId())"
+    >
+      <span class="hidden sm:inline">공개 중</span>
+    </UButton>
+  </UTooltip>
+
   <UDropdownMenu :items="items" :content="{ align: 'end' }">
     <UTooltip text="메모 메뉴">
       <UButton icon="i-material-symbols-more-horiz" color="neutral" variant="ghost" aria-label="메모 메뉴" data-testid="memo-actions-button" />

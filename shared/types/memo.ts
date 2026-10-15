@@ -26,13 +26,22 @@ export interface MemoMeta {
    * `done: true/false` 가 아닌 값(`done: yes` 등)은 null 로 읽고 파일의 값은 건드리지 않는다.
    */
   done: boolean | null
+  /** 외부 공개 (frontmatter `public: true`, 2026-10-16) — `/ext/{id}` 를 로그인 없이 읽기 전용으로 연다 */
+  public: boolean
   /** frontmatter 를 읽지 못한 파일 — 앱에서 저장하지 않는다 */
   unreadable: boolean
 }
 
+/** 외부 공개 화면이 받는 것 — 제목·본문·수정 시각만. 폴더·태그·날짜는 내보내지 않는다 */
+export interface PublicMemo {
+  title: string
+  content: string
+  updated: string | null
+}
+
 export interface Memo extends MemoMeta {
   content: string
-  /** 파일 내용 해시(`done` 줄은 빼고). 저장할 때 baseVersion 으로 돌려보낸다 */
+  /** 파일 내용 해시(`done`·`public` 줄은 빼고). 저장할 때 baseVersion 으로 돌려보낸다 */
   version: string
 }
 

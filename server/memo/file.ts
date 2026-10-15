@@ -5,6 +5,7 @@
  * - 앱이 모르는 키(`aliases` …)와 주석은 지우지 않는다 — YAML 을 값이 아니라 문서(Document)로 다룬다.
  * - `tags` 는 앱도 쓴다. 바뀌었을 때만 고쳐 쓴다 — 밖에서 쓴 모양(`tags: a, b`, 블록 목록)은 그대로 남는다.
  * - `done`(할 일)도 바뀌었을 때만 쓴다. `true`/`false` 가 아닌 값은 모르는 값으로 두고 건드리지 않는다.
+ * - `public`(외부 공개)은 `true` 일 때만 공개다. 끄면 키를 지운다. 그 밖의 값(`public: yes`)은 비공개로 읽고 건드리지 않는다.
  * - frontmatter 를 읽지 못하면 그 파일은 «앱에서 저장하지 않는다». 고쳐 쓰다가 남의 내용을 날리는 것보다
  *   저장을 거부하는 편이 낫다.
  */
@@ -23,13 +24,15 @@ export interface MemoFields {
   tags: string[]
   /** 할 일 — null = 메모 (`done` 키가 없거나 true/false 가 아님) */
   done: boolean | null
+  /** 외부 공개 — `public: true` 일 때만 true */
+  public: boolean
 }
 
 export type ParsedMemo =
   | { ok: true; doc: Document | null; fields: MemoFields; body: string }
   | { ok: false; body: string }
 
-const EMPTY: MemoFields = { id: null, title: null, created: null, updated: null, date: null, dateEnd: null, tags: [], done: null }
+const EMPTY: MemoFields = { id: null, title: null, created: null, updated: null, date: null, dateEnd: null, tags: [], done: null, public: false }
 
 /** 맨 앞의 `---` … `---` 블록. 비어 있는 frontmatter(`---\n---`)도 받는다 */
 const FRONTMATTER = /^---\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/
@@ -57,6 +60,11 @@ function doneOf(value: unknown) {
   return typeof value === 'boolean' ? value : null
 }
 
+/** 공개는 `public: true` 하나뿐이다 — 애매한 값을 공개로 읽으면 안 된다 */
+function publicOf(value: unknown) {
+  return value === true
+}
+
 export function parseMemo(raw: string): ParsedMemo {
   const match = FRONTMATTER.exec(raw)
   if (!match) return { ok: true, doc: null, fields: { ...EMPTY }, body: raw }
@@ -79,6 +87,7 @@ export function parseMemo(raw: string): ParsedMemo {
       dateEnd: text(doc.get('date_end')),
       tags: tagsOf(doc.get('tags')),
       done: doneOf(doc.get('done')),
+      public: publicOf(doc.get('public')),
     },
     body,
   }
@@ -112,22 +121,26 @@ export function serializeMemo(doc: Document | null, fields: MemoFields, body: st
     if (fields.done === null) target.delete('done')
     else target.set('done', fields.done)
   }
+  if (publicOf(target.get('public')) !== fields.public) {
+    if (fields.public) target.set('public', true)
+    else target.delete('public')
+  }
   // 한 줄 목록은 손으로 쓰는 모양(`[a, b]`)으로 — 기본값은 `[ a, b ]` 라 저장할 때마다 사람이 쓴 목록까지 바뀐다
   const yaml = target.toString({ lineWidth: 0, flowCollectionPadding: false })
   const content = body.endsWith('\n') ? body : `${body}\n`
   return `---\n${yaml}---\n\n${content}`
 }
 
-/** frontmatter 안의 `done:` 줄 (맨 앞에서 시작하는 최상위 키만) */
-const DONE_LINE = /^done:[^\r\n]*(?:\r?\n|$)/m
+/** frontmatter 안의 `done:`·`public:` 줄 (맨 앞에서 시작하는 최상위 키만) */
+const UNVERSIONED_LINES = /^(?:done|public):[^\r\n]*(?:\r?\n|$)/gm
 
 /**
  * 파일 내용 해시 — 저장 충돌 판정용 (설계문서 §3.3).
- * frontmatter 의 `done:` 줄은 뺀다. 할 일 체크는 편집기가 들고 있는 내용이 아니고 수정 저장은 파일의 값을 그대로 두므로,
- * 목록에서 체크했다고 열린 편집기의 다음 저장이 「다른 곳에서 먼저 수정했습니다」로 막히면 안 된다.
+ * frontmatter 의 `done:`·`public:` 줄은 뺀다. 할 일 체크·외부 공개는 편집기가 들고 있는 내용이 아니고 수정 저장은 파일의 값을
+ * 그대로 두므로, 목록에서 체크했다고(메뉴에서 공개를 켰다고) 열린 편집기의 다음 저장이 「다른 곳에서 먼저 수정했습니다」로 막히면 안 된다.
  */
 export function versionOf(raw: string) {
   const match = FRONTMATTER.exec(raw)
-  const text = match ? match[0].replace(DONE_LINE, '') + raw.slice(match[0].length) : raw
+  const text = match ? match[0].replace(UNVERSIONED_LINES, '') + raw.slice(match[0].length) : raw
   return createHash('sha256').update(text).digest('hex').slice(0, 32)
 }

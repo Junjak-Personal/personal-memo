@@ -5,20 +5,17 @@
  * 저장은 useMemoAutosave, 폰의 네이티브 툴바는 useNativeBridge 가 맡는다.
  */
 import type { Editor as CoreEditor } from '@tiptap/core'
-import { TaskItem, TaskList } from '@tiptap/extension-list'
-import { TableKit } from '@tiptap/extension-table'
 import type { EditorState } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
 import type { EditorView } from '@tiptap/pm/view'
 import type { Editor, JSONContent } from '@tiptap/vue-3'
-import { CodeBlockShiki } from 'tiptap-extension-code-block-shiki'
 import type { Memo } from '#shared/types/memo'
 import { originalOfDisplay, toDisplaySrc, toOriginalSrc, toStoredSrc } from '#shared/utils/asset-path'
 import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS, sameTags, TAG_DELIMITER } from '#shared/utils/tags'
-import { HtmlUnderline, MemoImage } from '~/utils/editor-extensions'
+import { emojiItems } from '~/utils/editor-emoji'
+import { memoExtensions } from '~/utils/editor-extensions'
 import { prepareImage, type PreparedImage } from '~/utils/image-resize'
 import { type MemoDraft, removeDraft } from '~/utils/memo-drafts'
-import { emojiItems, MemoEmoji } from './editor/emoji'
 import { ImageUpload } from './editor/ImageUploadExtension'
 import {
   bubbleToolbarItems,
@@ -114,25 +111,13 @@ const draftOnOpen = autosave?.pendingDraft() ?? null
 const restoredDraft = !!draftOnOpen && !draftOnOpen.conflict && draftOnOpen.baseVersion === memo.value?.version
 const staleDraft = ref<MemoDraft | null>(draftOnOpen && !restoredDraft ? draftOnOpen : null)
 if (draftOnOpen && restoredDraft) applyDraft(draftOnOpen)
-const extensions = [
-  HtmlUnderline,
-  TaskList,
-  TaskItem.configure({
-    nested: true,
-    a11y: { checkboxLabel: (node, checked) => `${checked ? '완료' : '할 일'}: ${node.textContent || '빈 항목'}` },
-  }),
-  TableKit,
-  CodeBlockShiki.configure({
-    defaultTheme: 'material-theme',
-    themes: { light: 'material-theme-lighter', dark: 'material-theme-palenight' },
-  }),
-  MemoEmoji,
-  ImageUpload.configure({ upload: uploadImage }),
-  MemoImage.configure({
+const extensions = memoExtensions(
+  {
     toDisplay: (src: string) => toDisplaySrc(folder, src),
     toStored: (src: string) => toStoredSrc(folder, src),
-  }),
-]
+  },
+  [ImageUpload.configure({ upload: uploadImage })],
+)
 const editorProps = {
   attributes: { autocorrect: 'on', autocapitalize: 'off' },
   // 이미지 파일이 먼저, 그다음 마크다운 원문 글 (pasteMarkdown)

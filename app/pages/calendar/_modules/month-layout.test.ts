@@ -3,7 +3,7 @@ import type { MemoMeta } from '#shared/types/memo'
 import { groupByCreatedDay, layoutWeek, MAX_LANES, monthWeeks, scheduledOn, shiftMonth } from './month-layout'
 
 function memo(id: string, date: string | null, dateEnd: string | null = null, created: string | null = null): MemoMeta {
-  return { id, path: `${id}.md`, folder: '', title: id, created, updated: null, date, dateEnd, tags: [], done: null, unreadable: false }
+  return { id, path: `${id}.md`, folder: '', title: id, created, updated: null, date, dateEnd, tags: [], done: null, public: false, unreadable: false }
 }
 
 // 2026-10: 1일이 목요일, 31일이 토요일

@@ -526,3 +526,78 @@ describe('할 일 (done)', () => {
     expect(snapshot.total).toBe(2)
   })
 })
+
+describe('외부 공개 (public)', () => {
+  it('켜기는 public 만 바꾼다 — 본문·updated·버전은 그대로, 열린 편집기의 저장도 통과하고 값은 남는다', async () => {
+    const memo = await store.create({ ...input('여행 동선', '첫 줄'), folder: '' })
+    expect(memo.public).toBe(false)
+    const before = await readFile(memos('여행 동선.md'), 'utf8')
+    const on = await store.setPublic(memo.id, true)
+    expect(on).toMatchObject({ id: memo.id, public: true, updated: memo.updated })
+    const after = await readFile(memos('여행 동선.md'), 'utf8')
+    expect(after).toBe(before.replace('---\n\n', 'public: true\n---\n\n'))
+    expect((await store.get(memo.id)).version).toBe(memo.version)
+
+    const saved = await store.update(memo.id, { ...input('여행 동선', '고친 본문'), baseVersion: memo.version })
+    expect(saved).toMatchObject({ public: true, content: '고친 본문\n' })
+    expect((await store.tree()).memos[0]).toMatchObject({ public: true })
+
+    expect((await store.setPublic(memo.id, false)).public).toBe(false)
+    expect(await readFile(memos('여행 동선.md'), 'utf8')).not.toContain('public')
+  })
+
+  it('공개한 메모만 제목·본문·수정 시각을 준다 — 없는 메모·비공개·휴지통은 똑같이 «없음»', async () => {
+    const memo = await store.create({ ...input('공유할 글', '## 안내\n\n내용'), date: '2026-10-20', tags: ['비밀'], folder: '' })
+    await rejects(store.publicMemo(memo.id), 'not_found')
+    await store.setPublic(memo.id, true)
+    const shown = await store.publicMemo(memo.id)
+    expect(shown).toEqual({ title: '공유할 글', content: '## 안내\n\n내용\n', updated: memo.updated })
+    // 폴더·태그·날짜는 내보내지 않는다
+    expect(Object.keys(shown).sort()).toEqual(['content', 'title', 'updated'])
+
+    await rejects(store.publicMemo('01JZZZZZZZZZZZZZZZZZZZZZZZ'), 'not_found')
+    await rejects(store.publicMemo('../etc/passwd'), 'not_found')
+    await store.remove(memo.id)
+    await rejects(store.publicMemo(memo.id), 'not_found')
+  })
+
+  it('밖에서 고친 본문이 바로 보인다 (재스캔)', async () => {
+    const memo = await store.create({ ...input('글', '처음'), folder: '' })
+    await store.setPublic(memo.id, true)
+    const raw = await readFile(memos('글.md'), 'utf8')
+    await externalWrite('글.md', raw.replace('처음', '밖에서 고침'))
+    expect((await store.publicMemo(memo.id)).content).toBe('밖에서 고침\n')
+  })
+
+  it('id 가 없는 파일(경로 id)은 공개하지 않는다 — 주소에 폴더·파일 이름이 드러난다', async () => {
+    await externalWrite('밖.md', '---\ntitle: 밖\n---\n\n본문\n')
+    const meta = (await store.tree()).memos[0]!
+    expect(meta.id.startsWith('p:')).toBe(true)
+    await rejects(store.setPublic(meta.id, true), 'bad_request')
+    // 밖에서 public: true 를 적었어도 경로 id 로는 열리지 않는다
+    await externalWrite('밖.md', '---\ntitle: 밖\npublic: true\n---\n\n본문\n')
+    await rejects(store.publicMemo(meta.id), 'not_found')
+    expect((await store.setPublic(meta.id, false)).public).toBe(false)
+  })
+
+  it('이미지는 그 메모가 본문에서 참조하는 것만 — 같은 assets 의 다른 이미지·원본은 안 나간다', async () => {
+    await store.createFolder('', '여행')
+    const memo = await store.create({ ...input('사진'), folder: '여행' })
+    const shown = await store.saveImage(memo.id, PNG, PNG)
+    const hidden = await store.saveImage(memo.id, PNG)
+    const opened = await store.get(memo.id)
+    await store.update(memo.id, { ...input('사진', `![](${shown.src})\n`), baseVersion: opened.version })
+
+    await rejects(store.publicImage(memo.id, shown.src), 'not_found')
+    await store.setPublic(memo.id, true)
+    const file = await store.publicImage(memo.id, shown.src)
+    expect(file.abs).toBe(memos(`여행/${shown.src}`))
+    await rejects(store.publicImage(memo.id, hidden.src), 'not_found')
+    await rejects(store.publicImage(memo.id, shown.src.replace(/\.png$/, '.orig.png')), 'not_found')
+    await rejects(store.publicImage(memo.id, `../여행/${hidden.src}`), 'not_found')
+    await rejects(store.publicImage(memo.id, `/api/files/여행/${shown.src}`), 'not_found')
+
+    await store.setPublic(memo.id, false)
+    await rejects(store.publicImage(memo.id, shown.src), 'not_found')
+  })
+})

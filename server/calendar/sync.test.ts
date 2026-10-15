@@ -43,7 +43,7 @@ class FakeCalendar implements CalendarApi {
 }
 
 function meta(id: string, date: string | null, title = `메모 ${id}`, dateEnd: string | null = null): MemoMeta {
-  return { id, path: `${title}.md`, folder: '', title, created: null, updated: null, date, dateEnd, tags: [], done: null, unreadable: false }
+  return { id, path: `${title}.md`, folder: '', title, created: null, updated: null, date, dateEnd, tags: [], done: null, public: false, unreadable: false }
 }
 
 let api: FakeCalendar

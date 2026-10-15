@@ -1,0 +1,61 @@
+<script setup lang="ts">
+/**
+ * 외부 공개 메모 (설계문서 §11.2) — 사이드바·툴바 없이 제목과 본문만, 읽기 전용. 로그인 없이 연다.
+ * 본문은 편집기와 같은 확장(memoExtensions)으로 그린다. 이미지는 본문 속 경로를 그대로 공개 이미지 주소로 보낸다 —
+ * 서버가 그 메모가 참조하는 이미지만 내준다(store.publicImage).
+ */
+import type { PublicMemo } from '#shared/types/memo'
+import { isRelativeSrc } from '#shared/utils/asset-path'
+import { memoExtensions } from '~/utils/editor-extensions'
+
+const props = defineProps<{ memoId: string }>()
+
+const { data: memo, error } = await useAsyncData(`ext-${props.memoId}`, () => $fetch<PublicMemo>(`/api/ext/${encodeURIComponent(props.memoId)}`))
+
+const imageBase = `/api/ext/${encodeURIComponent(props.memoId)}/image?src=`
+const extensions = memoExtensions({
+  toDisplay: (src: string) => (isRelativeSrc(src) ? imageBase + encodeURIComponent(src) : src),
+  toStored: (src: string) => src,
+})
+
+const updatedLabel = computed(() =>
+  memo.value?.updated ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', timeZone: 'Asia/Seoul' }).format(new Date(memo.value.updated)) : null,
+)
+
+useHead({
+  title: () => memo.value?.title || '메모',
+  meta: [
+    { name: 'robots', content: 'noindex, nofollow' },
+    { name: 'referrer', content: 'no-referrer' },
+  ],
+})
+</script>
+
+<template>
+  <main class="min-h-dvh bg-default">
+    <div v-if="error || !memo" class="flex min-h-dvh flex-col items-center justify-center gap-3 px-4 text-center" data-testid="ext-missing">
+      <UIcon name="i-material-symbols-lock-outline" class="size-10 text-dimmed" />
+      <p class="text-muted">
+        {{ apiStatus(error) === 404 ? '공개되지 않았거나 없는 메모입니다' : apiMessage(error, '메모를 열지 못했습니다') }}
+      </p>
+    </div>
+
+    <article v-else class="pb-24" data-testid="ext-memo">
+      <header class="mx-auto w-full max-w-4xl px-4 pt-10 sm:px-14">
+        <h1 class="text-3xl font-bold break-words" data-testid="ext-title">{{ memo.title }}</h1>
+        <p v-if="updatedLabel" class="mt-2 text-xs text-dimmed">{{ updatedLabel }} 수정</p>
+      </header>
+      <UEditor
+        :model-value="memo.content"
+        content-type="markdown"
+        :starter-kit="{ underline: false, codeBlock: false }"
+        :image="false"
+        :mention="false"
+        :extensions="extensions"
+        :editable="false"
+        :ui="{ base: 'sm:px-0 pt-6', content: 'mx-auto w-full max-w-4xl px-4 sm:px-14' }"
+        data-testid="ext-body"
+      />
+    </article>
+  </main>
+</template>

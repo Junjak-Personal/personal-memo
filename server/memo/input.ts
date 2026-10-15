@@ -80,6 +80,12 @@ export function parseDoneInput(raw: unknown) {
   return done
 }
 
+export function parsePublicInput(raw: unknown) {
+  const value = asBody(raw).public
+  if (typeof value !== 'boolean') bad('public: true 또는 false 여야 합니다')
+  return value
+}
+
 export function parseUpdateInput(raw: unknown): UpdateMemoInput {
   const body = asBody(raw)
   return { ...memoInput(body), baseVersion: str(body, 'baseVersion', 64) }

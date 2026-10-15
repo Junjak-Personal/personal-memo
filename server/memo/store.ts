@@ -15,11 +15,13 @@ import type {
   FolderNode,
   Memo,
   MemoMeta,
+  PublicMemo,
   SearchHit,
   TrashItem,
   TreeResponse,
   UpdateMemoInput,
 } from '../../shared/types/memo'
+import { isRelativeSrc, normalizePath } from '../../shared/utils/asset-path'
 import { isDateString, kstDay, nowKst } from '../../shared/utils/memo-date'
 import { hasTag, parseSearchQuery } from '../../shared/utils/tags'
 import { isScheduled } from '../../shared/utils/todo'
@@ -178,6 +180,52 @@ export class MemoStore {
     })
   }
 
+  // ── 외부 공개 (§11.2) — 로그인 없이 부른다 ─────────────────────────────
+
+  /** 공개된 메모의 제목·본문. 없는 메모와 공개하지 않은 메모는 똑같이 «없음» — 비공개 메모가 있는지도 알리지 않는다 */
+  publicMemo(id: string): Promise<PublicMemo> {
+    return this.exclusive(async () => {
+      const entry = await this.publicEntry(id)
+      const meta = this.index.meta(entry)
+      return { title: meta.title, content: entry.body, updated: meta.updated }
+    })
+  }
+
+  /**
+   * 공개된 메모가 본문에서 참조하는 이미지. 화면은 본문 속 경로(src)를 그대로 보내고, 그 메모가 실제로 참조하는 것만 내준다 —
+   * 같은 `assets/` 의 다른 이미지나 원본(`.orig`)은 이 길로 나가지 않는다.
+   */
+  publicImage(id: string, src: string) {
+    return this.exclusive(async () => {
+      const entry = await this.publicEntry(id)
+      const folder = folderOf(entry.path)
+      const refs = referencedImages(folder, entry.body)
+      const candidates = [src]
+      try {
+        candidates.push(decodeURI(src))
+      } catch {
+        // 잘못된 % 인코딩 — 적힌 그대로만 본다
+      }
+      for (const candidate of candidates) {
+        if (!isRelativeSrc(candidate)) continue
+        const path = normalizePath(folder ? `${folder}/${candidate}` : candidate)
+        if (path && refs.has(path)) return this.imageFile(path)
+      }
+      throw new MemoError('not_found', '이미지를 찾을 수 없습니다')
+    })
+  }
+
+  /** 경로 id(`p:`)는 공개 주소로 쓰지 않는다 — setPublic 이 막지만, 밖에서 `public: true` 를 적은 id 없는 파일도 여기서 막힌다 */
+  private async publicEntry(id: string) {
+    // 로그인 없이 오는 요청이다 — id 꼴이 아니면 전체 재스캔까지 가지 않는다
+    if (!isUlid(id)) throw new MemoError('not_found', '공개된 메모가 없습니다')
+    await this.index.rescan()
+    const rel = this.index.pathOf(id)
+    const entry = rel ? this.index.active.get(rel) : undefined
+    if (!entry || entry.unreadable || !entry.fields.public) throw new MemoError('not_found', '공개된 메모가 없습니다')
+    return entry
+  }
+
   // ── 쓰기 ────────────────────────────────────────────────────────────
 
   create(input: CreateMemoInput): Promise<Memo> {
@@ -188,7 +236,7 @@ export class MemoStore {
       const rel = await uniqueMdPath(input.folder, fileBaseFromTitle(input.title), this.relExists)
       const raw = serializeMemo(
         null,
-        { id: ulid(), title: input.title, created: now, updated: now, date: input.date, dateEnd: input.dateEnd, tags: input.tags ?? [], done: input.done ?? null },
+        { id: ulid(), title: input.title, created: now, updated: now, date: input.date, dateEnd: input.dateEnd, tags: input.tags ?? [], done: input.done ?? null, public: false },
         input.content,
       )
       await writeAtomic(await this.abs(rel), raw)
@@ -225,8 +273,9 @@ export class MemoStore {
           date: input.date,
           dateEnd: input.dateEnd,
           tags: input.tags ?? parsed.fields.tags,
-          // 할 일 체크는 저장 입력에 없다 — 파일의 값을 그대로 둔다 (버전도 done 을 빼고 잰다)
+          // 할 일 체크·외부 공개는 저장 입력에 없다 — 파일의 값을 그대로 둔다 (버전도 done·public 을 빼고 잰다)
           done: parsed.fields.done,
+          public: parsed.fields.public,
         },
         input.content,
       )
@@ -268,6 +317,30 @@ export class MemoStore {
       }
       if (parsed.fields.done !== done) {
         await writeAtomic(abs, serializeMemo(parsed.doc, { ...parsed.fields, done }, parsed.body))
+        await this.index.refresh(rel)
+      }
+      return this.index.meta(this.index.active.get(rel)!)
+    })
+  }
+
+  /**
+   * 외부 공개 켜기·끄기 (§11.2) — frontmatter 의 `public` 만 바꾼다. setDone 처럼 버전을 받지 않는다(버전은 public 줄을 빼고 잰다).
+   * 공개 주소가 메모 id(`/ext/{id}`)라서, id 가 없는 파일(경로 id `p:`)은 주소에 폴더·파일 이름이 드러나므로 켜지 않는다 —
+   * 앱에서 한 번 저장하면 id 가 붙는다. 끄기는 언제나 된다.
+   */
+  setPublic(id: string, value: boolean): Promise<MemoMeta> {
+    return this.exclusive(async () => {
+      await this.index.rescan()
+      const rel = this.requirePath(id)
+      if (value && id.startsWith('p:')) throw new MemoError('bad_request', '앱에서 한 번 저장한 메모만 공개할 수 있습니다')
+      const abs = await this.abs(rel)
+      const raw = await readFile(abs, 'utf8')
+      const parsed = parseMemo(raw)
+      if (!parsed.ok) {
+        throw new MemoError('unreadable', 'frontmatter 를 읽을 수 없어 바꾸지 않았습니다. 파일을 직접 고쳐 주세요')
+      }
+      if (parsed.fields.public !== value) {
+        await writeAtomic(abs, serializeMemo(parsed.doc, { ...parsed.fields, public: value }, parsed.body))
         await this.index.refresh(rel)
       }
       return this.index.meta(this.index.active.get(rel)!)

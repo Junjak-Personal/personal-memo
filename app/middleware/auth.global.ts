@@ -3,6 +3,8 @@
  * 실제 보호는 서버(server/middleware/auth.ts)가 한다 — 여기는 화면 이동만 정한다.
  */
 export default defineNuxtRouteMiddleware((to) => {
+  // 외부 공개 화면은 로그인 없이 연다 (설계문서 §11.2) — 공개 여부는 서버가 정한다
+  if (to.path.startsWith('/ext/')) return
   const { loggedIn } = useUserSession()
   // 로그인 뒤 돌아올 곳 — AI 연결 승인 화면(/oauth/consent?request=…)처럼 밖에서 들어온 주소를 잃지 않게
   if (!loggedIn.value && to.path !== '/login') return navigateTo(to.fullPath === '/' ? '/login' : { path: '/login', query: { next: to.fullPath } })

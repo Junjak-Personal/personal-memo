@@ -110,6 +110,7 @@ function memoItem(memo: MemoMeta): TreeItem {
     label: memo.title || '제목 없음',
     value: memo.id,
     done: memo.done,
+    public: memo.public,
     icon: memo.unreadable ? 'i-material-symbols-warning-outline' : 'i-material-symbols-description-outline',
     onSelect: () => navigateTo(memoPath(memo.id)),
   }
@@ -436,6 +437,8 @@ async function logout() {
               </span>
               <UIcon v-else :name="String(item.icon)" class="size-5 shrink-0" />
               <span class="truncate" :class="item.done === true && 'text-muted line-through'">{{ item.label }}</span>
+              <!-- 외부 공개 중인 메모 — 무엇이 열려 있는지 트리에서 바로 보이게 -->
+              <UIcon v-if="item.public" name="i-material-symbols-public" class="size-4 shrink-0 text-primary" aria-label="외부 공개 중" data-testid="sidebar-memo-public" />
               <span class="ms-auto flex shrink-0 items-center">
                 <UDropdownMenu :items="rowMenu(item)" :content="{ align: 'start' }">
                   <UButton

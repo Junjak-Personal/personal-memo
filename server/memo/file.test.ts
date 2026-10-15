@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseMemo, serializeMemo, versionOf } from './file'
 
-const fields = { id: 'ID', title: '제목', created: null, updated: null, date: null, dateEnd: null, tags: [] as string[], done: null as boolean | null }
+const fields = { id: 'ID', title: '제목', created: null, updated: null, date: null, dateEnd: null, tags: [] as string[], done: null as boolean | null, public: false }
 
 describe('frontmatter', () => {
   it('frontmatter 가 없으면 전체가 본문이다', () => {
@@ -103,5 +103,34 @@ describe('frontmatter', () => {
     expect(versionOf(`${base}done: true\n`)).not.toBe(versionOf(base))
     // 다른 키가 바뀌면 버전도 바뀐다
     expect(versionOf(todo.replace('제목', '다른 제목'))).not.toBe(versionOf(todo))
+  })
+
+  it('외부 공개: public: true 만 공개다. 켜면 public: true, 끄면 키를 지운다. 모르는 값은 그대로', () => {
+    const publicOf = (yaml: string) => {
+      const parsed = parseMemo(`---\n${yaml}\n---\n본문`)
+      return parsed.ok ? parsed.fields.public : 'unreadable'
+    }
+    expect(publicOf('title: a')).toBe(false)
+    expect(publicOf('public: true')).toBe(true)
+    expect(publicOf('public: yes')).toBe(false)
+    expect(publicOf('public: "true"')).toBe(false)
+    expect(publicOf('public: 1')).toBe(false)
+
+    const on = parseMemo('---\ntitle: 제목\n---\n\n본문\n')
+    if (!on.ok) throw new Error('읽지 못함')
+    expect(serializeMemo(on.doc, { ...fields, id: null, public: true }, '본문')).toContain('public: true\n')
+    const off = parseMemo('---\ntitle: 제목\npublic: true\n---\n\n본문\n')
+    if (!off.ok) throw new Error('읽지 못함')
+    expect(serializeMemo(off.doc, { ...fields, id: null, public: false }, '본문')).not.toContain('public')
+    const odd = parseMemo('---\ntitle: 제목\npublic: yes\n---\n\n본문\n')
+    if (!odd.ok) throw new Error('읽지 못함')
+    expect(serializeMemo(odd.doc, { ...fields, id: null, public: odd.fields.public }, '본문')).toContain('public: yes\n')
+  })
+
+  it('버전은 public 줄도 뺀다 — done 과 같이 있어도 둘 다', () => {
+    const base = '---\nid: X\ntitle: 제목\n---\n\n본문\n'
+    expect(versionOf('---\nid: X\npublic: true\ntitle: 제목\n---\n\n본문\n')).toBe(versionOf(base))
+    expect(versionOf('---\nid: X\ntitle: 제목\ndone: false\npublic: true\n---\n\n본문\n')).toBe(versionOf(base))
+    expect(versionOf(`${base}public: true\n`)).not.toBe(versionOf(base))
   })
 })

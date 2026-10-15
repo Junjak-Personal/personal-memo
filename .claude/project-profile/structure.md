@@ -4,7 +4,7 @@
 ```
 personal-memo/
 ├── app/                      # Nuxt 앱 (SPA)
-│   ├── app.config.ts         # Nuxt UI 색(primary navy, neutral) + 컴포넌트 슬롯 기본값
+│   ├── app.config.ts         # Nuxt UI 색(primary emerald, neutral) + 컴포넌트 슬롯 기본값
 │   ├── assets/css/main.css   # Tailwind v4 + 테마 토큰
 │   ├── components/           # 전역 컴포넌트 (AppSidebar, FolderPickDialog …)
 │   ├── composables/          # 전역 상태·동작 (useMemoTree, useStructureQueue …)
@@ -15,6 +15,7 @@ personal-memo/
 │   │   ├── m/{[id].vue,_modules/}       # 메모 문서 (에디터)
 │   │   ├── trash/{index.vue,_modules/}
 │   │   ├── todo/{index.vue,_modules/}   # 할 일 모아 보기 (설계문서 §3.5)
+│   │   ├── tags/{index.vue,_modules/}   # 태그별 메모 탐색 (선택은 ?tag=)
 │   │   ├── index.vue, login.vue
 │   ├── plugins/              # *.client.ts
 │   └── utils/                # 순수 함수 (+ *.test.ts)

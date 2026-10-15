@@ -1,13 +1,23 @@
 /**
  * 에디터의 표·체크리스트 스타일은 nuxt-ui-templates/editor (MIT, 커밋 4101ecc) 의 app.config.ts 에서 그대로 가져왔다.
- * 색만 바꿨다 — 강조색 남색(navy, main.css 에 정의). 바탕·글자·테두리는 푸른 기 없는 회색(neutral) —
+ * 색만 바꿨다 — 강조색 에메랄드(2026-10-13 사용자 참고 이미지). 바탕·글자·테두리는 푸른 기 없는 회색(neutral) —
  * slate 로 두니 다크 모드 배경까지 남색으로 보였다 (2026-10-07 사용자 지적).
  */
 export default defineAppConfig({
   ui: {
     colors: {
-      primary: 'navy',
+      primary: 'emerald',
       neutral: 'neutral'
+    },
+    // 짙은 주 버튼은 밝은 글씨로, 선택·포커스·강조 글씨는 테마별 primary 밝기를 쓴다.
+    button: {
+      compoundVariants: [
+        {
+          color: 'primary',
+          variant: 'solid',
+          class: 'text-neutral-50 bg-primary-action hover:bg-primary-action-hover active:bg-primary-action-hover disabled:bg-primary-action aria-disabled:bg-primary-action'
+        }
+      ]
     },
     // 화면 본문의 스크롤 끝이 홈 인디케이터 아래로 깔리지 않게 (viewport-fit=cover)
     dashboardPanel: {

@@ -12,8 +12,8 @@
 - 🔴 `nuxt.config` 의 icon: `provider: 'server'`, `fallbackToApi: false`, clientBundle 스캔에 `.ts` 포함 — 외부 iconify API 를 쓰지 않는다
 
 ## Design Tokens
-- Colors: `app/app.config.ts` — primary `navy`(강조에만), neutral `neutral`. 기본은 흰색·검정·회색
-  `main.css` — navy 50~950, `--ui-primary` 라이트 700 / 다크 300, 다크 바탕 `neutral-950`
+- Colors: `app/app.config.ts` — primary `emerald`(2026-10-13 사용자 참고 이미지), neutral `neutral`. 기본은 흰색·검정·회색
+  `main.css` — `--ui-primary` 라이트 700 / 다크 400, 주 버튼은 라이트 700 / 다크 800 + 밝은 글씨, 다크 바탕 `neutral-950`
 - Typography: Pretendard Variable (CDN, `nuxt.config` head) — `ui.fonts: false`
 - 다크: 시스템 설정을 따른다
 - 확대·축소 금지 (viewport + `plugins/no-pinch-zoom.client.ts`), `touch-action: manipulation`
@@ -25,6 +25,7 @@
 - 실패·경고 안내: `UAlert` (subtle) + actions, 짧은 결과는 `useToast()`
 - 저장 상태 같은 바뀌는 글자는 폭 고정 (툴바 밀림 방지 — `MemoSaveStatus.vue`)
 - 폰 목록: 사이드바 slideover 전체 화면 (`mode="slideover"`)
+- 하단 탐색: 할 일/캘린더, 휴지통/태그의 2×2 그룹. 로그아웃은 구분선 아래 전체 너비 outline. 태그 목록은 `/tags` 전용 화면.
 - PC 끌어 놓기, 폰은 메뉴(다른 폴더로 옮기기)
 - 애니메이션: 사이드바 폭 전환, 페이지 페이드, `prefers-reduced-motion` 존중
 - 🔴 dev 서버가 떠 있는 동안 새 폴더를 만들면 그 안의 Tailwind 클래스가 빠질 수 있다 → `touch app/assets/css/main.css`

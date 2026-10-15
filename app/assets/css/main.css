@@ -5,18 +5,9 @@
   /* Pretendard 는 nuxt.config 의 CDN 링크로 들어온다 (pic-blog 와 같음) */
   --font-sans: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 
-  /* 남색 — Tailwind 에 없는 색이라 직접 둔다. app.config 의 primary: 'navy' 가 이 이름을 쓴다 */
-  --color-navy-50: #eef2fa;
-  --color-navy-100: #d9e1f2;
-  --color-navy-200: #b7c6e6;
-  --color-navy-300: #8ba3d4;
-  --color-navy-400: #5f7fc0;
-  --color-navy-500: #3d5fa8;
-  --color-navy-600: #2e4a8a;
-  --color-navy-700: #253c70;
-  --color-navy-800: #1f325b;
-  --color-navy-900: #1b2a4b;
-  --color-navy-950: #111a30;
+  /* 주 버튼의 짙은 에메랄드는 강조 글씨와 밝기를 나눈다 — 다크에서 검은 글씨가 묻히지 않게. */
+  --color-primary-action: var(--ui-primary-action);
+  --color-primary-action-hover: var(--ui-primary-action-hover);
 
   /* 폴더를 펼칠 때 하위 목록이 위에서 살짝 내려오며 나타난다 (사이드바 트리) */
   --animate-tree-open: tree-open 160ms ease-out;
@@ -52,16 +43,20 @@
 }
 
 /*
- * Nuxt UI 기본은 밝은 테마에서 500, 어두운 테마에서 400 을 강조색으로 쓴다.
- * 500 은 남색보다 파랑에 가까워 밝은 테마는 700, 어두운 테마는 300 으로 내린다.
+ * 주 버튼은 참고 이미지처럼 짙은 에메랄드. 선택·포커스·링크는 밝은 테마 700, 어두운 테마 400.
+ * 같은 짙은 색을 다크의 글씨에도 쓰면 읽기 어려워 역할별로 밝기를 나눈다.
  */
 :root {
   --ui-primary: var(--ui-color-primary-700);
+  --ui-primary-action: var(--ui-color-primary-700);
+  --ui-primary-action-hover: var(--ui-color-primary-800);
 }
 
 /* 다크 바탕은 기본(neutral-900)보다 한 단계 진하게 — 2026-10-07 사용자가 둘을 비교해 보고 고름 */
 .dark {
-  --ui-primary: var(--ui-color-primary-300);
+  --ui-primary: var(--ui-color-primary-400);
+  --ui-primary-action: var(--ui-color-primary-800);
+  --ui-primary-action-hover: var(--ui-color-primary-700);
   --ui-bg: var(--ui-color-neutral-950);
 }
 

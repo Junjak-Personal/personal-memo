@@ -2,7 +2,7 @@
 /**
  * 왼쪽 사이드바 — 검색, 폴더·메모 트리, 태그, 할 일·캘린더·휴지통 (설계문서 §7.4).
  * 할 일인 메모는 트리 줄의 아이콘 자리에 체크박스가 선다 — 줄을 누르면 열고, 체크박스를 누르면 끝낸다.
- * 태그를 누르면 `#태그` 로 검색한다 — 태그 거르기와 글자 검색이 한 검색창을 쓴다.
+ * 태그는 하단 탐색에서 전용 화면으로 연다 — 검색창에서는 그대로 `#태그` 로 거를 수 있다.
  * PC 에서는 접을 수 있고, 모바일에서는 ≡ 를 누르면 왼쪽에서 전체 화면으로 밀려 들어온다(slideover, 폭 제한 없음).
  * (처음엔 mode="modal" 이었는데 Nuxt UI 가 전체 화면 modal 의 애니메이션을 꺼 둬서 뚝 나타났다.)
  * PC 에서는 메모·폴더를 끌어 다른 폴더나 최상위로 옮긴다 (useTreeDragDrop). 폰은 메뉴로 옮긴다.
@@ -47,13 +47,6 @@ const view = queue.view
 const currentFolder = computed(() => view.value?.memos.find((m) => m.id === currentId.value)?.folder ?? '')
 const items = computed(() => (view.value ? toItems(view.value.folders, view.value.memos, '') : []))
 const selected = computed(() => findItem(items.value, currentId.value))
-/** 태그별 메모 수 — 많은 것부터 */
-const tagCounts = computed(() => {
-  const counts = new Map<string, number>()
-  for (const memo of view.value?.memos ?? []) for (const tag of memo.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1)
-  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko'))
-})
-
 /** 안 끝난 할 일 수 — 「할 일」 옆에 보인다 */
 const openTodos = computed(() => view.value?.memos.filter((m) => m.done === false).length ?? 0)
 const links = computed<NavigationMenuItem[]>(() => [
@@ -61,10 +54,12 @@ const links = computed<NavigationMenuItem[]>(() => [
     label: '할 일',
     icon: 'i-material-symbols-checklist',
     to: '/todo',
+    'data-testid': 'sidebar-todo-link',
     badge: openTodos.value ? { label: String(openTodos.value), color: 'neutral', variant: 'subtle' } : undefined,
   },
-  { label: '캘린더', icon: 'i-material-symbols-calendar-month-outline', to: '/calendar' },
-  { label: '휴지통', icon: 'i-material-symbols-delete-outline', to: '/trash' },
+  { label: '캘린더', icon: 'i-material-symbols-calendar-month-outline', to: '/calendar', 'data-testid': 'sidebar-calendar-link' },
+  { label: '휴지통', icon: 'i-material-symbols-delete-outline', to: '/trash', 'data-testid': 'sidebar-trash-link' },
+  { label: '태그', icon: 'i-material-symbols-label-outline', to: '/tags', 'data-testid': 'sidebar-tags-link' },
 ])
 
 /** 터치 화면에서는 끌기를 켜지 않는다 — 스크롤과 다투고 iOS 웹뷰에서 믿을 수 없다 */
@@ -252,11 +247,6 @@ async function applySearch() {
   } finally {
     searching.value = false
   }
-}
-
-function searchTag(tag: string) {
-  searchInput.value = `#${tag}`
-  void applySearch()
 }
 
 function resetSearch() {
@@ -486,23 +476,6 @@ async function logout() {
         여기에 놓으면 최상위로 옮깁니다
       </div>
 
-      <section v-if="tagCounts.length" class="mt-2 flex flex-col gap-1.5 px-1" data-testid="sidebar-tags">
-        <p class="text-xs text-muted">태그</p>
-        <div class="flex flex-wrap gap-1">
-          <UButton
-            v-for="[tag, count] in tagCounts"
-            :key="tag"
-            color="neutral"
-            variant="outline"
-            size="xs"
-            :data-testid="`sidebar-tag-${tag}`"
-            @click="searchTag(tag)"
-          >
-            #{{ tag }}
-            <span class="text-dimmed">{{ count }}</span>
-          </UButton>
-        </div>
-      </section>
     </template>
 
     <template #footer>
@@ -518,13 +491,27 @@ async function logout() {
           <UButton size="xs" color="neutral" variant="outline" data-testid="sidebar-pending-cancel" @click="queue.cancel()">취소</UButton>
           <UButton size="xs" data-testid="sidebar-pending-apply" @click="queue.apply()">지금 반영</UButton>
         </div>
-        <UNavigationMenu :items="links" orientation="vertical" :ui="{ link: 'min-h-11 lg:min-h-0' }" class="w-full" />
-        <div class="flex justify-end border-t border-default pt-2">
+        <UNavigationMenu
+          :items="links"
+          orientation="vertical"
+          color="primary"
+          :ui="{
+            list: 'grid grid-cols-2 gap-2',
+            link: 'min-h-11 rounded-md border border-default px-2 py-2 data-[active]:border-primary/40 data-[active]:before:bg-primary/10',
+            linkLeadingIcon: 'size-4.5',
+            linkLabel: 'text-sm lg:text-xs',
+            linkTrailingBadgeSize: 'xs',
+          }"
+          class="w-full"
+          aria-label="메모 탐색"
+          data-testid="sidebar-navigation"
+        />
+        <div class="border-t border-default pt-2">
           <UButton
             icon="i-material-symbols-logout"
             color="neutral"
             variant="outline"
-            class="min-h-11 justify-center lg:min-h-0"
+            class="min-h-11 w-full justify-center text-muted hover:text-highlighted"
             data-testid="sidebar-logout-button"
             @click="logout"
           >

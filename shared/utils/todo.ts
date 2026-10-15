@@ -19,3 +19,10 @@ export function compareTodos(a: Pick<MemoMeta, 'title' | 'date' | 'created'>, b:
   if (b.date) return 1
   return (b.created ?? '').localeCompare(a.created ?? '') || a.title.localeCompare(b.title, 'ko')
 }
+
+/** 완료 목록 — 날짜(없으면 만든 날)가 최근인 것부터. 끝낸 시각은 따로 남기지 않는다(체크는 updated 를 바꾸지 않는다) */
+export function compareDoneTodos(a: Pick<MemoMeta, 'title' | 'date' | 'created'>, b: Pick<MemoMeta, 'title' | 'date' | 'created'>) {
+  const ka = (a.date ?? a.created ?? '').slice(0, 10)
+  const kb = (b.date ?? b.created ?? '').slice(0, 10)
+  return kb.localeCompare(ka) || (b.created ?? '').localeCompare(a.created ?? '') || a.title.localeCompare(b.title, 'ko')
+}

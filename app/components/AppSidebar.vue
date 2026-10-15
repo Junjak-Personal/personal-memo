@@ -127,8 +127,10 @@ function toItems(folders: FolderNode[], memos: MemoMeta[], parent: string): Tree
     icon: folder.path === TODO_FOLDER ? 'i-material-symbols-folder-check-outline' : 'i-material-symbols-folder-outline',
     children: toItems(folder.children, memos, folder.path),
   }))
+  // 「할 일」 폴더 안의 끝낸 할 일은 숨긴다 — 폴더 메뉴의 「완료 목록 보기」(/todo/done)에서 본다. 다른 폴더에서 할 일로 둔
+  // 메모는 내용이 있는 메모라 끝나도 그 폴더에 그대로 둔다 (2026-10-16 사용자 요청)
   const own = memos
-    .filter((m) => m.folder === parent)
+    .filter((m) => m.folder === parent && !(parent === TODO_FOLDER && m.done === true))
     .sort((a, b) => (b.updated ?? '').localeCompare(a.updated ?? ''))
     .map(memoItem)
   return [...subfolders, ...own]
@@ -136,7 +138,12 @@ function toItems(folders: FolderNode[], memos: MemoMeta[], parent: string): Tree
 
 /** 폴더 줄의 메뉴 — PC는 ⋯, 폰은 길게 누르기 */
 function folderMenu(path: string): SidebarMenuItem[][] {
+  const todo: SidebarMenuItem[][] =
+    path === TODO_FOLDER
+      ? [[{ label: '완료 목록 보기', icon: 'i-material-symbols-task-alt', testId: 'sidebar-folder-done-list', onSelect: () => void navigateTo('/todo/done') }]]
+      : []
   return [
+    ...todo,
     [
       { label: '여기에 새 메모', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'sidebar-folder-create-memo', onSelect: () => void createInFolder(path) },
       { label: '하위 폴더 만들기', icon: 'i-material-symbols-create-new-folder-outline', testId: 'sidebar-folder-create-folder', onSelect: () => folders.startCreate(path) },

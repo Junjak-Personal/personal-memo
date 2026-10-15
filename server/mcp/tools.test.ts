@@ -13,19 +13,21 @@ let client: Client
 const notify = vi.fn()
 const notifyRemoved = vi.fn()
 const log = vi.fn()
+const createImageUpload = vi.fn((memoId: string) => ({ url: `http://memo.test/mcp/uploads/t-${memoId}`, expiresAt: Date.UTC(2026, 9, 16, 1, 10) }))
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'memo-mcp-'))
   await mkdir(join(root, 'memos'))
   store = new MemoStore(join(root, 'memos'))
   await store.init()
-  const server = buildMcpServer({ store, notify, notifyRemoved, log, client: 'claude.ai' })
+  const server = buildMcpServer({ store, notify, notifyRemoved, log, client: 'claude.ai', createImageUpload })
   const [a, b] = InMemoryTransport.createLinkedPair()
   client = new Client({ name: 'test', version: '1' })
   await Promise.all([server.connect(a), client.connect(b)])
   notify.mockClear()
   notifyRemoved.mockClear()
   log.mockClear()
+  createImageUpload.mockClear()
 })
 
 afterEach(async () => {
@@ -48,7 +50,20 @@ describe('MCP 도구', () => {
   it('도구 목록 — 영구 삭제 도구는 없다', async () => {
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ['calendar', 'create_folder', 'create_memo', 'list_memos', 'list_todos', 'move_memo', 'read_memo', 'search_memos', 'set_todo', 'trash_memo', 'update_memo'].sort(),
+      [
+        'calendar',
+        'create_folder',
+        'create_image_upload',
+        'create_memo',
+        'list_memos',
+        'list_todos',
+        'move_memo',
+        'read_memo',
+        'search_memos',
+        'set_todo',
+        'trash_memo',
+        'update_memo',
+      ].sort(),
     )
     expect(tools.find((t) => t.name === 'read_memo')?.annotations?.readOnlyHint).toBe(true)
     expect(tools.find((t) => t.name === 'trash_memo')?.annotations?.destructiveHint).toBe(true)
@@ -115,6 +130,33 @@ describe('MCP 도구', () => {
     expect(await readFile(join(root, 'memos/.trash/보관/옛 메모.md'), 'utf8')).toContain('본문')
     expect(notifyRemoved).toHaveBeenCalledWith(memo.id)
     expect((await call('list_memos')).data.memos).toEqual([])
+  })
+
+  it('이미지 올리기 링크 — 있는 메모만, 올리는 명령과 한도를 같이 준다', async () => {
+    const memo = (await call('create_memo', { title: '여행', content: '동선\n' })).data
+    const link = await call('create_image_upload', { id: memo.id })
+    expect(link.data).toMatchObject({
+      url: `http://memo.test/mcp/uploads/t-${memo.id}`,
+      expiresAt: '2026-10-16T01:10:00.000Z',
+      command: `curl -sS -T <파일> 'http://memo.test/mcp/uploads/t-${memo.id}'`,
+      maxPixels: 2048,
+      maxBytes: 10 * 1024 * 1024,
+    })
+    expect(createImageUpload).toHaveBeenCalledWith(memo.id)
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('[mcp] create_image_upload'))
+
+    const missing = await call('create_image_upload', { id: '01NOTEXIST0000000000000000' })
+    expect(missing.isError).toBe(true)
+    expect(createImageUpload).toHaveBeenCalledTimes(1)
+  })
+
+  it('링크를 만들 수 없는 곳에서는 이미지 도구를 두지 않는다', async () => {
+    const server = buildMcpServer({ store })
+    const [a, b] = InMemoryTransport.createLinkedPair()
+    const bare = new Client({ name: 'bare', version: '1' })
+    await Promise.all([server.connect(a), bare.connect(b)])
+    expect((await bare.listTools()).tools.map((t) => t.name)).not.toContain('create_image_upload')
+    await bare.close()
   })
 
   it('목록 — 폴더로 거른다', async () => {

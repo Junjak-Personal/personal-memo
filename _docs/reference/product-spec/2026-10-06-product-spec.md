@@ -179,6 +179,8 @@ done: false             # 선택. 할 일 (2026-10-08, §3.5)
   따로 둔 원본이 없으면 화면 이미지를 준다(`x-memo-original: stored | none`). **원본도 백업하지 않는다(§12).**
   주소의 확장자는 화면 이미지의 것이라, 응답에 `content-disposition: inline; filename="<ulid>.<원본 확장자>"` 를 붙인다 —
   없으면 내려받기가 PNG 원본을 `.webp` 이름으로 저장한다 (2026-10-07 실측 후 수정).
+- **AI 가 올릴 때 (2026-10-16)**: MCP 올리기 링크로 들어오는 이미지는 브라우저를 거치지 않으므로 서버가 가로·세로 2048px 을 넘으면
+  거절한다 — 줄이는 건 여전히 올리는 쪽이다(§11.1).
 - 허용 형식: jpeg, png, gif, webp. 확장자가 아니라 파일 앞부분 바이트(magic bytes)로 판별한다.
   **SVG 거부** — 스크립트를 품을 수 있고, 같은 출처에서 열리면 XSS 가 된다.
 - **화면 표시**: 에디터 주소가 `/m/{id}` 라서 상대경로로는 이미지가 열리지 않는다. Image 노드 속성에는
@@ -567,9 +569,17 @@ AI(claude.ai 웹·폰·Desktop, Claude Code, ChatGPT)가 메모를 직접 읽고
 
 - **구조**: 앱 서버 안의 `POST /mcp`(Streamable HTTP, 세션 없음, JSON 응답, `@modelcontextprotocol/sdk`). 도구는 화면과 같은
   `MemoStore` 를 거친다 — id·frontmatter·충돌 판정·휴지통·구글 캘린더 반영이 같다 (`server/mcp/tools.ts`).
-- **도구 11개**: 읽기 — `list_memos`·`search_memos`·`read_memo`·`list_todos`·`calendar`. 쓰기 — `create_memo`·`update_memo`(읽은
-  `version` 필수, 그 사이 바뀌었으면 거절)·`set_todo`·`move_memo`·`create_folder`·`trash_memo`. **영구 삭제(휴지통 비우기·폴더
-  지우기)는 없다** (사용자 결정). 쓰기는 서버 로그 `[mcp] <도구> <id> (<클라이언트>)`.
+- **도구 12개**: 읽기 — `list_memos`·`search_memos`·`read_memo`·`list_todos`·`calendar`. 쓰기 — `create_memo`·`update_memo`(읽은
+  `version` 필수, 그 사이 바뀌었으면 거절)·`set_todo`·`move_memo`·`create_folder`·`create_image_upload`·`trash_memo`. **영구 삭제(휴지통
+  비우기·폴더 지우기)는 없다** (사용자 결정). 쓰기는 서버 로그 `[mcp] <도구> <id> (<클라이언트>)`.
+- **이미지 올리기 (확정 2026-10-16)**: 바이트를 도구 인자(base64)로 받으면 AI 가 그 글자를 직접 써야 해서(1.9MB PNG ≈ 250만 자) 쓸 수
+  없다. `create_image_upload` 는 그 메모 전용 1회용 링크 `PUT /mcp/uploads/<32자>`(10분, 성공 한 번, 메모리에만)를 주고, 셸이 있는
+  클라이언트(Claude Code 등)가 `curl -T <파일> <링크>` 로 올린다 — 바이트가 AI 를 거치지 않는다. claude.ai·ChatGPT 앱은 셸이 없어 못 쓴다.
+  - 링크가 권한이다(쿠키·토큰 없음). 링크를 받은 연결을 끊으면 못 쓴다. 본문 길이(Content-Length)가 없으면 411 — 다 읽기 전에 크기를 막는다.
+  - **서버는 줄이지 않는다** (§4 — pic-blog 와 같은 원칙, 공통 이미지 서비스는 두지 않기로 함). 파일 앞부분에서 가로·세로를 읽어
+    2048px 을 넘으면 413 + 「`sips -Z 2048` 로 줄여 같은 링크로 다시」 — AI 에게 부탁만 하지 않고 서버가 막는다. 10MB·형식 판별은 §4 와 같다.
+    원본(`.orig`)은 두지 않는다 — 원본은 올린 쪽 컴퓨터에 있다.
+  - 올리면 `{ src, markdown }` 을 돌려주고, AI 가 `read_memo` → `update_memo` 로 본문에 넣는다. 서버 로그 `[mcp] upload_image`.
 - **인증**: 앱이 자기 OAuth 인증 서버다 (`server/oauth/`). MCP 인증 규격 2026-07-28 을 따른다.
   - 클라이언트 등록은 Client ID Metadata Document 만(동적 등록은 규격에서 폐기 예정). 승인 요청이 오면 `client_id` 주소의 신원
     문서를 읽어 돌아갈 주소를 맞춘다(루프백은 포트 무시). **허용 출처는 `https://claude.ai`·`https://chatgpt.com`**

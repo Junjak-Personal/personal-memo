@@ -88,6 +88,7 @@ async function disconnectAll() {
               그다음 <code class="text-xs">/mcp</code> 에서 로그인
             </li>
             <li>AI 는 메모를 읽고 쓰고 휴지통으로 옮길 수 있습니다. 영구 삭제는 못 합니다.</li>
+            <li>이미지는 Claude Code 처럼 터미널을 쓰는 AI 만 붙일 수 있습니다 (가로·세로 2048px 까지).</li>
           </ul>
         </section>
 

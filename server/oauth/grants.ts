@@ -223,6 +223,11 @@ export class OAuthGrants {
     return claims
   }
 
+  /** 연결이 아직 있나 — 끊은 연결이 받아 둔 이미지 올리기 링크를 막는다 */
+  hasConnection(id: string) {
+    return Object.hasOwn(this.data.families, id)
+  }
+
   // ── 연결 관리 (화면) ─────────────────────────────────────────────────
 
   connections(): Connection[] {

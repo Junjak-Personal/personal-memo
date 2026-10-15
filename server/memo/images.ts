@@ -29,6 +29,55 @@ export function sniffImage(bytes: Uint8Array): ImageExt | null {
   return null
 }
 
+/**
+ * 파일 앞부분에서 가로·세로를 읽는다 — 서버에는 이미지 라이브러리가 없다(§4). 못 읽으면 null.
+ * JPEG 의 EXIF 회전은 보지 않는다 — 가로·세로가 뒤바뀔 뿐 «둘 다 N 이하» 판정은 같다.
+ */
+export function imageSize(bytes: Uint8Array, ext: ImageExt): { width: number; height: number } | null {
+  const at = (i: number) => bytes[i] ?? 0
+  const u16be = (i: number) => (at(i) << 8) | at(i + 1)
+  const u16le = (i: number) => at(i) | (at(i + 1) << 8)
+  const u24le = (i: number) => at(i) | (at(i + 1) << 8) | (at(i + 2) << 16)
+  const u32be = (i: number) => at(i) * 0x1000000 + ((at(i + 1) << 16) | (at(i + 2) << 8) | at(i + 3))
+  const size = (width: number, height: number) => (width > 0 && height > 0 ? { width, height } : null)
+
+  switch (ext) {
+    case 'png':
+      // 시그니처 8 + IHDR 길이 4 + 이름 4 다음이 가로·세로
+      return bytes.length < 24 ? null : size(u32be(16), u32be(20))
+    case 'gif':
+      return bytes.length < 10 ? null : size(u16le(6), u16le(8))
+    case 'webp': {
+      if (bytes.length < 30) return null
+      const chunk = String.fromCharCode(at(12), at(13), at(14), at(15))
+      if (chunk === 'VP8 ') return size(u16le(26) & 0x3fff, u16le(28) & 0x3fff)
+      if (chunk === 'VP8L') return size(1 + (((at(22) & 0x3f) << 8) | at(21)), 1 + (((at(24) & 0x0f) << 10) | (at(23) << 2) | ((at(22) & 0xc0) >> 6)))
+      if (chunk === 'VP8X') return size(1 + u24le(24), 1 + u24le(27))
+      return null
+    }
+    case 'jpg': {
+      // 표지(FF xx)를 따라가다 SOF 를 만나면 거기 높이·너비가 있다
+      let i = 2
+      while (i + 9 <= bytes.length) {
+        if (at(i) !== 0xff) return null
+        const marker = at(i + 1)
+        if (marker === 0xff) {
+          i += 1 // 채움 바이트
+          continue
+        }
+        if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) return size(u16be(i + 7), u16be(i + 5))
+        if (marker === 0xd9 || marker === 0xda) return null // SOF 없이 이미지 데이터·끝
+        if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd8)) {
+          i += 2 // 길이 없는 표지
+          continue
+        }
+        i += 2 + u16be(i + 2)
+      }
+      return null
+    }
+  }
+}
+
 export function extOf(name: string): ImageExt | null {
   const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
   return ext in IMAGE_TYPES ? (ext as ImageExt) : null

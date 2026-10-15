@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 405, statusMessage: 'Method Not Allowed' })
   }
 
-  const { resource, resourceMetadata } = oauthUrls(event)
+  const { issuer, resource, resourceMetadata } = oauthUrls(event)
   const header = getRequestHeader(event, 'authorization') ?? ''
   const token = /^Bearer\s+(.+)$/i.exec(header)?.[1]?.trim() ?? ''
   const claims = token ? (await useOAuthGrants()).verifyAccess(token, resource) : null
@@ -33,12 +33,18 @@ export default defineEventHandler(async (event) => {
   }
 
   const sync = useCalendarSync()
+  const uploads = useImageUploads()
+  const client = new URL(claims.cid).host
   const server = buildMcpServer({
     store: await useMemoStore(),
     notify: (memo) => sync?.notify(memo),
     notifyRemoved: (id) => sync?.notifyRemoved(id),
     log: (message) => console.info(message),
-    client: new URL(claims.cid).host,
+    client,
+    createImageUpload: (memoId) => {
+      const { token: upload, expiresAt } = uploads.create({ memoId, family: claims.fam, client })
+      return { url: `${issuer}/mcp/uploads/${upload}`, expiresAt }
+    },
   })
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
   event.node.res.on('close', () => {

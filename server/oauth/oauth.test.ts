@@ -39,6 +39,19 @@ describe('클라이언트 확인 (Client ID Metadata Document)', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('ChatGPT 신원 문서 — 기본은 private_key_jwt 지만 none(PKCE 만)도 지원하면 받는다', async () => {
+    const CHATGPT = 'https://chatgpt.com/oauth/client.json'
+    const fetch = jsonFetch({
+      client_id: CHATGPT,
+      redirect_uris: ['https://chatgpt.com/connector_platform_oauth_redirect'],
+      token_endpoint_auth_method: 'private_key_jwt',
+      token_endpoint_auth_methods_supported: ['none', 'private_key_jwt'],
+    })
+    const client = await loadClient(CHATGPT, { origins: ['https://claude.ai', 'https://chatgpt.com'], fetch })
+    expect(client).toMatchObject({ host: 'chatgpt.com', redirectUris: ['https://chatgpt.com/connector_platform_oauth_redirect'] })
+    expect(redirectAllowed('https://chatgpt.com/connector_platform_oauth_redirect', client.redirectUris)).toBe(true)
+  })
+
   it('문서의 client_id 가 다르거나, 돌아갈 주소가 없거나, 비밀을 쓰는 클라이언트면 거절', async () => {
     await expect(loadClient(CLAUDE_CODE, { origins: ORIGINS, fetch: jsonFetch({ client_id: 'https://claude.ai/other', redirect_uris: ['x'] }) })).rejects.toThrow('client_id')
     clearClientCache()

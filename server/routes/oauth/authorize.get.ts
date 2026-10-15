@@ -47,7 +47,7 @@ export default defineEventHandler(async (event) => {
   }
   // 규격상 클라이언트는 resource 를 보내야 한다. 안 보냈으면 이 서버의 MCP 주소로 본다
   const requested = str('resource') || resource
-  if (!sameResource(requested, resource)) return fail('invalid_target', `이 서버의 자원은 ${resource} 하나입니다`)
+  if (!isOurResource(requested, { issuer, resource })) return fail('invalid_target', `이 서버의 자원은 ${resource} 하나입니다`)
 
   const grants = await useOAuthGrants()
   const id = grants.createRequest({

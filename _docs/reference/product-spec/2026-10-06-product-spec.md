@@ -563,7 +563,7 @@ date-fns 를 쓰는데, 이 앱에는 한 달씩 넘기는 화면이면 충분�
 
 ### 11.1 AI 연결 — MCP (확정 2026-10-16)
 
-AI(claude.ai 웹·폰·Desktop, Claude Code)가 메모를 직접 읽고 쓴다. 설계·검증 기록: `_docs/complete/2026-10-16-mcp-connector.md`.
+AI(claude.ai 웹·폰·Desktop, Claude Code, ChatGPT)가 메모를 직접 읽고 쓴다. 설계·검증 기록: `_docs/complete/2026-10-16-mcp-connector.md`.
 
 - **구조**: 앱 서버 안의 `POST /mcp`(Streamable HTTP, 세션 없음, JSON 응답, `@modelcontextprotocol/sdk`). 도구는 화면과 같은
   `MemoStore` 를 거친다 — id·frontmatter·충돌 판정·휴지통·구글 캘린더 반영이 같다 (`server/mcp/tools.ts`).
@@ -572,8 +572,12 @@ AI(claude.ai 웹·폰·Desktop, Claude Code)가 메모를 직접 읽고 쓴다. 
   지우기)는 없다** (사용자 결정). 쓰기는 서버 로그 `[mcp] <도구> <id> (<클라이언트>)`.
 - **인증**: 앱이 자기 OAuth 인증 서버다 (`server/oauth/`). MCP 인증 규격 2026-07-28 을 따른다.
   - 클라이언트 등록은 Client ID Metadata Document 만(동적 등록은 규격에서 폐기 예정). 승인 요청이 오면 `client_id` 주소의 신원
-    문서를 읽어 돌아갈 주소를 맞춘다(루프백은 포트 무시). **허용 출처는 `https://claude.ai` 하나**(`NUXT_MCP_CLIENT_ORIGINS`) —
-    다른 앱은 승인 화면까지도 못 오고, 서버가 임의 주소를 읽을 일도 없다.
+    문서를 읽어 돌아갈 주소를 맞춘다(루프백은 포트 무시). **허용 출처는 `https://claude.ai`·`https://chatgpt.com`**
+    (`NUXT_MCP_CLIENT_ORIGINS`) — 다른 앱은 승인 화면까지도 못 오고, 서버가 임의 주소를 읽을 일도 없다.
+  - ChatGPT (2026-10-16 추가): 신원 문서 `https://chatgpt.com/oauth/client.json` 은 기본 인증 방식이 private_key_jwt 이지만 none 도
+    지원해 PKCE 만으로 붙는다. resource 를 서버 주소만으로 보낼 수 있어 `…/mcp` 와 서버 주소 둘 다 받고(aud 는 언제나 MCP 주소),
+    토큰 요청에 client_id 없이 client_assertion 만 오면 그 sub 를 client_id 로 읽는다. 돌아갈 주소는
+    `https://chatgpt.com/connector_platform_oauth_redirect` (RFC 9207 iss 를 지원해서 고정 주소를 쓴다).
   - PKCE S256 필수, 공개 클라이언트만, 응답에 `iss`. 승인은 앱 비밀번호로 로그인한 사람만(`/oauth/consent`) — 로그인 화면은
     `?next=` 로 돌아온다(앱 안 경로만, `app/utils/safe-next.ts`).
   - 접근 토큰 1시간(HMAC 서명, aud = MCP 주소, 연결이 살아 있어야 통함). 갱신 토큰 60일, 쓸 때마다 회전, 이미 바꾼 것이 다시

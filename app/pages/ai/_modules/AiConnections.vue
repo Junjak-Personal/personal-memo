@@ -81,6 +81,7 @@ async function disconnectAll() {
           </div>
           <ul class="list-disc space-y-1 ps-5 text-sm text-muted">
             <li>claude.ai (웹·폰·Desktop): 설정 → 커넥터 → 「커스텀 커넥터 추가」 → 위 주소 → 연결 → 이 앱의 승인 화면에서 허용</li>
+            <li>ChatGPT: 설정 → 앱(커넥터) → 고급 설정에서 개발자 모드를 켜고 → 앱 만들기 → 위 주소, 인증은 OAuth → 이 앱의 승인 화면에서 허용 (유료 요금제)</li>
             <li>
               Claude Code: <code class="text-xs">{{ claudeCodeCommand }}</code>
               <UButton size="xs" color="neutral" variant="ghost" icon="i-material-symbols-content-copy-outline" aria-label="명령 복사" @click="copy(claudeCodeCommand)" />

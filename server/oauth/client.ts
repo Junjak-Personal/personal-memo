@@ -2,8 +2,8 @@
  * OAuth 클라이언트 확인 — Client ID Metadata Document (MCP 인증 규격 2026-07-28 이 권하는 방식, 설계: _docs/…/mcp-connector).
  *
  * 클라이언트 id 가 곧 신원 문서의 HTTPS 주소다. 미리 등록해 두지 않고, 승인 요청이 올 때 그 문서를 읽어 돌아갈 주소를 맞춘다.
- * 🔴 아무 주소나 읽지 않는다 — 허용한 출처(기본 `https://claude.ai`)의 문서만. 그래서 claude.ai(웹·폰·Desktop)와 Claude Code 만
- *    승인 화면까지 올 수 있고, 서버가 임의 주소를 읽는 일(SSRF)도 없다.
+ * 🔴 아무 주소나 읽지 않는다 — 허용한 출처(기본 `https://claude.ai`, `https://chatgpt.com`)의 문서만. 그래서 claude.ai(웹·폰·
+ *    Desktop)·Claude Code·ChatGPT 만 승인 화면까지 올 수 있고, 서버가 임의 주소를 읽는 일(SSRF)도 없다.
  */
 import { createHash, timingSafeEqual } from 'node:crypto'
 
@@ -71,8 +71,14 @@ export async function loadClient(
   if (!Array.isArray(redirectUris) || !redirectUris.length || !redirectUris.every((u) => typeof u === 'string')) {
     throw new OAuthClientError('신원 문서에 돌아갈 주소(redirect_uris)가 없습니다')
   }
-  // 공개 클라이언트(비밀 없이 PKCE 만)여야 한다 — 이 서버는 클라이언트 비밀을 받지 않는다
-  if (fields.token_endpoint_auth_method !== undefined && fields.token_endpoint_auth_method !== 'none') {
+  /*
+   * 공개 클라이언트(비밀 없이 PKCE 만)로 붙을 수 있어야 한다 — 이 서버는 클라이언트 비밀·서명 단언을 받지 않는다.
+   * ChatGPT 문서는 기본값이 private_key_jwt 이지만 token_endpoint_auth_methods_supported 에 none 이 있어, 이 서버가 광고하는
+   * none 으로 붙는다 (2026-10-16 chatgpt.com/oauth/client.json 실측).
+   */
+  const method = fields.token_endpoint_auth_method
+  const supported = Array.isArray(fields.token_endpoint_auth_methods_supported) ? fields.token_endpoint_auth_methods_supported : []
+  if (method !== undefined && method !== 'none' && !supported.includes('none')) {
     throw new OAuthClientError('공개 클라이언트(token_endpoint_auth_method: none)만 받습니다')
   }
   const client = { clientId, host: new URL(clientId).host, redirectUris }

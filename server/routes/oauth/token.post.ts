@@ -14,10 +14,10 @@ export default defineEventHandler(async (event) => {
     return { error, error_description: description }
   }
 
-  const { resource } = oauthUrls(event)
+  const { issuer, resource } = oauthUrls(event)
   const requested = str('resource')
-  if (requested && !sameResource(requested, resource)) return fail(400, 'invalid_target', `이 서버의 자원은 ${resource} 하나입니다`)
-  const clientId = str('client_id')
+  if (requested && !isOurResource(requested, { issuer, resource })) return fail(400, 'invalid_target', `이 서버의 자원은 ${resource} 하나입니다`)
+  const clientId = tokenClientId({ client_id: str('client_id'), client_assertion: str('client_assertion') })
   if (!clientId) return fail(400, 'invalid_request', 'client_id 가 필요합니다')
 
   const grants = await useOAuthGrants()

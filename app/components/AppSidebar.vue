@@ -9,6 +9,7 @@
  */
 import type { DropdownMenuItem, NavigationMenuItem, TreeItem } from '@nuxt/ui'
 import type { FolderNode, MemoMeta, SearchHit } from '#shared/types/memo'
+import { TODO_FOLDER } from '#shared/utils/todo'
 import type { Dragged } from '~/composables/useTreeDragDrop'
 
 type SidebarMenuItem = DropdownMenuItem & { testId: string }
@@ -116,12 +117,14 @@ function memoItem(memo: MemoMeta): TreeItem {
 
 /** 폴더 먼저, 그 안의 메모는 최근 수정 순 */
 function toItems(folders: FolderNode[], memos: MemoMeta[], parent: string): TreeItem[] {
-  const subfolders: TreeItem[] = folders.map((folder) => ({
+  // 「할 일」 폴더는 앱이 정한 특수 폴더라 이름순과 상관없이 맨 위, 아이콘도 따로 (2026-10-15 사용자 요청)
+  const ordered = parent ? folders : [...folders].sort((a, b) => Number(b.path === TODO_FOLDER) - Number(a.path === TODO_FOLDER))
+  const subfolders: TreeItem[] = ordered.map((folder) => ({
     kind: 'folder',
     label: folder.name,
     value: `folder:${folder.path}`,
     path: folder.path,
-    icon: 'i-material-symbols-folder-outline',
+    icon: folder.path === TODO_FOLDER ? 'i-material-symbols-folder-check-outline' : 'i-material-symbols-folder-outline',
     children: toItems(folder.children, memos, folder.path),
   }))
   const own = memos

@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import MemoDocument from './_modules/MemoDocument.vue'
 
+definePageMeta({
+  /*
+   * 메모에서 메모로 가도 이 화면은 그대로 두고 안의 MemoDocument 만 바꿔 끼운다 (아래 Suspense).
+   * 🔴 주소마다 화면을 새로 세우면(Nuxt 기본) 페이드가 걸려 폰에서 깜빡임이 심했다 — 새 메모를 받은 뒤
+   *    이전 메모의 본문과 위 툴바 줄이 먼저 사라져 화면이 37px 올라가고, 제목만 흐려진 다음 빈 화면을 거쳐
+   *    새 메모가 들어오며 다시 내려왔다 (2026-10-16 사용자 지적, 실측). 다른 화면 ↔ 메모는 그대로 페이드.
+   */
+  key: 'memo',
+})
+
 const route = useRoute()
 const { tick } = useActiveMemo()
 
@@ -27,7 +37,13 @@ function onRenamed(from: string, to: string) {
       🔴 이 주석을 div 밖(위)에 두면 안 된다. 개발 모드에서 주석도 노드라 최상위가 둘이 되고,
          전환이 끝나지 않아 다음 화면이 빈 채로 멈춘다 (2026-10-07 실제로 겪음).
     -->
-    <!-- 메모가 바뀌면 화면을 새로 세운다 — 편집 상태가 다른 메모로 새지 않게 -->
-    <MemoDocument :key="key" :memo-id="id" @renamed="onRenamed" />
+    <!--
+      메모가 바뀌면 화면을 새로 세운다 — 편집 상태가 다른 메모로 새지 않게.
+      Suspense 가 새 메모를 받는 동안 이전 메모를 그대로 두었다가 한 번에 바꾼다(빈 화면 없음).
+      suspensible — 다른 화면에서 처음 들어올 때는 Nuxt 의 페이지 전환이 메모를 받을 때까지 기다린다(지금과 같음).
+    -->
+    <Suspense suspensible>
+      <MemoDocument :key="key" :memo-id="id" @renamed="onRenamed" />
+    </Suspense>
   </div>
 </template>

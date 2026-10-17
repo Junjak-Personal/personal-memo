@@ -9,6 +9,7 @@ import type { EditorState } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
 import type { EditorView } from '@tiptap/pm/view'
 import type { Editor, JSONContent } from '@tiptap/vue-3'
+import type { RouteLocationNormalized } from 'vue-router'
 import type { Memo } from '#shared/types/memo'
 import { originalOfDisplay, toDisplaySrc, toOriginalSrc, toStoredSrc } from '#shared/utils/asset-path'
 import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS, sameTags, TAG_DELIMITER } from '#shared/utils/tags'
@@ -52,12 +53,17 @@ const calendarSync = useCalendarSyncStatus()
 const todo = useTodo()
 
 const { data: memo, error } = await useAsyncData(
-  `memo-${props.memoId}`,
+  /*
+   * tick 을 넣는다 — 같은 메모를 다시 세울 때([id].vue) 새 화면이 붙기 전까지 이전 화면이 떠 있어서, key 가 같으면
+   * 이전 화면의 데이터를 나눠 쓰고 새로 받지 않는다 (폴더를 옮긴 뒤에도 옛 폴더·이미지 주소가 나왔다 — 2026-10-16 실측)
+   */
+  `memo-${props.memoId}#${activeMemo.tick.value}`,
   () => $fetch<Memo>(`/api/memos/${encodeURIComponent(props.memoId)}`),
   // 열 때마다 서버에서 새로 받는다 — 옮기거나 밖에서 고친 뒤 다시 세울 때 옛 내용이 나오면 안 된다
   { getCachedData: () => undefined },
 )
 
+const rootRef = useTemplateRef('rootRef')
 // 타입을 적는다 — 템플릿이 autosave 를 쓰고 autosave 가 editorRef 를 써서 추론이 순환한다
 const editorRef = useTemplateRef<{ editor?: Editor }>('editorRef')
 /** 입력칸의 제목 */
@@ -127,6 +133,8 @@ const editorProps = {
 }
 
 onMounted(() => {
+  // 메모끼리는 같은 자리에서 바꿔 끼워서([id].vue) 이전 메모의 스크롤 위치가 남는다 — 새 메모는 맨 위부터
+  rootRef.value?.closest('[data-slot="body"]')?.scrollTo({ top: 0 })
   document.addEventListener('visibilitychange', onVisibility)
   attachBridge()
   void calendarSync.refresh()
@@ -141,9 +149,20 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibility)
 })
 
+/** 「저장 안 하고 이동」 을 골랐다 — 다시 막지 않는다 */
+let discarding = false
+
 /** 다른 화면으로 가기 전에 고친 것을 저장한다. 못 하면 가지 않는다 — 조용히 버리지 않는다 */
-onBeforeRouteLeave(async (to) => {
-  if (!autosave || (await flushAll())) return true
+onBeforeRouteLeave((to) => saveBeforeLeaving(to))
+/*
+ * 🔴 메모 → 메모는 같은 경로(/m/:id)라 vue-router 가 «떠나기»가 아니라 «바뀜»으로 보고 위 가드를 부르지 않는다.
+ *    그래서 치고 1초 안에 다른 메모를 누르면 저장 타이머가 화면과 함께 사라져 친 글을 잃었다 (2026-10-16 실측).
+ *    첫 저장으로 id 가 바뀌어 주소만 고치는 것(onRenamed)은 같은 메모라 건너뛴다.
+ */
+onBeforeRouteUpdate((to) => (autosave && String(to.params.id) === autosave.currentId() ? true : saveBeforeLeaving(to)))
+
+async function saveBeforeLeaving(to: RouteLocationNormalized) {
+  if (!autosave || discarding || (await flushAll())) return true
   // 서버에 닿지 못했지만 이 기기에 보관했다 — 연결되면 보관함이 저장한다 (plugins/memo-drafts.client.ts)
   if (autosave.state.value.status === 'offline') {
     toast.add({ color: 'warning', title: '연결이 없어 이 기기에 보관했습니다', description: '연결되면 자동으로 저장합니다.' })
@@ -158,9 +177,7 @@ onBeforeRouteLeave(async (to) => {
     ],
   })
   return false
-})
-
-let discarding = false
+}
 
 /** UEditor 가 editor 를 만든 뒤에 네이티브 툴바를 붙인다. 몇 프레임 늦을 수 있어 기다린다 */
 function attachBridge(tries = 30) {
@@ -426,7 +443,7 @@ function showTableBubble({ editor, view, state }: MenuContext) {
 </script>
 
 <template>
-  <div class="w-full min-w-0">
+  <div ref="rootRef" class="w-full min-w-0">
     <div v-if="error || !memo || !autosave" class="flex h-full flex-col items-center justify-center gap-3 text-center">
       <UIcon name="i-material-symbols-error-outline" class="size-10 text-error" />
       <p class="text-muted">{{ apiMessage(error, '메모를 열지 못했습니다') }}</p>

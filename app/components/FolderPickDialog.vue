@@ -15,23 +15,34 @@ const emit = defineEmits<{ pick: [folder: string] }>()
 
 const open = defineModel<boolean>('open', { required: true })
 
+/**
+ * 고르기 칸에서 최상위를 나타내는 값. 폴더 경로는 `/` 로 시작하지 않는다.
+ * 🔴 빈 문자열('')을 쓰면 안 된다 — 고르기 칸(Reka SelectItem)은 빈 값을 «고른 것 없음» 으로 쓰려고 막아서,
+ *    「최상위」 항목이 오류로 그려지지 않아 최상위로 옮길 수 없었다 (2026-10-16 발견).
+ */
+const ROOT = '/'
+
 // 대기 중인 옮기기까지 얹은 트리 — 사이드바에 보이는 것과 같은 목록에서 고른다
 const { view: tree } = useStructureQueue()
 
-const target = ref(props.current)
+const target = ref(toOption(props.current))
 
 const options = computed(() =>
-  [{ label: '최상위', value: '' }, ...flatten(tree.value?.folders ?? [])].filter(
+  [{ label: '최상위', value: ROOT }, ...flatten(tree.value?.folders ?? [])].filter(
     (o) => !props.exclude || (o.value !== props.exclude && !o.value.startsWith(`${props.exclude}/`)),
   ),
 )
+
+function toOption(folder: string) {
+  return folder || ROOT
+}
 
 function flatten(folders: FolderNode[]): { label: string; value: string }[] {
   return folders.flatMap((f) => [{ label: f.path, value: f.path }, ...flatten(f.children)])
 }
 
 function onOpen(value: boolean) {
-  if (value) target.value = props.current
+  if (value) target.value = toOption(props.current)
   open.value = value
 }
 </script>
@@ -44,7 +55,14 @@ function onOpen(value: boolean) {
     <template #footer>
       <div class="flex w-full justify-end gap-2">
         <UButton color="neutral" variant="outline" @click="open = false">취소</UButton>
-        <UButton :loading="busy" :disabled="target === current" data-testid="folder-pick-confirm" @click="emit('pick', target)">옮기기</UButton>
+        <UButton
+          :loading="busy"
+          :disabled="target === toOption(current)"
+          data-testid="folder-pick-confirm"
+          @click="emit('pick', target === ROOT ? '' : target)"
+        >
+          옮기기
+        </UButton>
       </div>
     </template>
   </UModal>

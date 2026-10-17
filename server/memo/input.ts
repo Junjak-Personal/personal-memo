@@ -1,8 +1,9 @@
 /**
  * 신뢰 경계 — 요청 본문은 화면이 만들지만 통째로 믿지 않는다. 여기서 좁히고 안쪽으로는 좁힌 타입만 보낸다.
  */
-import type { CreateMemoInput, MemoInput, UpdateMemoInput } from '../../shared/types/memo'
+import type { CreateMemoInput, FolderOrder, MemoInput, UpdateMemoInput } from '../../shared/types/memo'
 import { isDateString } from '../../shared/utils/memo-date'
+import { MAX_ORDER_ITEMS } from '../../shared/utils/order'
 import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS } from '../../shared/utils/tags'
 import { MemoError } from './errors'
 
@@ -97,4 +98,29 @@ export function parseStrings<K extends string>(raw: unknown, keys: readonly K[])
   const out = {} as Record<K, string>
   for (const key of keys) out[key] = str(body, key, 1000)
   return out
+}
+
+/** 순서 목록 — 문자열 배열, 상한까지, 중복은 앞의 것만 */
+function orderKeys(body: Body, key: string) {
+  const v = body[key]
+  if (!isStringArray(v)) bad(`${key}: 문자열 배열이어야 합니다`)
+  if (v.length > MAX_ORDER_ITEMS) bad(`${key}: ${MAX_ORDER_ITEMS}개를 넘습니다`)
+  if (v.some((k) => !k || k.length > 1024)) bad(`${key}: 빈 값이나 너무 긴 값이 있습니다`)
+  return [...new Set(v)]
+}
+
+/** `{ folder, folders?, memos? }` — 넘긴 목록만 바꾼다. 둘 다 없으면 거절 */
+export function parseOrderInput(raw: unknown): { folder: string; patch: Partial<FolderOrder> } {
+  const body = asBody(raw)
+  const folder = str(body, 'folder', 1000)
+  const patch: Partial<FolderOrder> = {}
+  if (body.folders !== undefined) patch.folders = orderKeys(body, 'folders')
+  if (body.memos !== undefined) patch.memos = orderKeys(body, 'memos')
+  if (!patch.folders && !patch.memos) bad('folders 나 memos 중 하나는 있어야 합니다')
+  return { folder, patch }
+}
+
+/** `{ ids }` — 「할 일」 화면의 순서 */
+export function parseTodoOrderInput(raw: unknown) {
+  return orderKeys(asBody(raw), 'ids')
 }

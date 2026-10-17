@@ -13,6 +13,7 @@ import type {
   CalendarResponse,
   CreateMemoInput,
   FolderNode,
+  FolderOrder,
   Memo,
   MemoMeta,
   PublicMemo,
@@ -42,6 +43,7 @@ import {
   joinRel,
   uniqueMdPath,
 } from './paths'
+import { EMPTY_ORDER_FILE, ORDER_FILE, type OrderFile, parseOrderFile, serializeOrderFile } from './order'
 import { type IndexEntry, MemoIndex } from './scan'
 
 const SNIPPET_RADIUS = 40
@@ -99,7 +101,14 @@ export class MemoStore {
       await this.index.rescan()
       const memos = [...this.index.active.values()].map((e) => this.index.meta(e))
       memos.sort((a, b) => a.path.localeCompare(b.path, 'ko'))
-      return { folders: await this.folderTree(this.root, ''), memos }
+      const folders = await this.folderTree(this.root, '')
+      const root = await this.readOrder('')
+      const orders: Record<string, FolderOrder> = {}
+      for (const path of ['', ...folderPaths(folders)]) {
+        const order = path ? await this.readOrder(path) : root
+        if (order.folders.length || order.memos.length) orders[path] = { folders: order.folders, memos: order.memos }
+      }
+      return { folders, memos, orders, todoOrder: root.todos }
     })
   }
 
@@ -529,6 +538,37 @@ export class MemoStore {
     return out
   }
 
+  // ── 순서 (§3.6) ─────────────────────────────────────────────────────
+
+  private async readOrder(folder: string): Promise<OrderFile> {
+    const raw = await readFile(join(await this.abs(folder), ORDER_FILE), 'utf8').catch(() => null)
+    return raw === null ? { ...EMPTY_ORDER_FILE } : parseOrderFile(raw)
+  }
+
+  private async writeOrder(folder: string, order: OrderFile) {
+    await writeAtomic(join(await this.abs(folder), ORDER_FILE), serializeOrderFile(order))
+  }
+
+  /** 폴더 안의 순서 — 하위 폴더 이름, 메모 id. 넘긴 쪽만 바꾼다 */
+  setOrder(folder: string, patch: Partial<FolderOrder>): Promise<FolderOrder> {
+    return this.exclusive(async () => {
+      await this.requireFolder(folder)
+      const order = await this.readOrder(folder)
+      const next = { ...order, ...patch }
+      await this.writeOrder(folder, next)
+      return { folders: next.folders, memos: next.memos }
+    })
+  }
+
+  /** 「할 일」 화면의 순서 — 최상위 순서 파일의 todos */
+  setTodoOrder(ids: string[]): Promise<string[]> {
+    return this.exclusive(async () => {
+      const order = await this.readOrder('')
+      await this.writeOrder('', { ...order, todos: ids })
+      return ids
+    })
+  }
+
   // ── 폴더 ────────────────────────────────────────────────────────────
 
   createFolder(parent: string, name: string): Promise<{ path: string }> {
@@ -552,6 +592,13 @@ export class MemoStore {
       if (await this.relExists(next)) throw new MemoError('conflict', '같은 이름의 폴더가 이미 있습니다')
       await rename(await this.abs(path), await this.abs(next))
       await this.index.rescan()
+      // 이름이 바뀌어도 위 폴더 안의 자리는 그대로 — 순서에 적힌 이름을 바꾼다
+      const parent = folderOf(path)
+      const order = await this.readOrder(parent)
+      const oldName = path.slice(path.lastIndexOf('/') + 1)
+      if (order.folders.includes(oldName)) {
+        await this.writeOrder(parent, { ...order, folders: order.folders.map((n) => (n === oldName ? name : n)) })
+      }
       return { path: next }
     })
   }
@@ -650,4 +697,8 @@ export class MemoStore {
     if (!s?.isFile()) throw new MemoError('not_found', '이미지를 찾을 수 없습니다')
     return { abs, type: IMAGE_TYPES[ext], size: s.size }
   }
+}
+
+function folderPaths(nodes: FolderNode[]): string[] {
+  return nodes.flatMap((n) => [n.path, ...folderPaths(n.children)])
 }

@@ -10,7 +10,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import type { MemoMeta } from '../../shared/types/memo'
-import { compareDoneTodos, compareTodos } from '../../shared/utils/todo'
+import { applyOrder, byCreatedDesc } from '../../shared/utils/order'
+import { compareDoneTodos } from '../../shared/utils/todo'
 import { MemoError } from '../memo/errors'
 import { MAX_IMAGE_BYTES } from '../memo/images'
 import { parseCreateInput, parseUpdateInput } from '../memo/input'
@@ -127,14 +128,19 @@ export function buildMcpServer(deps: McpDeps) {
     'list_todos',
     {
       title: '할 일 목록',
-      description: '폴더와 상관없이 할 일. 기본은 안 끝난 것만(날짜 있는 것이 먼저). includeDone 이면 끝낸 것도.',
+      description: '폴더와 상관없이 할 일. 기본은 안 끝난 것만(사용자가 「할 일」 화면에서 정한 순서). includeDone 이면 끝낸 것도.',
       inputSchema: { includeDone: z.boolean().optional() },
       annotations: { readOnlyHint: true },
     },
     ({ includeDone }) =>
       run(async () => {
-        const memos = (await store.tree()).memos
-        const open = memos.filter((m) => m.done === false).sort(compareTodos).map(brief)
+        const { memos, todoOrder } = await store.tree()
+        const open = applyOrder(
+          memos.filter((m) => m.done === false),
+          todoOrder,
+          (m) => m.id,
+          byCreatedDesc,
+        ).map(brief)
         if (!includeDone) return json({ open })
         return json({ open, done: memos.filter((m) => m.done === true).sort(compareDoneTodos).map(brief) })
       }),

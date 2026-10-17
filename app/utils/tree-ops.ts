@@ -75,11 +75,18 @@ function relocateFolder(tree: TreeResponse, from: string, to: string, name: stri
     const folder = rebase(m.folder, from, to)
     return folder === m.folder ? m : { ...m, folder, path: join(folder, nameOf(m.path)) }
   })
+  // 순서 파일은 폴더와 함께 따라간다. 이름만 바꾸면 위 폴더 순서에서도 자리를 지킨다 (서버의 renameFolder 와 같게)
+  tree.orders = Object.fromEntries(Object.entries(tree.orders).map(([path, order]) => [rebase(path, from, to), order]))
+  const parent = parentOf(from)
+  const parentOrder = tree.orders[parent]
+  if (parent === parentOf(to) && parentOrder) {
+    tree.orders[parent] = { ...parentOrder, folders: parentOrder.folders.map((n) => (n === nameOf(from) ? name : n)) }
+  }
 }
 
 export function applyStructureOps(tree: TreeResponse | null, ops: readonly StructureOp[]): TreeResponse | null {
   if (!tree || !ops.length) return tree
-  const next: TreeResponse = { folders: cloneFolders(tree.folders), memos: tree.memos.map((m): MemoMeta => ({ ...m })) }
+  const next: TreeResponse = { ...tree, folders: cloneFolders(tree.folders), memos: tree.memos.map((m): MemoMeta => ({ ...m })), orders: { ...tree.orders } }
   for (const op of ops) {
     if (op.kind === 'moveMemo') {
       next.memos = next.memos.map((m) => (m.id === op.id ? { ...m, folder: op.folder, path: join(op.folder, nameOf(m.path)) } : m))

@@ -74,9 +74,22 @@ export interface FolderNode {
   children: FolderNode[]
 }
 
+/**
+ * 한 폴더 안의 순서 — 그 폴더의 `.order.json` (설계문서 §3.6). 폴더는 이름, 메모는 id.
+ * 여기에 없는 것은 맨 위(메모는 만든 시각 최근순, 폴더는 이름순) — shared/utils/order.ts
+ */
+export interface FolderOrder {
+  folders: string[]
+  memos: string[]
+}
+
 export interface TreeResponse {
   folders: FolderNode[]
   memos: MemoMeta[]
+  /** 폴더 경로(최상위는 '') → 순서. 순서를 한 번도 바꾸지 않은 폴더는 없다 */
+  orders: Record<string, FolderOrder>
+  /** 「할 일」 화면의 순서 — 메모 id. 최상위 `.order.json` 의 `todos` */
+  todoOrder: string[]
 }
 
 export interface TrashItem {

@@ -13,6 +13,8 @@ const base: TreeResponse = {
     { path: '나', name: '나', children: [] },
   ],
   memos: [memo('a', '가/a.md'), memo('b', '가/하위/b.md'), memo('c', 'c.md')],
+  orders: { '': { folders: ['나', '가'], memos: [] }, '가/하위': { folders: [], memos: ['b'] } },
+  todoOrder: ['c'],
 }
 
 describe('대기 중인 폴더 구조 변경을 트리에 미리 얹기', () => {
@@ -48,5 +50,23 @@ describe('대기 중인 폴더 구조 변경을 트리에 미리 얹기', () => 
   it('없는 경로를 가리키는 변경은 건너뛴다', () => {
     const next = applyStructureOps(base, [{ kind: 'moveFolder', path: '없음', parent: '나' }])!
     expect(next.folders.map((f) => f.path)).toEqual(['가', '나'])
+  })
+})
+
+describe('대기 중인 변경과 순서', () => {
+  it('이름을 바꾸면 위 폴더 순서에서 자리를 지키고, 하위 순서도 따라간다', () => {
+    const next = applyStructureOps(base, [{ kind: 'renameFolder', path: '가', name: '다' }])!
+    expect(next.orders['']?.folders).toEqual(['나', '다'])
+    expect(next.orders['다/하위']).toEqual({ folders: [], memos: ['b'] })
+    expect(next.orders['가/하위']).toBeUndefined()
+    expect(next.todoOrder).toEqual(['c'])
+    // 원본은 그대로
+    expect(base.orders['']?.folders).toEqual(['나', '가'])
+  })
+
+  it('다른 폴더로 옮기면 새 자리 순서에는 없다 (맨 위) — 서버와 같다', () => {
+    const next = applyStructureOps(base, [{ kind: 'moveFolder', path: '가', parent: '나' }])!
+    expect(next.orders['']?.folders).toEqual(['나', '가'])
+    expect(next.orders['나/가/하위']).toEqual({ folders: [], memos: ['b'] })
   })
 })

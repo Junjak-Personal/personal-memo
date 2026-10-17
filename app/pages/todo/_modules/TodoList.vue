@@ -3,13 +3,20 @@
  * 할 일 (설계문서 §3.5) — 폴더와 상관없이 안 끝난 할 일을 모아 본다. 여기서 추가한 할 일은 「할 일」 폴더에 생긴다.
  * 목록은 사이드바 트리에서 고른다 — 따로 불러오지 않는다(체크·추가가 트리를 바꾸면 여기도 바로 바뀐다).
  * 이 화면에서 끝낸 것은 떠날 때까지 줄을 그은 채 남긴다 — 잘못 눌렀으면 바로 되돌릴 수 있게.
+ * 순서는 PC 는 끌어서, 폰은 길게 눌러 「위로」「아래로」 (2026-10-17). 최상위 `.order.json` 의 todos (설계문서 §3.6).
+ * 순서에 없는 것(새로 추가한 것)은 맨 위, 만든 시각 최근순.
  */
+import type { DropdownMenuItem } from '@nuxt/ui'
 import type { MemoMeta } from '#shared/types/memo'
 import { todayKst } from '#shared/utils/memo-date'
-import { compareTodos, TODO_FOLDER } from '#shared/utils/todo'
+import { applyOrder, byCreatedDesc, moveKey, stepKey } from '#shared/utils/order'
+import { TODO_FOLDER } from '#shared/utils/todo'
+import type { OrderSlot } from '~/composables/useTreeDragDrop'
+
+type TodoMenuItem = DropdownMenuItem & { testId: string }
 
 const toast = useToast()
-const { tree, error } = useMemoTree()
+const { tree, error, setTodoOrder } = useMemoTree()
 const todo = useTodo()
 
 const titleInput = ref('')
@@ -19,13 +26,25 @@ const newDateEnd = ref<string | null>(null)
 const adding = ref(false)
 /** 이 화면에서 끝낸 할 일 — 떠날 때까지 목록에 남긴다 */
 const finishedHere = ref<string[]>([])
+/** 끌고 있는 할 일과 놓을 자리 (PC) */
+const dragging = ref<string | null>(null)
+const slot = ref<OrderSlot | null>(null)
 
 const items = computed(() =>
-  (tree.value?.memos ?? []).filter((m) => m.done === false || (m.done === true && finishedHere.value.includes(m.id))).sort(compareTodos),
+  applyOrder(
+    (tree.value?.memos ?? []).filter((m) => m.done === false || (m.done === true && finishedHere.value.includes(m.id))),
+    tree.value?.todoOrder ?? [],
+    (m) => m.id,
+    byCreatedDesc,
+  ),
 )
 const openCount = computed(() => items.value.filter((m) => m.done === false).length)
 
 const today = todayKst()
+/** 터치 화면에서는 끌기를 켜지 않는다 — 스크롤과 다투고 iOS 웹뷰에서 믿을 수 없다 (사이드바와 같다) */
+const coarsePointer = window.matchMedia('(pointer: coarse)').matches
+// 길게 누른 손가락을 뗄 때 생기는 click 으로 메모가 열리지 않게 한다 (사이드바와 같다)
+let pressedRow: string | null = null
 
 function overdue(memo: MemoMeta) {
   return memo.done === false && memo.date !== null && (memo.dateEnd ?? memo.date) < today
@@ -60,6 +79,76 @@ async function toggle(memo: MemoMeta) {
   if (next && !finishedHere.value.includes(memo.id)) finishedHere.value = [...finishedHere.value, memo.id]
   await todo.setDone(memo.id, next)
 }
+
+/** 보이는 순서를 바꿔 저장한다 */
+function reorder(change: (ids: string[]) => string[]) {
+  void setTodoOrder(change(items.value.map((m) => m.id)))
+}
+
+function rowMenu(memo: MemoMeta, index: number): TodoMenuItem[][] {
+  return [
+    [
+      { label: '위로', icon: 'i-material-symbols-arrow-upward', disabled: index === 0, testId: 'todo-move-up', onSelect: () => reorder((ids) => stepKey(ids, memo.id, -1)) },
+      {
+        label: '아래로',
+        icon: 'i-material-symbols-arrow-downward',
+        disabled: index === items.value.length - 1,
+        testId: 'todo-move-down',
+        onSelect: () => reorder((ids) => stepKey(ids, memo.id, 1)),
+      },
+    ],
+  ]
+}
+
+function onContextOpen(id: string, open: boolean) {
+  if (open) pressedRow = id
+}
+
+function suppressPressClick(event: MouseEvent, id: string) {
+  if (pressedRow !== id) return
+  pressedRow = null
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function onDragStart(event: DragEvent, memo: MemoMeta) {
+  dragging.value = memo.id
+  if (!event.dataTransfer) return
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', memo.title)
+}
+
+/** 줄의 위 절반이면 앞, 아래 절반이면 뒤 */
+function onDragOver(event: DragEvent, id: string) {
+  const row = event.currentTarget
+  if (!dragging.value || dragging.value === id || !(row instanceof HTMLElement)) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  const rect = row.getBoundingClientRect()
+  slot.value = { key: id, place: event.clientY - rect.top < rect.height / 2 ? 'before' : 'after' }
+}
+
+function onDragLeave(id: string) {
+  if (slot.value?.key === id) slot.value = null
+}
+
+function onDrop(event: DragEvent) {
+  event.preventDefault()
+  const id = dragging.value
+  const at = slot.value
+  onDragEnd()
+  if (id && at) reorder((ids) => moveKey(ids, id, at.key, at.place))
+}
+
+function onDragEnd() {
+  dragging.value = null
+  slot.value = null
+}
+
+function slotClass(id: string) {
+  if (slot.value?.key !== id) return ''
+  return slot.value.place === 'before' ? 'shadow-[inset_0_2px_0_0_var(--ui-primary)]' : 'shadow-[inset_0_-2px_0_0_var(--ui-primary)]'
+}
 </script>
 
 <template>
@@ -82,7 +171,9 @@ async function toggle(memo: MemoMeta) {
         <UButton type="submit" :loading="adding" :disabled="!titleInput.trim()" data-testid="todo-add-button">추가</UButton>
         <MemoDatePicker :date="newDate" :date-end="newDateEnd" size="md" test-id="todo-date" @change="onNewDate" />
       </form>
-      <p class="-mt-2 text-xs text-muted">「{{ TODO_FOLDER }}」 폴더에 생깁니다. 다른 메모는 메모 메뉴의 「할 일로 두기」로 여기에 올립니다.</p>
+      <p class="-mt-2 text-xs text-muted">「{{ TODO_FOLDER }}」 폴더에 생깁니다. 다른 메모는 메모 메뉴의 「할 일로 두기」로 여기에 올립니다.
+        순서는 {{ coarsePointer ? '길게 눌러' : '끌어서' }} 바꿉니다.
+      </p>
 
       <p v-if="error" class="py-20 text-center text-error">{{ error }}</p>
       <div v-else-if="tree && !items.length" class="flex flex-col items-center gap-3 py-20 text-center text-muted" data-testid="todo-empty">
@@ -90,24 +181,48 @@ async function toggle(memo: MemoMeta) {
         남은 할 일이 없습니다
       </div>
       <ul v-else class="flex flex-col divide-y divide-default" data-testid="todo-list">
-        <li v-for="memo in items" :key="memo.id" class="flex items-center gap-3 py-2.5" :data-testid="`todo-item-${memo.id}`">
-          <UCheckbox
-            :model-value="memo.done === true"
-            :disabled="todo.pending.value.includes(memo.id)"
-            :aria-label="memo.done ? '안 끝난 것으로 되돌리기' : '끝냄'"
-            size="lg"
-            data-testid="todo-check"
-            @update:model-value="toggle(memo)"
-          />
-          <NuxtLink :to="memoPath(memo.id)" class="min-w-0 flex-1">
-            <p class="truncate" :class="memo.done ? 'text-muted line-through' : 'font-medium'">{{ memo.title || '제목 없음' }}</p>
-            <p v-if="memo.date || memo.folder !== TODO_FOLDER" class="truncate text-xs text-muted">
-              <span v-if="memo.date" :class="overdue(memo) && 'text-error'">{{ dateLabel(memo) }}</span>
-              <span v-if="memo.date && memo.folder !== TODO_FOLDER"> · </span>
-              <span v-if="memo.folder !== TODO_FOLDER">{{ memo.folder || '최상위' }}</span>
-            </p>
-          </NuxtLink>
-        </li>
+        <UContextMenu
+          v-for="(memo, index) in items"
+          :key="memo.id"
+          :items="rowMenu(memo, index)"
+          :ui="{ item: 'min-h-11 lg:min-h-0' }"
+          @update:open="onContextOpen(memo.id, $event)"
+        >
+          <li
+            class="flex items-center gap-3 rounded-md py-2.5"
+            :class="[slotClass(memo.id), dragging === memo.id && 'opacity-50']"
+            :draggable="!coarsePointer"
+            :data-testid="`todo-item-${memo.id}`"
+            @pointerdown="pressedRow = null"
+            @click.capture="suppressPressClick($event, memo.id)"
+            @dragstart="onDragStart($event, memo)"
+            @dragover="onDragOver($event, memo.id)"
+            @dragleave="onDragLeave(memo.id)"
+            @drop="onDrop"
+            @dragend="onDragEnd"
+          >
+            <UCheckbox
+              :model-value="memo.done === true"
+              :disabled="todo.pending.value.includes(memo.id)"
+              :aria-label="memo.done ? '안 끝난 것으로 되돌리기' : '끝냄'"
+              size="lg"
+              data-testid="todo-check"
+              @update:model-value="toggle(memo)"
+            />
+            <!-- 링크는 따로 끌리지 않게 (줄 전체를 끈다). 길게 눌렀을 때 iOS 링크 미리보기가 메뉴와 겹치지 않게 막는다 -->
+            <NuxtLink :to="memoPath(memo.id)" :draggable="false" class="min-w-0 flex-1 [-webkit-touch-callout:none]">
+              <p class="truncate" :class="memo.done ? 'text-muted line-through' : 'font-medium'">{{ memo.title || '제목 없음' }}</p>
+              <p v-if="memo.date || memo.folder !== TODO_FOLDER" class="truncate text-xs text-muted">
+                <span v-if="memo.date" :class="overdue(memo) && 'text-error'">{{ dateLabel(memo) }}</span>
+                <span v-if="memo.date && memo.folder !== TODO_FOLDER"> · </span>
+                <span v-if="memo.folder !== TODO_FOLDER">{{ memo.folder || '최상위' }}</span>
+              </p>
+            </NuxtLink>
+          </li>
+          <template #item-label="{ item: menuItem }">
+            <span :data-testid="menuItem.testId">{{ menuItem.label }}</span>
+          </template>
+        </UContextMenu>
       </ul>
     </div>
   </div>

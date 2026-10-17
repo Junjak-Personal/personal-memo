@@ -5,12 +5,14 @@
  * 태그는 하단 탐색에서 전용 화면으로 연다 — 검색창에서는 그대로 `#태그` 로 거를 수 있다.
  * PC 에서는 접을 수 있고, 모바일에서는 ≡ 를 누르면 왼쪽에서 전체 화면으로 밀려 들어온다(slideover, 폭 제한 없음).
  * (처음엔 mode="modal" 이었는데 Nuxt UI 가 전체 화면 modal 의 애니메이션을 꺼 둬서 뚝 나타났다.)
- * PC 에서는 메모·폴더를 끌어 다른 폴더나 최상위로 옮긴다 (useTreeDragDrop). 폰은 메뉴로 옮긴다.
+ * PC 에서는 메모·폴더를 끌어 다른 폴더나 최상위로 옮기고, 같은 폴더 안 순서를 바꾼다 (useTreeDragDrop).
+ * 폰은 메뉴로 옮기고 「위로」「아래로」 로 순서를 바꾼다. 순서는 폴더마다 `.order.json` (설계문서 §3.6).
  */
 import type { DropdownMenuItem, NavigationMenuItem, TreeItem } from '@nuxt/ui'
 import type { FolderNode, MemoMeta, SearchHit } from '#shared/types/memo'
+import { applyOrder, byCreatedDesc, byName, EMPTY_ORDER, moveKey, stepKey } from '#shared/utils/order'
 import { TODO_FOLDER } from '#shared/utils/todo'
-import type { Dragged } from '~/composables/useTreeDragDrop'
+import type { Dragged, OrderSlot, RowTarget } from '~/composables/useTreeDragDrop'
 
 type SidebarMenuItem = DropdownMenuItem & { testId: string }
 
@@ -18,11 +20,11 @@ const route = useRoute()
 const { clear: clearSession } = useUserSession()
 const toast = useToast()
 
-const { tree, error: treeError, refresh } = useMemoTree()
+const { tree, error: treeError, refresh, setFolderOrder } = useMemoTree()
 const { creating, createMemo } = useCreateMemo()
 const queue = useStructureQueue()
 const folders = useFolderActions({ onRelocated: relocate })
-const dnd = useTreeDragDrop(relocate)
+const dnd = useTreeDragDrop({ onRelocated: relocate, onReorder, pinned: (key) => key === TODO_FOLDER })
 const todo = useTodo()
 const activeMemo = useActiveMemo()
 
@@ -103,8 +105,10 @@ function relocate(from: string | null, to: string) {
   expanded.value = [...new Set([...keys, ...ancestors])]
 }
 
-function memoItem(memo: MemoMeta): TreeItem {
+function memoItem(memo: MemoMeta, index: number, count: number): TreeItem {
   return {
+    first: index === 0,
+    last: index === count - 1,
     kind: 'memo',
     folder: memo.folder,
     label: memo.title || '제목 없음',
@@ -116,29 +120,129 @@ function memoItem(memo: MemoMeta): TreeItem {
   }
 }
 
-/** 폴더 먼저, 그 안의 메모는 최근 수정 순 */
+/** 폴더 먼저, 그다음 메모 — 각각 저장된 순서대로, 순서에 없는 것(새것)은 맨 위 (설계문서 §3.6) */
 function toItems(folders: FolderNode[], memos: MemoMeta[], parent: string): TreeItem[] {
-  // 「할 일」 폴더는 앱이 정한 특수 폴더라 이름순과 상관없이 맨 위, 아이콘도 따로 (2026-10-15 사용자 요청)
-  const ordered = parent ? folders : [...folders].sort((a, b) => Number(b.path === TODO_FOLDER) - Number(a.path === TODO_FOLDER))
+  const ordered = sortedFolders(folders, parent)
+  const movable = ordered.filter((f) => !isPinned(f.path))
   const subfolders: TreeItem[] = ordered.map((folder) => ({
     kind: 'folder',
     label: folder.name,
     value: `folder:${folder.path}`,
     path: folder.path,
+    first: movable[0] === folder,
+    last: movable.at(-1) === folder,
     icon: folder.path === TODO_FOLDER ? 'i-material-symbols-folder-check-outline' : 'i-material-symbols-folder-outline',
     children: toItems(folder.children, memos, folder.path),
   }))
-  // 「할 일」 폴더 안의 끝낸 할 일은 숨긴다 — 폴더 메뉴의 「완료 목록 보기」(/todo/done)에서 본다. 다른 폴더에서 할 일로 둔
-  // 메모는 내용이 있는 메모라 끝나도 그 폴더에 그대로 둔다 (2026-10-16 사용자 요청)
-  const own = memos
-    .filter((m) => m.folder === parent && !(parent === TODO_FOLDER && m.done === true))
-    .sort((a, b) => (b.updated ?? '').localeCompare(a.updated ?? ''))
-    .map(memoItem)
-  return [...subfolders, ...own]
+  const own = shownMemos(memos, parent)
+  return [...subfolders, ...own.map((memo, i) => memoItem(memo, i, own.length))]
+}
+
+/** 「할 일」 폴더는 앱이 정한 특수 폴더라 최상위 맨 위에 고정, 아이콘도 따로 (2026-10-15 사용자 요청) */
+function isPinned(path: string) {
+  return path === TODO_FOLDER
+}
+
+function orderOf(folder: string) {
+  return view.value?.orders[folder] ?? EMPTY_ORDER
+}
+
+function sortedFolders(folders: FolderNode[], parent: string) {
+  const ordered = applyOrder(folders, orderOf(parent).folders, (f) => f.name, byName)
+  return parent ? ordered : [...ordered].sort((a, b) => Number(isPinned(b.path)) - Number(isPinned(a.path)))
+}
+
+/** 폴더 안 메모 전부, 순서대로 (숨긴 것 포함) */
+function sortedMemos(memos: MemoMeta[], folder: string) {
+  return applyOrder(
+    memos.filter((m) => m.folder === folder),
+    orderOf(folder).memos,
+    (m) => m.id,
+    byCreatedDesc,
+  )
+}
+
+/**
+ * 「할 일」 폴더 안의 끝낸 할 일은 숨긴다 — 폴더 메뉴의 「완료 목록 보기」(/todo/done)에서 본다. 다른 폴더에서 할 일로 둔
+ * 메모는 내용이 있는 메모라 끝나도 그 폴더에 그대로 둔다 (2026-10-16 사용자 요청)
+ */
+function isHidden(memo: MemoMeta) {
+  return memo.folder === TODO_FOLDER && memo.done === true
+}
+
+function shownMemos(memos: MemoMeta[], folder: string) {
+  return sortedMemos(memos, folder).filter((m) => !isHidden(m))
+}
+
+function childFolders(folders: FolderNode[], parent: string): FolderNode[] {
+  if (!parent) return folders
+  for (const f of folders) {
+    if (f.path === parent) return f.children
+    if (parent.startsWith(`${f.path}/`)) return childFolders(f.children, parent)
+  }
+  return []
+}
+
+/**
+ * 메모 순서를 바꿔 저장한다 — 끌어 놓기와 메뉴의 위로·아래로가 같이 쓴다.
+ * 보이는 메모끼리 바꾸고, 숨긴 것(끝낸 할 일)은 뒤에 붙인다 — 숨긴 줄과 자리를 바꿔 «눌러도 그대로» 가 되지 않게.
+ * 대기 중인 폴더 구조 변경이 있으면 먼저 반영한다 — 서버에 아직 없는 폴더의 순서를 쓰지 않게.
+ */
+async function reorderMemos(folder: string, change: (keys: string[]) => string[]) {
+  if (!(await queue.apply())) return
+  const all = sortedMemos(view.value?.memos ?? [], folder)
+  const shown = all.filter((m) => !isHidden(m)).map((m) => m.id)
+  const hidden = all.filter(isHidden).map((m) => m.id)
+  await setFolderOrder(folder, { memos: [...change(shown), ...hidden] })
+}
+
+/** 하위 폴더 순서 — 이름으로 적는다. 고정된 「할 일」 은 빼고 */
+async function reorderFolders(parent: string, change: (names: string[]) => string[]) {
+  if (!(await queue.apply())) return
+  const names = sortedFolders(childFolders(view.value?.folders ?? [], parent), parent)
+    .filter((f) => !isPinned(f.path))
+    .map((f) => f.name)
+  await setFolderOrder(parent, { folders: change(names) })
+}
+
+function onReorder(dragged: Dragged, slot: OrderSlot) {
+  if (dragged.kind === 'memo') {
+    void reorderMemos(dragged.folder, (keys) => moveKey(keys, dragged.id, slot.key, slot.place))
+  } else {
+    void reorderFolders(parentOf(dragged.path), (names) => moveKey(names, dragged.label, nameOfPath(slot.key), slot.place))
+  }
+}
+
+function nameOfPath(path: string) {
+  return path.slice(path.lastIndexOf('/') + 1)
+}
+
+/** 메뉴의 위로·아래로 */
+function orderMenu(item: TreeItem, testPrefix: string): SidebarMenuItem[] {
+  const step = (delta: -1 | 1) =>
+    item.kind === 'folder'
+      ? reorderFolders(parentOf(String(item.path)), (names) => stepKey(names, String(item.label), delta))
+      : reorderMemos(String(item.folder), (keys) => stepKey(keys, String(item.value), delta))
+  return [
+    { label: '위로', icon: 'i-material-symbols-arrow-upward', disabled: item.first === true, testId: `${testPrefix}-move-up`, onSelect: () => void step(-1) },
+    { label: '아래로', icon: 'i-material-symbols-arrow-downward', disabled: item.last === true, testId: `${testPrefix}-move-down`, onSelect: () => void step(1) },
+  ]
+}
+
+function rowTarget(item: TreeItem): RowTarget {
+  return item.kind === 'folder' ? { kind: 'folder', path: String(item.path) } : { kind: 'memo', id: String(item.value), folder: String(item.folder) }
+}
+
+/** 순서로 놓을 자리 — 줄 위나 아래에 선을 긋는다 */
+function slotClass(item: TreeItem) {
+  const slot = dnd.slot.value
+  if (!slot || slot.key !== (item.kind === 'folder' ? String(item.path) : String(item.value))) return ''
+  return slot.place === 'before' ? 'shadow-[inset_0_2px_0_0_var(--ui-primary)]' : 'shadow-[inset_0_-2px_0_0_var(--ui-primary)]'
 }
 
 /** 폴더 줄의 메뉴 — PC는 ⋯, 폰은 길게 누르기 */
-function folderMenu(path: string): SidebarMenuItem[][] {
+function folderMenu(item: TreeItem): SidebarMenuItem[][] {
+  const path = String(item.path)
   const todo: SidebarMenuItem[][] =
     path === TODO_FOLDER
       ? [[{ label: '완료 목록 보기', icon: 'i-material-symbols-task-alt', testId: 'sidebar-folder-done-list', onSelect: () => void navigateTo('/todo/done') }]]
@@ -151,12 +255,13 @@ function folderMenu(path: string): SidebarMenuItem[][] {
       { label: '이름 바꾸기', icon: 'i-material-symbols-edit-outline', testId: 'sidebar-folder-rename-folder', onSelect: () => folders.startRename(path) },
       { label: '다른 폴더로 옮기기', icon: 'i-material-symbols-drive-file-move-outline', testId: 'sidebar-folder-move-folder', onSelect: () => folders.startMove(path) },
     ],
+    ...(isPinned(path) ? [] : [orderMenu(item, 'sidebar-folder')]),
     [{ label: '폴더 지우기', icon: 'i-material-symbols-folder-delete-outline', color: 'error', testId: 'sidebar-folder-delete-folder', onSelect: () => void folders.remove(path) }],
   ]
 }
 
 function rowMenu(item: TreeItem): SidebarMenuItem[][] {
-  if (item.kind === 'folder') return folderMenu(String(item.path))
+  if (item.kind === 'folder') return folderMenu(item)
   const memo = view.value?.memos.find((m) => m.id === item.value)
   if (!memo) return []
   return [
@@ -164,6 +269,7 @@ function rowMenu(item: TreeItem): SidebarMenuItem[][] {
       { label: '여기에 새 메모', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'sidebar-memo-create-memo', onSelect: () => void createInFolder(memo.folder) },
       { label: '다른 폴더로 옮기기', icon: 'i-material-symbols-drive-file-move-outline', disabled: removingMemo.value !== null, testId: 'sidebar-memo-move-memo', onSelect: () => (movingMemo.value = memo) },
     ],
+    orderMenu(item, 'sidebar-memo'),
     [{ label: '메모 삭제', icon: 'i-material-symbols-delete-outline', color: 'error', disabled: removingMemo.value !== null, testId: 'sidebar-memo-delete-memo', onSelect: () => void removeMemo(memo.id) }],
   ]
 }
@@ -387,7 +493,7 @@ async function logout() {
 
     <template v-else>
       <p v-if="treeError" class="px-1 text-sm text-error">{{ treeError }}</p>
-      <p v-else class="px-1 text-xs text-muted lg:hidden">폴더·메모를 길게 누르면 메뉴가 열립니다</p>
+      <p v-else class="px-1 text-xs text-muted lg:hidden">폴더·메모를 길게 누르면 메뉴(옮기기·순서)가 열립니다</p>
       <UTree
         v-if="!treeError"
         v-model:expanded="expanded"
@@ -413,17 +519,17 @@ async function logout() {
           >
             <div
               class="-mx-1 flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1"
-              :class="item.kind === 'folder' && dnd.over.value === item.path && 'bg-primary/10 ring-1 ring-primary'"
+              :class="[item.kind === 'folder' && dnd.over.value === item.path && 'bg-primary/10 ring-1 ring-primary', slotClass(item)]"
               :draggable="!coarsePointer"
               :data-testid="item.kind === 'folder' ? 'sidebar-folder-row' : 'sidebar-memo-row'"
               @pointerdown="pressedMenuRow = null"
               @click.capture="suppressPressClick($event, item)"
               @dragstart="dnd.start($event, dragged(item))"
               @dragend="dnd.end"
-              @dragenter="item.kind === 'folder' && dnd.enter($event, String(item.path))"
-              @dragover="item.kind === 'folder' && dnd.enter($event, String(item.path))"
-              @dragleave="item.kind === 'folder' && dnd.leave(String(item.path))"
-              @drop="item.kind === 'folder' && dnd.drop($event, String(item.path))"
+              @dragenter="dnd.overRow($event, rowTarget(item))"
+              @dragover="dnd.overRow($event, rowTarget(item))"
+              @dragleave="dnd.leaveRow(rowTarget(item))"
+              @drop="dnd.dropRow($event, rowTarget(item))"
             >
               <!-- 할 일이면 아이콘 자리에 체크박스. 누름이 줄까지 올라가면 메모가 열리므로 여기서 멈춘다 -->
               <span v-if="item.kind === 'memo' && item.done !== null" class="flex size-5 shrink-0 items-center justify-center" @click.stop>

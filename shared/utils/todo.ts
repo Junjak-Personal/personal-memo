@@ -12,14 +12,6 @@ export function isScheduled<T extends Pick<MemoMeta, 'date' | 'done'>>(memo: T):
   return memo.date !== null && memo.done !== true
 }
 
-/** 날짜 있는 것이 먼저(가까운 날부터, 같으면 제목), 날짜 없는 것은 최근에 만든 것부터 — 방금 추가한 것이 입력칸 가까이 */
-export function compareTodos(a: Pick<MemoMeta, 'title' | 'date' | 'created'>, b: Pick<MemoMeta, 'title' | 'date' | 'created'>) {
-  if (a.date && b.date) return a.date.localeCompare(b.date) || a.title.localeCompare(b.title, 'ko')
-  if (a.date) return -1
-  if (b.date) return 1
-  return (b.created ?? '').localeCompare(a.created ?? '') || a.title.localeCompare(b.title, 'ko')
-}
-
 /** 완료 목록 — 날짜(없으면 만든 날)가 최근인 것부터. 끝낸 시각은 따로 남기지 않는다(체크는 updated 를 바꾸지 않는다) */
 export function compareDoneTodos(a: Pick<MemoMeta, 'title' | 'date' | 'created'>, b: Pick<MemoMeta, 'title' | 'date' | 'created'>) {
   const ka = (a.date ?? a.created ?? '').slice(0, 10)

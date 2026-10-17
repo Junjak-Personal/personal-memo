@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCreateInput, parseDoneInput, parseUpdateInput } from './input'
+import { parseCreateInput, parseDoneInput, parseOrderInput, parseTodoOrderInput, parseUpdateInput } from './input'
 
 const base = { title: '제목', content: '본문', date: null, dateEnd: null }
 
@@ -40,5 +40,22 @@ describe('요청 본문 검사', () => {
     expect(() => parseDoneInput({})).toThrow()
     expect(() => parseDoneInput({ done: 'true' })).toThrow()
     expect(() => parseDoneInput(null)).toThrow()
+  })
+})
+
+describe('순서 요청', () => {
+  it('넘긴 목록만 담고 중복은 뺀다', () => {
+    expect(parseOrderInput({ folder: '업무', memos: ['a', 'b', 'a'] })).toEqual({ folder: '업무', patch: { memos: ['a', 'b'] } })
+    expect(parseOrderInput({ folder: '', folders: ['가'] })).toEqual({ folder: '', patch: { folders: ['가'] } })
+    expect(parseTodoOrderInput({ ids: ['x', 'y'] })).toEqual(['x', 'y'])
+  })
+
+  it('목록이 없거나 모양이 틀리면 거절한다', () => {
+    expect(() => parseOrderInput({ folder: '업무' })).toThrow()
+    expect(() => parseOrderInput({ folder: '업무', memos: [1] })).toThrow()
+    expect(() => parseOrderInput({ folder: '업무', memos: [''] })).toThrow()
+    expect(() => parseOrderInput({ memos: ['a'] })).toThrow()
+    expect(() => parseTodoOrderInput({ ids: 'x' })).toThrow()
+    expect(() => parseTodoOrderInput({ ids: Array.from({ length: 5001 }, (_, i) => `id${i}`) })).toThrow()
   })
 })

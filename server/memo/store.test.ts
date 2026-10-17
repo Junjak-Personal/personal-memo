@@ -601,3 +601,69 @@ describe('외부 공개 (public)', () => {
     await rejects(store.publicImage(memo.id, shown.src), 'not_found')
   })
 })
+
+describe('순서 (.order.json)', () => {
+  it('처음엔 순서가 없고, 바꾸면 그 폴더의 순서 파일에만 남는다', async () => {
+    await store.createFolder('', '업무')
+    const a = await store.create({ ...input('가'), folder: '업무' })
+    const b = await store.create({ ...input('나'), folder: '업무' })
+    expect((await store.tree()).orders).toEqual({})
+
+    await store.setOrder('업무', { memos: [a.id, b.id] })
+    const tree = await store.tree()
+    expect(tree.orders).toEqual({ 업무: { folders: [], memos: [a.id, b.id] } })
+    expect(JSON.parse(await readFile(memos('업무/.order.json'), 'utf8'))).toEqual({ memos: [a.id, b.id] })
+    // 순서 파일은 메모·폴더 목록에 끼지 않고, 메모 파일은 그대로다
+    expect(tree.memos.map((m) => m.title).sort()).toEqual(['가', '나'])
+    expect(tree.folders.map((f) => f.name)).toEqual(['업무'])
+    expect((await store.get(a.id)).version).toBe(a.version)
+  })
+
+  it('넘긴 목록만 바꾼다 (폴더 순서를 바꿔도 메모 순서는 남는다)', async () => {
+    await store.createFolder('', '가')
+    await store.createFolder('', '나')
+    const m = await store.create({ ...input('메모'), folder: '' })
+    await store.setOrder('', { memos: [m.id] })
+    await store.setOrder('', { folders: ['나', '가'] })
+    expect((await store.tree()).orders['']).toEqual({ folders: ['나', '가'], memos: [m.id] })
+  })
+
+  it('할 일 화면 순서는 최상위 파일의 todos', async () => {
+    const t = await store.create({ ...input('할 일 하나'), folder: '', done: false })
+    await store.setTodoOrder([t.id])
+    const tree = await store.tree()
+    expect(tree.todoOrder).toEqual([t.id])
+    expect(tree.orders).toEqual({})
+  })
+
+  it('폴더 이름을 바꾸면 위 폴더 순서의 이름도 바뀐다 (자리 유지)', async () => {
+    await store.createFolder('', '가')
+    await store.createFolder('', '나')
+    await store.setOrder('', { folders: ['나', '가'] })
+    await store.renameFolder('나', '다')
+    expect((await store.tree()).orders['']?.folders).toEqual(['다', '가'])
+  })
+
+  it('폴더를 옮기면 안의 순서 파일도 따라가고, 지울 때 막지 않는다', async () => {
+    await store.createFolder('', '상자')
+    await store.createFolder('', '안')
+    await store.setOrder('안', { folders: ['x'] })
+    await store.moveFolder('안', '상자')
+    expect((await store.tree()).orders['상자/안']).toEqual({ folders: ['x'], memos: [] })
+    await store.deleteFolder('상자/안')
+    expect(await readdir(memos('상자'))).toEqual([])
+  })
+
+  it('깨진 순서 파일은 순서 없음으로 읽는다', async () => {
+    await store.createFolder('', '업무')
+    await writeFile(memos('업무/.order.json'), '{ 깨짐')
+    expect((await store.tree()).orders).toEqual({})
+    await writeFile(memos('.order.json'), JSON.stringify({ folders: ['업무', 3, '업무'], todos: 'x' }))
+    expect((await store.tree()).orders['']).toEqual({ folders: ['업무'], memos: [] })
+  })
+
+  it('없는 폴더의 순서는 거절한다', async () => {
+    await rejects(store.setOrder('없음', { memos: [] }), 'not_found')
+    await rejects(store.setOrder('../밖', { memos: [] }), 'bad_request')
+  })
+})

@@ -9,7 +9,9 @@ export default defineEventHandler(async (event) => {
   const raw: unknown = await readBody(event).catch(() => null)
   const body = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
   const str = (key: string) => (typeof body[key] === 'string' ? (body[key] as string) : '')
+  const grantType = str('grant_type')
   const fail = (status: number, error: string, description: string) => {
+    oauthLog(event, `토큰 ${logValue(grantType, 40)} ${logValue(str('client_id') || (str('client_assertion') ? '(client_assertion)' : ''))} → ${error}: ${description}`)
     setResponseStatus(event, status)
     return { error, error_description: description }
   }
@@ -22,16 +24,20 @@ export default defineEventHandler(async (event) => {
 
   const grants = await useOAuthGrants()
   try {
-    switch (str('grant_type')) {
-      case 'authorization_code':
-        return await grants.exchangeCode({
+    switch (grantType) {
+      case 'authorization_code': {
+        const issued = await grants.exchangeCode({
           code: str('code'),
           clientId,
           redirectUri: str('redirect_uri'),
           codeVerifier: str('code_verifier'),
           resource: requested ? resource : null,
         })
+        oauthLog(event, `토큰 authorization_code ${logValue(clientId)} → 발급`)
+        return issued
+      }
       case 'refresh_token':
+        // 갱신은 자주 일어나 성공은 적지 않는다 — 실패만 (fail)
         return await grants.refresh({ refreshToken: str('refresh_token'), clientId, resource: requested ? resource : null })
       default:
         return fail(400, 'unsupported_grant_type', 'authorization_code 와 refresh_token 만 받습니다')

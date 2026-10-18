@@ -93,3 +93,18 @@ export function sameResource(a: string, b: string) {
   }
   return norm(a) === norm(b)
 }
+
+/** 로그에 넣는 바깥 값 — 줄바꿈·제어 문자를 빼고 자른다 (요청이 로그 줄을 꾸며 내지 못하게) */
+export function logValue(value: string | undefined, max = 160) {
+  return (value ?? '-').replace(/[^\x20-\x7e가-힣]/g, '?').slice(0, max) || '-'
+}
+
+/**
+ * AI 연결 단계 기록 — 어디서 멈췄는지 보려고 (ChatGPT 가 토큰까지 오지 못한 원인 조사, 2026-10-18).
+ * ray 는 Cloudflare 요청 번호 — Cloudflare 보안 이벤트와 맞춰 본다. 🔴 토큰·승인 코드·PKCE 값·쿠키는 적지 않는다.
+ */
+export function oauthLog(event: H3Event, message: string) {
+  const ua = logValue(getRequestHeader(event, 'user-agent'), 120)
+  const ray = logValue(getRequestHeader(event, 'cf-ray'), 40)
+  console.info(`[oauth] ${message} ua="${ua}" ray=${ray}`)
+}

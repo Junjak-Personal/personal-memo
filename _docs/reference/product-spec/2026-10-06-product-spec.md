@@ -634,7 +634,7 @@ AI(claude.ai 웹·폰·Desktop, Claude Code, ChatGPT)가 메모를 직접 읽고
     **실제 연결 확인 (2026-10-18)**: ChatGPT 웹(Pro, 개발자 모드)에서 붙고 도구가 응답한다(사용자 확인, 운영 로그에
     `MCP initialize (chatgpt.com)` UA `openai-mcp/1.0.0`). 그전엔 등록만 되고 도구가 안 보였다 — `/.well-known/openid-configuration`
     이 앱 HTML 을 200 으로 주던 것을 404 로 고친 뒤 처음 붙었지만, 그게 원인이었는지는 미확정(배포 전 로그가 없었다).
-    폰 앱에서 되는지는 미확인. 읽기 도구 호출은 로그에 남지 않는다(쓰기만 `[mcp] <도구>`, 연결은 `[oauth]`).
+    사용자의 ChatGPT 앱에서도 된다(사용자 확인 — 어느 기기 앱인지는 따로 적지 않음). 읽기 도구 호출은 로그에 남지 않는다(쓰기만 `[mcp] <도구>`, 연결은 `[oauth]`).
   - PKCE S256 필수, 공개 클라이언트만, 응답에 `iss`. 승인은 앱 비밀번호로 로그인한 사람만(`/oauth/consent`) — 로그인 화면은
     `?next=` 로 돌아온다(앱 안 경로만, `app/utils/safe-next.ts`).
   - 접근 토큰 1시간(HMAC 서명, aud = MCP 주소, 연결이 살아 있어야 통함). 갱신 토큰 60일, 쓸 때마다 회전, 이미 바꾼 것이 다시

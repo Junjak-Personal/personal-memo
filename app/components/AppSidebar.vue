@@ -8,8 +8,9 @@
  * PC 에서는 메모·폴더를 끌어 다른 폴더나 최상위로 옮기고, 같은 폴더 안 순서를 바꾼다 (useTreeDragDrop).
  * 폰은 메뉴로 옮기고 「위로」「아래로」 로 순서를 바꾼다. 순서는 폴더마다 `.order.json` (설계문서 §3.6).
  */
-import type { DropdownMenuItem, NavigationMenuItem, TreeItem } from '@nuxt/ui'
+import type { DropdownMenuItem, TreeItem } from '@nuxt/ui'
 import type { FolderNode, MemoMeta, SearchHit } from '#shared/types/memo'
+import { todayKst } from '#shared/utils/memo-date'
 import { applyOrder, byCreatedDesc, byName, EMPTY_ORDER, moveKey, stepKey } from '#shared/utils/order'
 import { TODO_FOLDER } from '#shared/utils/todo'
 import type { Dragged, OrderSlot, RowTarget } from '~/composables/useTreeDragDrop'
@@ -52,17 +53,45 @@ const items = computed(() => (view.value ? toItems(view.value.folders, view.valu
 const selected = computed(() => findItem(items.value, currentId.value))
 /** 안 끝난 할 일 수 — 「할 일」 옆에 보인다 */
 const openTodos = computed(() => view.value?.memos.filter((m) => m.done === false).length ?? 0)
-const links = computed<NavigationMenuItem[]>(() => [
+/** 오늘(KST) — 앱을 켜 둔 채 날이 바뀌면 다시 앱으로 돌아올 때 고친다 (onVisibility) */
+const today = ref(todayKst())
+/** 오늘에 걸친 일정이 있나 — 구글 캘린더에 보이는 것과 같은 기준(끝낸 할 일 제외, 설계문서 §8.3) */
+const hasTodayEvent = computed(
+  () => view.value?.memos.some((m) => m.date && m.date <= today.value && (m.dateEnd ?? m.date) >= today.value && m.done !== true) ?? false,
+)
+
+interface FooterLink {
+  label: string
+  icon: string
+  testId: string
+  to?: string
+  onClick?: () => void
+  /** 아이콘 위 뱃지 — 글자가 없으면 점 */
+  chip?: { text?: string; color: 'primary' | 'error' }
+  /** 덜 쓰는 것 — 흐리게 */
+  rare?: boolean
+}
+
+/** 하단 아이콘 줄 (2026-10-18 — 글자 버튼 6개가 정신없어 아이콘만, 자주 쓰는 셋 먼저) */
+const links = computed<FooterLink[]>(() => [
   {
-    label: '할 일',
+    label: openTodos.value ? `할 일 ${openTodos.value}개` : '할 일',
     icon: 'i-material-symbols-checklist',
     to: '/todo',
-    'data-testid': 'sidebar-todo-link',
-    badge: openTodos.value ? { label: String(openTodos.value), color: 'neutral', variant: 'subtle' } : undefined,
+    testId: 'sidebar-todo-link',
+    chip: openTodos.value ? { text: openTodos.value > 99 ? '99+' : String(openTodos.value), color: 'primary' } : undefined,
   },
-  { label: '캘린더', icon: 'i-material-symbols-calendar-month-outline', to: '/calendar', 'data-testid': 'sidebar-calendar-link' },
-  { label: '휴지통', icon: 'i-material-symbols-delete-outline', to: '/trash', 'data-testid': 'sidebar-trash-link' },
-  { label: '태그', icon: 'i-material-symbols-label-outline', to: '/tags', 'data-testid': 'sidebar-tags-link' },
+  {
+    label: hasTodayEvent.value ? '캘린더 (오늘 일정 있음)' : '캘린더',
+    icon: 'i-material-symbols-calendar-month-outline',
+    to: '/calendar',
+    testId: 'sidebar-calendar-link',
+    chip: hasTodayEvent.value ? { color: 'error' } : undefined,
+  },
+  { label: '태그', icon: 'i-material-symbols-label-outline', to: '/tags', testId: 'sidebar-tags-link' },
+  { label: '휴지통', icon: 'i-material-symbols-delete-outline', to: '/trash', testId: 'sidebar-trash-link', rare: true },
+  { label: 'AI 연결', icon: 'i-material-symbols-smart-toy-outline', to: '/ai', testId: 'sidebar-ai-link', rare: true },
+  { label: '로그아웃', icon: 'i-material-symbols-logout', testId: 'sidebar-logout-button', onClick: () => void logout(), rare: true },
 ])
 
 /** 터치 화면에서는 끌기를 켜지 않는다 — 스크롤과 다투고 iOS 웹뷰에서 믿을 수 없다 */
@@ -90,6 +119,7 @@ onBeforeUnmount(() => {
 
 function onVisibility() {
   if (document.visibilityState === 'hidden') void queue.apply()
+  else today.value = todayKst()
 }
 
 function folderKeys(folders: FolderNode[]): string[] {
@@ -619,44 +649,34 @@ async function logout() {
           <UButton size="xs" color="neutral" variant="outline" data-testid="sidebar-pending-cancel" @click="queue.cancel()">취소</UButton>
           <UButton size="xs" data-testid="sidebar-pending-apply" @click="queue.apply()">지금 반영</UButton>
         </div>
-        <UNavigationMenu
-          :items="links"
-          orientation="vertical"
-          color="primary"
-          :ui="{
-            list: 'grid grid-cols-2 gap-2',
-            link: 'min-h-11 rounded-md border border-default px-2 py-2 data-[active]:border-primary/40 data-[active]:before:bg-primary/10',
-            linkLeadingIcon: 'size-4.5',
-            linkLabel: 'text-sm lg:text-xs',
-            linkTrailingBadgeSize: 'xs',
-          }"
-          class="w-full"
-          aria-label="메모 탐색"
-          data-testid="sidebar-navigation"
-        />
-        <!-- AI 연결(MCP) 관리와 로그아웃 — 메모 탐색과 떨어진 계정·연결 줄 -->
-        <div class="grid grid-cols-2 gap-2 border-t border-default pt-2">
-          <UButton
-            to="/ai"
-            icon="i-material-symbols-smart-toy-outline"
-            color="neutral"
-            variant="outline"
-            class="min-h-11 justify-center text-muted hover:text-highlighted"
-            data-testid="sidebar-ai-link"
-          >
-            AI 연결
-          </UButton>
-          <UButton
-            icon="i-material-symbols-logout"
-            color="neutral"
-            variant="outline"
-            class="min-h-11 justify-center text-muted hover:text-highlighted"
-            data-testid="sidebar-logout-button"
-            @click="logout"
-          >
-            로그아웃
-          </UButton>
-        </div>
+        <!-- 아이콘만 한 줄 — 이름은 PC 툴팁과 aria-label. 자주 쓰는 셋(할 일·캘린더·태그) 먼저, 덜 쓰는 셋은 흐리게 -->
+        <nav class="flex items-center justify-between" aria-label="메모 탐색" data-testid="sidebar-navigation">
+          <UTooltip v-for="link in links" :key="link.testId" :text="link.label">
+            <UButton
+              :to="link.to"
+              color="neutral"
+              variant="ghost"
+              active-color="primary"
+              active-variant="soft"
+              class="size-11 justify-center lg:size-8"
+              :class="link.rare && 'text-muted hover:text-highlighted'"
+              :aria-label="link.label"
+              :data-testid="link.testId"
+              @click="link.onClick?.()"
+            >
+              <!-- 숫자 뱃지는 기본 크기(10px)가 폰에서 안 읽혀 키운다. 점은 그대로 -->
+              <UChip
+                :show="!!link.chip"
+                :text="link.chip?.text"
+                :color="link.chip?.color"
+                size="lg"
+                :ui="link.chip?.text ? { base: 'h-4 min-w-4 px-1 text-[10px] leading-none' } : undefined"
+              >
+                <UIcon :name="link.icon" class="size-6 lg:size-5" />
+              </UChip>
+            </UButton>
+          </UTooltip>
+        </nav>
       </div>
     </template>
   </UDashboardSidebar>

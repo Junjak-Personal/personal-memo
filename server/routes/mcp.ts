@@ -19,6 +19,7 @@ export default defineEventHandler(async (event) => {
   const token = /^Bearer\s+(.+)$/i.exec(header)?.[1]?.trim() ?? ''
   const claims = token ? (await useOAuthGrants()).verifyAccess(token, resource) : null
   if (!claims) {
+    oauthLog(event, `MCP 401 (${token ? '토큰 무효' : '토큰 없음'})`)
     // 🔴 헤더 값은 ASCII 만 — 한국어를 넣었더니 Node 가 헤더를 거부해 401 대신 500 이 났다(만료·끊긴 토큰, 2026-10-16 e2e).
     //    그러면 Claude 가 갱신·재로그인을 시작하지 못한다. 한국어 설명은 본문에만 둔다
     const error = token ? 'error="invalid_token", error_description="The access token is expired or revoked", ' : ''
@@ -27,6 +28,7 @@ export default defineEventHandler(async (event) => {
     return { error: 'invalid_token', error_description: token ? '토큰이 만료됐거나 연결이 끊겼습니다' : '로그인이 필요합니다' }
   }
   if (!claims.scope.split(' ').includes(MCP_SCOPE)) {
+    oauthLog(event, 'MCP 403 (범위 부족)')
     setResponseHeader(event, 'www-authenticate', `Bearer error="insufficient_scope", scope="${MCP_SCOPE}", resource_metadata="${resourceMetadata}"`)
     setResponseStatus(event, 403)
     return { error: 'insufficient_scope' }
@@ -51,6 +53,10 @@ export default defineEventHandler(async (event) => {
     void transport.close()
     void server.close()
   })
+  const body: unknown = await readBody(event)
+  // 연결 확인용 — 도구 호출은 tools.ts 가 따로 적는다. 연결 직후 initialize·tools/list 가 오면 붙은 것이다
+  const method = typeof body === 'object' && body !== null && 'method' in body ? String(body.method) : ''
+  if (method === 'initialize' || method === 'tools/list') oauthLog(event, `MCP ${method} (${client})`)
   await server.connect(transport)
-  await transport.handleRequest(event.node.req, event.node.res, await readBody(event))
+  await transport.handleRequest(event.node.req, event.node.res, body)
 })

@@ -17,14 +17,18 @@ export default defineEventHandler(async (event) => {
   const clientId = str('client_id')
   const redirectUri = str('redirect_uri')
 
+  const who = `${logValue(clientId)} → ${logValue(redirectUri)}`
   let client
   try {
     client = await loadClient(clientId, { origins: clientOrigins() })
   } catch (error) {
+    const message = error instanceof Error ? error.message : '클라이언트를 확인하지 못했습니다'
+    oauthLog(event, `승인 요청 거절 ${who}: ${message}`)
     setResponseStatus(event, 400)
-    return errorPage(error instanceof Error ? error.message : '클라이언트를 확인하지 못했습니다')
+    return errorPage(message)
   }
   if (!redirectAllowed(redirectUri, client.redirectUris)) {
+    oauthLog(event, `승인 요청 거절 ${who}: 돌아갈 주소가 신원 문서에 없음 (문서: ${logValue(client.redirectUris.join(' '), 300)})`)
     setResponseStatus(event, 400)
     return errorPage('돌아갈 주소(redirect_uri)가 클라이언트 신원 문서에 없습니다')
   }
@@ -32,6 +36,7 @@ export default defineEventHandler(async (event) => {
   const { issuer, resource } = oauthUrls(event)
   const state = str('state') || null
   const fail = (error: string, description: string) => {
+    oauthLog(event, `승인 요청 거절 ${who}: ${error} ${description}`)
     const url = new URL(redirectUri)
     url.searchParams.set('error', error)
     url.searchParams.set('error_description', description)
@@ -60,5 +65,6 @@ export default defineEventHandler(async (event) => {
     scope: MCP_SCOPE,
     resource,
   })
+  oauthLog(event, `승인 요청 ${who} resource=${logValue(str('resource'))} → 승인 화면`)
   return sendRedirect(event, `/oauth/consent?request=${encodeURIComponent(id)}`, 302)
 })

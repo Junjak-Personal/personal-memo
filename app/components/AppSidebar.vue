@@ -65,8 +65,8 @@ interface FooterLink {
   icon: string
   testId: string
   to: string
-  /** 아이콘 위 뱃지 — 글자가 없으면 점 */
-  chip?: { text?: string; color: 'primary' | 'error' }
+  /** 아이콘 위 빨간 뱃지 — 글자가 없으면 점 */
+  chip?: { text?: string }
 }
 
 /** 하단 아이콘 줄 (2026-10-18 — 글자 버튼 6개가 정신없어 자주 쓰는 셋만 아이콘으로, 나머지는 ⋯ 메뉴) */
@@ -76,14 +76,14 @@ const links = computed<FooterLink[]>(() => [
     icon: 'i-material-symbols-checklist',
     to: '/todo',
     testId: 'sidebar-todo-link',
-    chip: openTodos.value ? { text: openTodos.value > 99 ? '99+' : String(openTodos.value), color: 'primary' } : undefined,
+    chip: openTodos.value ? { text: openTodos.value > 99 ? '99+' : String(openTodos.value) } : undefined,
   },
   {
     label: hasTodayEvent.value ? '캘린더 (오늘 일정 있음)' : '캘린더',
     icon: 'i-material-symbols-calendar-month-outline',
     to: '/calendar',
     testId: 'sidebar-calendar-link',
-    chip: hasTodayEvent.value ? { color: 'error' } : undefined,
+    chip: hasTodayEvent.value ? {} : undefined,
   },
   { label: '태그', icon: 'i-material-symbols-label-outline', to: '/tags', testId: 'sidebar-tags-link' },
 ])
@@ -665,13 +665,16 @@ async function logout() {
               :aria-label="link.label"
               :data-testid="link.testId"
             >
-              <!-- 숫자 뱃지는 기본 크기(10px)가 폰에서 안 읽혀 키운다. 점은 그대로 -->
+              <!--
+                뱃지는 빨강 하나로 통일, 숫자는 흰 글씨 (기본은 text-inverted 라 다크에서 검정이 된다).
+                숫자 뱃지는 기본 크기(10px)가 폰에서 안 읽혀 키운다. 점은 그대로
+              -->
               <UChip
                 :show="!!link.chip"
                 :text="link.chip?.text"
-                :color="link.chip?.color"
+                color="error"
                 size="lg"
-                :ui="link.chip?.text ? { base: 'h-4 min-w-4 px-1 text-[10px] leading-none' } : undefined"
+                :ui="link.chip?.text ? { base: 'h-4 min-w-4 px-1 text-[10px] leading-none text-white' } : undefined"
               >
                 <UIcon :name="link.icon" class="size-6 lg:size-5" />
               </UChip>

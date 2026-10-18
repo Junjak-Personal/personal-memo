@@ -64,15 +64,12 @@ interface FooterLink {
   label: string
   icon: string
   testId: string
-  to?: string
-  onClick?: () => void
+  to: string
   /** 아이콘 위 뱃지 — 글자가 없으면 점 */
   chip?: { text?: string; color: 'primary' | 'error' }
-  /** 덜 쓰는 것 — 흐리게 */
-  rare?: boolean
 }
 
-/** 하단 아이콘 줄 (2026-10-18 — 글자 버튼 6개가 정신없어 아이콘만, 자주 쓰는 셋 먼저) */
+/** 하단 아이콘 줄 (2026-10-18 — 글자 버튼 6개가 정신없어 자주 쓰는 셋만 아이콘으로, 나머지는 ⋯ 메뉴) */
 const links = computed<FooterLink[]>(() => [
   {
     label: openTodos.value ? `할 일 ${openTodos.value}개` : '할 일',
@@ -89,10 +86,16 @@ const links = computed<FooterLink[]>(() => [
     chip: hasTodayEvent.value ? { color: 'error' } : undefined,
   },
   { label: '태그', icon: 'i-material-symbols-label-outline', to: '/tags', testId: 'sidebar-tags-link' },
-  { label: '휴지통', icon: 'i-material-symbols-delete-outline', to: '/trash', testId: 'sidebar-trash-link', rare: true },
-  { label: 'AI 연결', icon: 'i-material-symbols-smart-toy-outline', to: '/ai', testId: 'sidebar-ai-link', rare: true },
-  { label: '로그아웃', icon: 'i-material-symbols-logout', testId: 'sidebar-logout-button', onClick: () => void logout(), rare: true },
 ])
+
+/** ⋯ 메뉴 — 잘 안 가는 것들 */
+const moreMenu: SidebarMenuItem[] = [
+  { label: '휴지통', icon: 'i-material-symbols-delete-outline', to: '/trash', testId: 'sidebar-trash-link' },
+  { label: 'AI 연결', icon: 'i-material-symbols-smart-toy-outline', to: '/ai', testId: 'sidebar-ai-link' },
+  { label: '로그아웃', icon: 'i-material-symbols-logout', testId: 'sidebar-logout-button', onSelect: () => void logout() },
+]
+/** 메뉴 안의 화면에 있으면 ⋯ 를 켜진 것으로 */
+const moreActive = computed(() => moreMenu.some((item) => item.to && route.path.startsWith(String(item.to))))
 
 /** 터치 화면에서는 끌기를 켜지 않는다 — 스크롤과 다투고 iOS 웹뷰에서 믿을 수 없다 */
 const coarsePointer = window.matchMedia('(pointer: coarse)').matches
@@ -649,8 +652,8 @@ async function logout() {
           <UButton size="xs" color="neutral" variant="outline" data-testid="sidebar-pending-cancel" @click="queue.cancel()">취소</UButton>
           <UButton size="xs" data-testid="sidebar-pending-apply" @click="queue.apply()">지금 반영</UButton>
         </div>
-        <!-- 아이콘만 한 줄 — 이름은 PC 툴팁과 aria-label. 자주 쓰는 셋(할 일·캘린더·태그) 먼저, 덜 쓰는 셋은 흐리게 -->
-        <nav class="flex items-center justify-between" aria-label="메모 탐색" data-testid="sidebar-navigation">
+        <!-- 아이콘 한 줄 — 할 일·캘린더·태그 + ⋯(휴지통·AI 연결·로그아웃). 이름은 PC 툴팁과 aria-label -->
+        <nav class="flex items-center justify-around" aria-label="메모 탐색" data-testid="sidebar-navigation">
           <UTooltip v-for="link in links" :key="link.testId" :text="link.label">
             <UButton
               :to="link.to"
@@ -658,11 +661,9 @@ async function logout() {
               variant="ghost"
               active-color="primary"
               active-variant="soft"
-              class="size-11 justify-center lg:size-8"
-              :class="link.rare && 'text-muted hover:text-highlighted'"
+              class="size-11 justify-center lg:size-9"
               :aria-label="link.label"
               :data-testid="link.testId"
-              @click="link.onClick?.()"
             >
               <!-- 숫자 뱃지는 기본 크기(10px)가 폰에서 안 읽혀 키운다. 점은 그대로 -->
               <UChip
@@ -676,6 +677,20 @@ async function logout() {
               </UChip>
             </UButton>
           </UTooltip>
+          <UDropdownMenu :items="moreMenu" :content="{ align: 'end', side: 'top' }" :ui="{ item: 'min-h-11 lg:min-h-0' }">
+            <UButton
+              icon="i-material-symbols-more-horiz"
+              color="neutral"
+              :variant="moreActive ? 'soft' : 'ghost'"
+              :class="['size-11 justify-center lg:size-9', moreActive && 'text-primary']"
+              :ui="{ leadingIcon: 'size-6 lg:size-5' }"
+              aria-label="더 보기"
+              data-testid="sidebar-more-menu"
+            />
+            <template #item-label="{ item: menuItem }">
+              <span :data-testid="menuItem.testId">{{ menuItem.label }}</span>
+            </template>
+          </UDropdownMenu>
         </nav>
       </div>
     </template>

@@ -74,9 +74,15 @@ onMounted(async () => {
   // 앱을 내리거나 탭을 바꾸면 대기 중인 폴더 구조 변경을 기다리지 않고 반영한다
   document.addEventListener('visibilitychange', onVisibility)
   await refresh()
-  // 처음엔 폴더를 전부 펼쳐 둔다. 이후 접고 펼친 상태는 사용자가 정한다
-  expanded.value = folderKeys(tree.value?.folders ?? [])
+  // 이 기기에 기억한 펼침 상태로 — 없으면 전부 접힘 (폴더가 깊어 전부 펼치면 너무 길었다, 2026-10-18)
+  const saved = readExpanded() ?? []
+  // 사라진 폴더의 키는 버린다. 트리를 못 받았으면 그대로 둔다 — 기억을 지우지 않게
+  const known = tree.value ? new Set(folderKeys(tree.value.folders)) : null
+  expanded.value = known ? saved.filter((k) => known.has(k)) : saved
 })
+
+// 접고 펼칠 때마다 이 기기에 기억한다 (처음 빈 값은 바뀐 게 아니라 적지 않는다)
+watch(expanded, (keys) => writeExpanded(keys))
 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibility)
@@ -493,7 +499,6 @@ async function logout() {
 
     <template v-else>
       <p v-if="treeError" class="px-1 text-sm text-error">{{ treeError }}</p>
-      <p v-else class="px-1 text-xs text-muted lg:hidden">폴더·메모를 길게 누르면 메뉴(옮기기·순서)가 열립니다</p>
       <UTree
         v-if="!treeError"
         v-model:expanded="expanded"

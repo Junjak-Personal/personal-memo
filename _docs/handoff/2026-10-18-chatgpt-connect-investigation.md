@@ -38,8 +38,9 @@ OpenAI 문서: https://developers.openai.com/plugins/build/auth — 우리 서�
 1. 이 PR 머지 → main push 로 자동 배포 (GitHub Actions, self-hosted n100). 머지는 사용자 지시가 있을 때만.
 2. 사용자가 ChatGPT **웹**에서 Memo 를 지우고 다시 만든다 — 주소 `https://memo.jun-devlog.win/mcp`, 인증 **OAuth**.
 3. 운영 로그를 본다:
-   `ssh junserver-ext 'docker logs --since 30m personal-memo 2>&1 | grep -E "^\[(oauth|mcp)\]"'`
-   - 클라우드 세션에는 이 SSH 가 없다 → 사용자에게 로컬에서 `! <위 명령>` 으로 돌려 결과를 붙여 달라고 한다.
+   - 클라우드 세션: `ssh memo-logs 30m | grep -E "^\[(oauth|mcp)\]"` (기간은 `30m`·`2h` 꼴만. 아래 「클라우드에서 운영 로그」)
+   - 로컬(사용자 맥): `ssh junserver-ext 'docker logs --since 30m personal-memo 2>&1 | grep -E "^\[(oauth|mcp)\]"'`
+   - `memo-logs` 가 안 되면(환경 설정 전, 네트워크 막힘) 사용자에게 로컬 명령을 `! <명령>` 으로 돌려 붙여 달라고 한다.
    - 배포하면 컨테이너가 새로 떠서 이전 로그는 사라진다 — 반드시 배포 **뒤에** 시도.
 4. 판정
    - ChatGPT 요청이 한 줄도 없음 → **Cloudflare 차단**. 사용자 대시보드: Security → Events (memo.jun-devlog.win). 해결은 `/mcp`·`/oauth/*`·
@@ -47,6 +48,30 @@ OpenAI 문서: https://developers.openai.com/plugins/build/auth — 우리 서�
    - `승인 요청 거절 … : <이유>` → 이유대로 (돌아갈 주소면 로그에 신원 문서의 목록이 같이 찍힌다)
    - `토큰 … → <오류>` → 토큰 끝점 (`server/routes/oauth/token.post.ts`, `server/oauth/grants.ts`)
    - `MCP initialize` 까지 왔는데 도구가 안 보임 → MCP 응답 쪽 (`server/routes/mcp.ts`, `server/mcp/tools.ts`)
+
+## 클라우드에서 운영 로그 (2026-10-18 설정)
+
+로그만 읽는 전용 키 — 이 키로는 서버의 `~/ops/memo-logs.sh` 하나만 돈다(`docker logs --since <기간> personal-memo`).
+셸·다른 명령·포트 포워딩·PTY 는 막힘(`authorized_keys` 의 `command=…,restrict`, 실측). 끊으려면 서버 `~/.ssh/authorized_keys` 에서
+`claude-cloud-memo-logs` 줄을 지운다. 키 원본은 사용자 맥 `~/.ssh/id_ed25519_memo_logs`.
+
+클라우드 환경 설정 (claude.ai/code 의 환경):
+- 비밀 환경 변수 `MEMO_LOGS_SSH_KEY` = 개인 키를 base64 한 줄로 (`base64 < ~/.ssh/id_ed25519_memo_logs | tr -d '\n' | pbcopy`)
+- 네트워크: `218.50.153.187:10032`(SSH) 로 나갈 수 있어야 한다 — 막혀 있으면 네트워크 접근을 넓힌다
+- 시작(setup) 스크립트:
+
+```bash
+# memo 운영 로그 읽기 — 로그 전용 키 (서버에서 ~/ops/memo-logs.sh 만 실행된다)
+if [ -n "${MEMO_LOGS_SSH_KEY:-}" ]; then
+  mkdir -p ~/.ssh && chmod 700 ~/.ssh
+  printf '%s' "$MEMO_LOGS_SSH_KEY" | base64 -d > ~/.ssh/memo_logs && chmod 600 ~/.ssh/memo_logs
+  echo '[218.50.153.187]:10032 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJekn3k+F+pCRLA32UBK58oxZO7telyWcq42WERjLqZj' >> ~/.ssh/known_hosts
+  printf '%s\n' 'Host memo-logs' '  HostName 218.50.153.187' '  Port 10032' '  User junja' \
+    '  IdentityFile ~/.ssh/memo_logs' '  IdentitiesOnly yes' '  StrictHostKeyChecking yes' >> ~/.ssh/config
+fi
+```
+
+확인: `ssh memo-logs 48h | tail -3` 에 (최근 몇 시간 로그가 없으면 짧은 기간은 빈 출력) `Listening on http://0.0.0.0:4700` 같은 줄이 나오면 된다. 공인 IP 가 바뀌면 HostName·known_hosts 를 고친다.
 
 ## 남는 한계
 

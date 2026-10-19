@@ -71,3 +71,6 @@ Lifecycle: active/{planning,processing}/ · complete/ · reference/ · deprecate
 - 2026-10-07: 배포 구성 추가 (Dockerfile·scripts/deploy.sh·.github/workflows/deploy.yml, memo.jun-devlog.win → :4700) — deployment.md
 - 2026-10-08: 할 일(frontmatter `done`, `PATCH /api/memos/:id/done`, `/todo`, `useTodo`, `shared/utils/todo.ts`) — 설계문서 §3.5
 - 2026-10-16: AI 연결(MCP + OAuth 인증 서버, `/mcp`, `/ai`, `server/oauth/`, `server/mcp/`) — 설계문서 §11.1
+
+## 최근 구현 기록
+- [2026-10-19 모바일 메뉴 전환·마지막 화면 복원](../../_docs/complete/implementation/2026-10-19-navigation-restore.md): VERIFY_PASS, 27파일 264개·타입검사·빌드 통과, iPhone QA 5항목 pending.

@@ -9,6 +9,8 @@
  * 폰은 메뉴로 옮기고 「위로」「아래로」 로 순서를 바꾼다. 순서는 폴더마다 `.order.json` (설계문서 §3.6).
  */
 import type { DropdownMenuItem, TreeItem } from '@nuxt/ui'
+import type { VNode } from 'vue'
+import { isNavigationFailure, NavigationFailureType, type RouteLocationNormalized } from 'vue-router'
 import type { FolderNode, MemoMeta, SearchHit } from '#shared/types/memo'
 import { todayKst } from '#shared/utils/memo-date'
 import { applyOrder, byCreatedDesc, byName, EMPTY_ORDER, moveKey, stepKey } from '#shared/utils/order'
@@ -18,6 +20,8 @@ import type { Dragged, OrderSlot, RowTarget } from '~/composables/useTreeDragDro
 type SidebarMenuItem = DropdownMenuItem & { testId: string }
 
 const route = useRoute()
+const router = useRouter()
+const nuxtApp = useNuxtApp()
 const { clear: clearSession } = useUserSession()
 const toast = useToast()
 
@@ -29,7 +33,8 @@ const dnd = useTreeDragDrop({ onRelocated: relocate, onReorder, pinned: (key) =>
 const todo = useTodo()
 const activeMemo = useActiveMemo()
 
-const sidebarOpen = ref(false)
+const mobileMenu = useMobileMenuNavigation()
+const sidebarOpen = mobileMenu.open
 const expanded = ref<string[]>([])
 const searchInput = ref('')
 const appliedQuery = ref('')
@@ -102,6 +107,65 @@ const coarsePointer = window.matchMedia('(pointer: coarse)').matches
 // 길게 누른 손가락을 뗄 때 생기는 click 으로 메모가 열리거나 폴더가 접히지 않게 한다.
 let pressedMenuRow: string | null = null
 
+/*
+ * 기본 autoClose는 Nuxt의 route 갱신을 보고 닫는다. 메모 페이지는 재사용되어 새 문서를 받기 전에
+ * route가 먼저 바뀌고, 다른 메뉴는 본문 페이드와 메뉴 닫힘이 겹쳤다. 목적 화면 준비와 닫힘을 맞춘다.
+ * 저장 가드는 그대로 router가 실행한다. 타이머로 닫지 않아서 느린 저장·로딩, 연속 선택에도 기다린다.
+ */
+const routeSequences = new WeakMap<object, number>()
+const pageDestinations = new WeakMap<VNode, NonNullable<typeof mobileMenu.pending.value>>()
+const removeMenuHooks = [
+  router.beforeEach((to, from) => {
+    mobileMenu.begin({ path: to.fullPath, memoId: to.params.id !== from.params.id ? menuMemoId(to) : null })
+    if (mobileMenu.pending.value) routeSequences.set(to, mobileMenu.pending.value.sequence)
+  }),
+  router.beforeResolve((to) => {
+    if (!sidebarOpen.value) return
+    // 전체 화면 메뉴가 이미 가리고 있다. 본문은 즉시 교체하고 기존 slide-out만으로 새 화면을 드러낸다.
+    to.meta.pageTransition = { name: 'menu-page', mode: 'out-in', duration: 0 }
+  }),
+  router.afterEach((to, from, failure) => {
+    if (failure) {
+      // 중복 경로에는 beforeEach가 없다. 느린 B 이동 중 현재 A를 다시 고른 것도 명시적으로 정리한다.
+      if (isNavigationFailure(failure, NavigationFailureType.duplicated)) {
+        mobileMenu.duplicate(to.fullPath)
+        return
+      }
+      // 빠른 연속 선택으로 취소된 이전 요청은 최신 메뉴를 닫지 않는다.
+      if (!isNavigationFailure(failure, NavigationFailureType.cancelled)) mobileMenu.fail(to.fullPath, routeSequences.get(to))
+      return
+    }
+    // 쿼리만 바뀌거나 첫 저장으로 메모 주소만 정리한 경우 새 Suspense가 생기지 않는다.
+    const target = mobileMenu.pending.value
+    const alreadyOpenMemo = target?.memoId && activeMemo.isOpen(target.memoId)
+    if (alreadyOpenMemo || (to.matched.at(-1) === from.matched.at(-1) && to.params.id === from.params.id)) {
+      if (target) void nextTick(() => mobileMenu.finish({ path: to.fullPath, memoId: alreadyOpenMemo ? target.memoId : null }, target.sequence))
+    }
+  }),
+  router.onError((_error, to) => mobileMenu.fail(to.fullPath, routeSequences.get(to))),
+  nuxtApp.hook('page:start', (component) => {
+    const target = mobileMenu.pending.value
+    if (component && target && target.path === router.currentRoute.value.fullPath) pageDestinations.set(component, target)
+  }),
+  nuxtApp.hook('page:finish', async (component) => {
+    const current = router.currentRoute.value
+    // 홈처럼 async setup이 없는 화면은 Suspense의 pending/page:start 없이 바로 resolve된다.
+    // async 화면은 위에서 캡처한 요청을 우선해서 이전 branch의 늦은 완료를 걸러 낸다.
+    const target = (component && pageDestinations.get(component)) ?? (
+      component?.type === current.matched.at(-1)?.components?.default && mobileMenu.pending.value?.path === current.fullPath
+        ? mobileMenu.pending.value
+        : null
+    )
+    if (!target) return
+    await nextTick()
+    mobileMenu.finish({ path: target.path, memoId: null }, target.sequence)
+  }),
+]
+
+function menuMemoId(to: RouteLocationNormalized) {
+  return to.path.startsWith('/m/') && typeof to.params.id === 'string' ? to.params.id : null
+}
+
 onMounted(async () => {
   // 앱을 내리거나 탭을 바꾸면 대기 중인 폴더 구조 변경을 기다리지 않고 반영한다
   document.addEventListener('visibilitychange', onVisibility)
@@ -118,6 +182,8 @@ watch(expanded, (keys) => writeExpanded(keys))
 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibility)
+  sidebarOpen.value = false
+  for (const remove of removeMenuHooks) remove()
 })
 
 function onVisibility() {
@@ -423,6 +489,7 @@ async function logout() {
     collapsible
     resizable
     mode="slideover"
+    :auto-close="false"
     :menu="{ inset: false, ui: { content: 'max-w-none' } }"
     :min-size="14"
     :default-size="17"
@@ -513,6 +580,8 @@ async function logout() {
         </template>
       </UInput>
     </form>
+
+    <p role="status" class="h-4 shrink-0 px-1 text-xs text-muted" data-testid="sidebar-navigation-pending">{{ mobileMenu.pending.value ? '화면을 여는 중…' : '' }}</p>
 
     <div v-if="results" class="flex flex-col gap-1" data-testid="sidebar-search-results">
       <p class="px-1 text-xs text-muted">「{{ appliedQuery }}」 {{ results.length }}건</p>

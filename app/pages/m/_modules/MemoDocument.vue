@@ -49,6 +49,10 @@ const emit = defineEmits<{ renamed: [from: string, to: string] }>()
 const toast = useToast()
 const { refresh: refreshTree } = useMemoTree()
 const activeMemo = useActiveMemo()
+const mobileMenu = useMobileMenuNavigation()
+// await 뒤에 현재 route/id를 읽으면 새 요청으로 바뀔 수 있다. 이 문서를 만든 요청을 미리 고정한다.
+const openingMemoId = props.memoId
+const menuSequence = mobileMenu.pending.value?.memoId === openingMemoId ? mobileMenu.pending.value.sequence : null
 const calendarSync = useCalendarSyncStatus()
 const todo = useTodo()
 
@@ -133,6 +137,8 @@ const editorProps = {
 }
 
 onMounted(() => {
+  // Suspense가 실제로 붙인 문서만 완료한다. 취소되어 버려진 async branch는 mounted되지 않는다.
+  if (menuSequence !== null) mobileMenu.memoReady(openingMemoId, menuSequence)
   // 메모끼리는 같은 자리에서 바꿔 끼워서([id].vue) 이전 메모의 스크롤 위치가 남는다 — 새 메모는 맨 위부터
   rootRef.value?.closest('[data-slot="body"]')?.scrollTo({ top: 0 })
   document.addEventListener('visibilitychange', onVisibility)

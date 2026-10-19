@@ -25,7 +25,8 @@
 - 실패·경고 안내: `UAlert` (subtle) + actions, 짧은 결과는 `useToast()`
 - 저장 상태 같은 바뀌는 글자는 폭 고정 (툴바 밀림 방지 — `MemoSaveStatus.vue`)
 - 폰 목록: 사이드바 slideover 전체 화면 (`mode="slideover"`)
-- 하단 탐색: 할 일/캘린더, 휴지통/태그의 2×2 그룹. 로그아웃은 구분선 아래 전체 너비 outline. 태그 목록은 `/tags` 전용 화면.
+- 하단 탐색: 할 일·캘린더·태그 아이콘과 ⋯ 메뉴(휴지통·AI 연결·로그아웃). 할 일 수·오늘 일정은 빨간 뱃지. 태그 목록은 `/tags` 전용 화면. (원격 2026-10-18 변경 유지)
 - PC 끌어 놓기, 폰은 메뉴(다른 폴더로 옮기기)
 - 애니메이션: 사이드바 폭 전환, 페이지 페이드, `prefers-reduced-motion` 존중
+- 모바일 메뉴 이동(2026-10-19): 자동 route watch 닫힘 대신 목적 화면 준비를 기다린 뒤 slide-out. 메뉴 뒤 페이지는 fade 0ms, 일반 탐색은 기존 fade 유지.
 - 🔴 dev 서버가 떠 있는 동안 새 폴더를 만들면 그 안의 Tailwind 클래스가 빠질 수 있다 → `touch app/assets/css/main.css`

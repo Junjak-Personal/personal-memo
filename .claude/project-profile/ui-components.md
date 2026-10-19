@@ -27,7 +27,7 @@
 - 폰 목록: 사이드바 slideover 전체 화면 (`mode="slideover"`)
 - 하단 탐색: 할 일·캘린더·태그 아이콘과 ⋯ 메뉴(휴지통·AI 연결·로그아웃). 할 일 수·오늘 일정은 빨간 뱃지. 태그 목록은 `/tags` 전용 화면. (원격 2026-10-18 변경 유지)
 - PC 끌어 놓기, 폰은 메뉴(다른 폴더로 옮기기)
-- 본문 블록 이동(2026-10-20 후속): 상단 이동/완료 체크는 기존 메모 메뉴와 같은 UButton neutral/ghost·20px. 본문 왼쪽 +·손잡이는 ghost sm(16px), glyph를 서로 8px씩 당김, 각 44px 터치 영역과 모드 한정 padding-left 72px. +는 편집 복원 후 PC와 같은 suggestion handler로 해당 블록 아래 추가. 별도 버튼 CSS/시각 컨테이너/텍스트/안내/이동 모달 없음. 드래그·방향키·undo/redo, 본문 비편집·스크롤, 종료 시 편집/padding 복원. 목록·표 전체 이동, 평소 long press 선택 유지. 손잡이는 panel isolate 안 Teleport·viewport clip, sidebar 열면 숨김·drag 취소. `MobileBlockMove.vue`, `block-move.ts`.
+- 본문 블록 이동(2026-10-20 후속): 상단 이동/완료 체크는 기존 메모 메뉴와 같은 UButton neutral/ghost·20px. 본문 왼쪽 +·손잡이는 ghost sm(16px), glyph를 서로 8px씩 당김, 각 44px 터치 영역과 모드 한정 padding-left 72px. +는 편집 복원 후 PC와 같은 suggestion handler로 해당 블록 아래 추가. 별도 버튼 CSS/시각 컨테이너/텍스트/안내/이동 모달 없음. 드래그·방향키·undo/redo, 본문 비편집·스크롤, 종료 시 편집/padding 복원. 목록·표 전체 이동, 평소 long press 선택 유지. 손잡이는 relative EditorContent 래퍼에 Teleport·absolute 콘텐츠 좌표·overflow clip으로 본문과 함께 스크롤. 컨트롤과 아이콘 자손은 선택/callout/기본 drag 차단, 진입 시 DOM 선택 해제. sidebar 열면 숨김·drag 취소. `MobileBlockMove.vue`, `block-move.ts`.
 - PC 본문 손잡이: floating offset 0 + 내부 px-2로 8px 빈 hover 간격 제거 (`drag-handle-options.ts`).
 - 애니메이션: 사이드바 폭 전환, 페이지 페이드, `prefers-reduced-motion` 존중
 - 모바일 메뉴 이동(2026-10-19): 자동 route watch 닫힘 대신 목적 화면 준비를 기다린 뒤 slide-out. 메뉴 뒤 페이지는 fade 0ms, 일반 탐색은 기존 fade 유지.

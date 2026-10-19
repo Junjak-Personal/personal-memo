@@ -10,13 +10,14 @@ const active = defineModel<boolean>('active', { default: false })
 const toast = useToast()
 const { open: sidebarOpen } = useMobileMenuNavigation()
 
-interface BlockRow extends TopLevelBlock { top: number; bottom: number; left: number; right: number; handleTop: number }
+interface BlockRow extends TopLevelBlock { top: number; bottom: number; left: number; right: number; handleTop: number; contentLeft: number }
 interface PointerDrag {
   id: number; from: number; startX: number; startY: number; x: number; y: number; moving: boolean
   target: HTMLElement; doc: Editor['state']['doc']
 }
 const rows = shallowRef<BlockRow[]>([])
 const overlayTarget = shallowRef<HTMLElement | null>(null)
+const origin = ref({ top: 0, left: 0, right: 0 })
 const viewport = ref({ top: 0, bottom: 0, right: 0, height: 0 })
 const drag = shallowRef<PointerDrag | null>(null)
 const insertion = ref<number | null>(null)
@@ -24,12 +25,10 @@ const announcement = ref('')
 const revision = ref(0)
 const canUndo = computed(() => { void revision.value; return props.editor.can().undo() })
 const canRedo = computed(() => { void revision.value; return props.editor.can().redo() })
-const overlayStyle = computed(() => ({ clipPath: `inset(${Math.max(0, viewport.value.top)}px 0 ${Math.max(0, viewport.value.height - viewport.value.bottom)}px 0)` }))
-const shownRows = computed(() => rows.value.filter(row => row.index === drag.value?.from || (row.bottom > viewport.value.top && row.top < viewport.value.bottom - 44)))
 const lineY = computed(() => {
   if (!drag.value?.moving || insertion.value === null || !rows.value.length || insertion.value > rows.value.length) return null
   const y = insertion.value === rows.value.length ? rows.value.at(-1)!.bottom + 4 : rows.value[insertion.value]!.top - 4
-  return y >= viewport.value.top && y <= viewport.value.bottom ? y : null
+  return y >= viewport.value.top && y <= viewport.value.bottom ? y - origin.value.top : null
 })
 
 let panel: HTMLElement | null = null
@@ -42,6 +41,9 @@ let wideScreen: MediaQueryList | null = null
 
 function measure() {
   if (!active.value || props.editor.isDestroyed) return
+  const anchor = overlayTarget.value?.getBoundingClientRect()
+  if (!anchor) return
+  origin.value = { top: anchor.top, left: anchor.left, right: anchor.right }
   const bounds = panel?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight, right: window.innerWidth }
   const visual = window.visualViewport
   viewport.value = {
@@ -55,8 +57,8 @@ function measure() {
     if (!(node instanceof HTMLElement)) return []
     const rect = node.getBoundingClientRect()
     const lineHeight = Number.parseFloat(getComputedStyle(node).lineHeight) || 28
-    const handleTop = rect.top + (Math.min(rect.height, lineHeight) - 44) / 2
-    return [{ ...block, top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, handleTop }]
+    const handleTop = rect.top - anchor.top + (Math.min(rect.height, lineHeight) - 44) / 2
+    return [{ ...block, top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right, handleTop, contentLeft: rect.left - anchor.left }]
   })
   if (rows.value.length !== props.editor.state.doc.childCount) {
     cancelDrag()
@@ -75,10 +77,13 @@ function enter() {
   if (props.disabled || sidebarOpen.value || props.editor.isDestroyed || active.value) return
   const dom = props.editor.view.dom
   panel = dom.closest<HTMLElement>('[data-slot="body"]')
-  if (!panel) return
-  overlayTarget.value = panel
+  const content = dom.parentElement
+  if (!panel || !content) return
+  // EditorContent의 relative 래퍼에 붙여 본문과 동일한 스크롤·좌표계를 사용한다.
+  overlayTarget.value = content
   previouslyEditable = props.editor.isEditable
   props.editor.commands.blur()
+  window.getSelection()?.removeAllRanges()
   props.editor.commands.setMeta('hideDragHandle', true)
   props.editor.setEditable(false, false)
   previousPadding = dom.style.paddingLeft
@@ -151,6 +156,7 @@ function startPointer(event: PointerEvent, row: BlockRow) {
   const target = event.currentTarget
   if (!(target instanceof HTMLElement)) return
   event.preventDefault()
+  measure()
   drag.value = { id: event.pointerId, from: row.index, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, moving: false, target, doc: props.editor.state.doc }
   try { target.setPointerCapture(event.pointerId) }
   catch { cancelDrag(); return }
@@ -167,7 +173,7 @@ function movePointer(event: PointerEvent) {
   const moving = current.moving || Math.hypot(event.clientX - current.startX, event.clientY - current.startY) >= 6
   drag.value = { ...current, x: event.clientX, y: event.clientY, moving }
   if (!moving) return
-  insertion.value = blockInsertionIndex(event.clientY, rows.value)
+  measure()
   if (!scrollFrame) scrollFrame = requestAnimationFrame(autoScroll)
 }
 
@@ -242,8 +248,8 @@ function addBlock(row: BlockRow) {
 }
 function handleStyle(row: BlockRow, kind: 'add' | 'drag' = 'drag') {
   const current = drag.value
-  if (kind === 'drag' && current?.moving && current.from === row.index) return { top: `${current.y - 22}px`, left: `${Math.min(Math.max(current.x - 22, 0), viewport.value.right - 44)}px` }
-  return { top: `${Math.max(row.handleTop, viewport.value.top + 2)}px`, left: `${Math.max(row.left - (kind === 'add' ? 88 : 44), 0)}px` }
+  if (kind === 'drag' && current?.moving && current.from === row.index) return { top: `${current.y - origin.value.top - 22}px`, left: `${Math.min(Math.max(current.x - origin.value.left - 22, 0), origin.value.right - origin.value.left - 44)}px` }
+  return { top: `${row.handleTop}px`, left: `${Math.max(row.contentLeft - (kind === 'add' ? 88 : 44), 0)}px` }
 }
 
 // 읽기 권한은 부모가 비동기로 바꿀 수 있어 활성 모드를 즉시 닫아야 한다.
@@ -309,18 +315,25 @@ onBeforeUnmount(() => {
         />
       </template>
     </Teleport>
-    <!-- 패널의 isolate 안에 둬서 modal/slideover 포털보다 앞에 뜨지 않게 한다. -->
+    <!-- 본문 래퍼 안에서 함께 스크롤한다. overflow: clip은 별도 스크롤 컨테이너를 만들지 않는다. -->
     <Teleport v-if="active && overlayTarget && !sidebarOpen" :to="overlayTarget">
-      <div class="pointer-events-none fixed inset-0 z-10" :style="overlayStyle" data-testid="memo-block-move-handles">
-        <template v-for="row in shownRows" :key="row.index">
+      <div
+        class="mobile-block-move-controls pointer-events-none absolute inset-0 z-10 overflow-clip"
+        data-testid="memo-block-move-handles"
+        @contextmenu.prevent
+        @dragstart.prevent
+        @selectstart.prevent
+      >
+        <template v-for="row in rows" :key="row.index">
           <UButton
             icon="i-material-symbols-add"
             color="neutral"
             variant="ghost"
             size="sm"
             :ui="{ leadingIcon: 'translate-x-2' }"
-            class="pointer-events-auto fixed size-11 touch-manipulation justify-center"
+            class="pointer-events-auto absolute size-11 touch-manipulation justify-center"
             :style="handleStyle(row, 'add')"
+            :draggable="false"
             :disabled="!!drag"
             :aria-label="`${row.index + 1}번째 ${row.label} 아래에 블록 넣기`"
             :data-testid="`memo-block-move-add-${row.index}`"
@@ -333,8 +346,9 @@ onBeforeUnmount(() => {
             variant="ghost"
             size="sm"
             :ui="{ leadingIcon: '-translate-x-2' }"
-            class="pointer-events-auto fixed size-11 touch-none select-none justify-center"
+            class="pointer-events-auto absolute size-11 touch-none select-none justify-center"
             :style="handleStyle(row)"
+            :draggable="false"
             :disabled="!!drag && drag.from !== row.index"
             :aria-label="`${row.index + 1}번째 ${row.label} · 끌어서 이동`"
             aria-describedby="memo-block-move-keyboard-help"
@@ -349,8 +363,8 @@ onBeforeUnmount(() => {
         </template>
         <div
           v-if="lineY !== null"
-          class="fixed right-3 h-1 rounded-full bg-primary"
-          :style="{ top: `${lineY}px`, left: `${Math.max(rows[0]?.left ?? 16, 8)}px` }"
+          class="absolute right-3 h-1 rounded-full bg-primary"
+          :style="{ top: `${lineY}px`, left: `${Math.max(rows[0]?.contentLeft ?? 16, 8)}px` }"
           data-testid="memo-block-move-insertion"
         />
       </div>
@@ -361,8 +375,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
-.mobile-block-move-active {
+.mobile-block-move-active,
+.mobile-block-move-controls,
+.mobile-block-move-controls * {
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
 }
 </style>

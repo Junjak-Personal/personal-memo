@@ -59,7 +59,9 @@ class Element extends Surface {
   scrollBy = vi.fn()
   focus = vi.fn()
   querySelector = vi.fn(() => this)
-  constructor(readonly top = 0, readonly bottom = 700, readonly parent: Element | null = null) { super() }
+  parentElement: Element | null = null
+  scrollTop = 0
+  constructor(public top = 0, public bottom = 700, readonly parent: Element | null = null) { super() }
   getBoundingClientRect() { return { top: this.top, bottom: this.bottom, height: this.bottom - this.top, left: 112, right: 370 } }
   closest() { return this.parent }
   setPointerCapture(id: number) { this.captures.add(id) }
@@ -72,7 +74,6 @@ interface Setup {
   rows: Ref<Row[]>
   drag: Ref<{ moving: boolean } | null>
   overlayTarget: Ref<Element | null>
-  overlayStyle: Ref<{ clipPath: string }>
   announcement: Ref<string>
   enter: () => void
   finish: () => void
@@ -93,8 +94,13 @@ function mount(disabled = false, editable = true) {
   const frames = new Map<number, () => void>()
   let nextFrame = 0
   const panel = new Element()
+  panel.scrollBy.mockImplementation(({ top }: { top: number }) => { panel.scrollTop += top })
+  const content = new Element(80, 780, panel)
+  content.getBoundingClientRect = () => ({ top: 80 - panel.scrollTop, bottom: 780 - panel.scrollTop, height: 700, left: 16, right: 390 })
   const dom = new Element(0, 700, panel)
-  const window = Object.assign(new Surface(), { innerHeight: 700, innerWidth: 390, visualViewport: Object.assign(new Surface(), { offsetTop: 0, height: 700 }), matchMedia: () => media })
+  dom.parentElement = content
+  const selection = { removeAllRanges: vi.fn() }
+  const window = Object.assign(new Surface(), { getSelection: () => selection, innerHeight: 700, innerWidth: 390, visualViewport: Object.assign(new Surface(), { offsetTop: 0, height: 700 }), matchMedia: () => media })
   const media = new Surface()
   const document = Object.assign(new Surface(), { visibilityState: 'visible' })
   const observers: { observe: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> }[] = []
@@ -119,7 +125,7 @@ function mount(disabled = false, editable = true) {
       dom,
       nodeDOM: (pos: number) => {
         const index = blockMove.getTopLevelBlocks(editor.state.doc).findIndex(block => block.pos === pos)
-        return new Element(100 + index * 100, 150 + index * 100)
+        return new Element(100 + index * 100 - panel.scrollTop, 150 + index * 100 - panel.scrollTop)
       },
       dispatch: vi.fn((tr: Transaction) => {
         editor.state = editor.state.apply(tr)
@@ -162,7 +168,7 @@ function mount(disabled = false, editable = true) {
   function pointer(target: Element, x = 350, y = 120, id = 1): PointerEvent {
     return { currentTarget: target, clientX: x, clientY: y, pointerId: id, isPrimary: true, button: 0, preventDefault: vi.fn() } as unknown as PointerEvent
   }
-  return { setup, props, editor, dom, panel, window, document, media, observers, frames, subscribers, toast, emitted, sidebarOpen, flushFrames, enter, pointer, unmount: () => unmounted.forEach(callback => callback()) }
+  return { setup, props, editor, dom, panel, content, selection, window, document, media, observers, frames, subscribers, toast, emitted, sidebarOpen, flushFrames, enter, pointer, unmount: () => unmounted.forEach(callback => callback()) }
 }
 
 describe('모바일 블록 이동의 실제 setup 동작', () => {
@@ -176,7 +182,7 @@ describe('모바일 블록 이동의 실제 setup 동작', () => {
     expect(h.dom.style.paddingLeft).toBe('72px')
     expect(h.dom.style.paddingRight).toBe('7px')
     expect(h.setup.rows.value).toHaveLength(3)
-    expect(h.setup.overlayTarget.value).toBe(h.panel)
+    expect(h.setup.overlayTarget.value).toBe(h.content)
     expect(h.dom.count('click')).toBe(1)
     h.setup.finish()
     expect(h.editor.isEditable).toBe(true)
@@ -206,11 +212,11 @@ describe('모바일 블록 이동의 실제 setup 동작', () => {
     h.enter()
     for (const row of h.setup.rows.value) {
       const style = h.setup.handleStyle(row)
-      expect(Number.parseFloat(style.top) + 22).toBe(row.top + 28 / 2)
+      expect(Number.parseFloat(style.top) + 22).toBe(row.top - h.content.getBoundingClientRect().top + 28 / 2)
       expect(row.bottom - row.top).toBe(50)
       const add = h.setup.handleStyle(row, 'add')
       expect(Number.parseFloat(add.left) + 44).toBe(Number.parseFloat(style.left))
-      expect(Number.parseFloat(style.left) + 44).toBe(row.left)
+      expect(Number.parseFloat(style.left) + 44).toBe(row.left - h.content.getBoundingClientRect().left)
       expect(add.top).toBe(style.top)
     }
   })
@@ -273,13 +279,31 @@ describe('모바일 블록 이동의 실제 setup 동작', () => {
     expect(h.frames.size).toBeLessThanOrEqual(1)
   })
 
+  it('가장자리 자동 스크롤 중에도 잡은 손잡이는 포인터를 따르고 드롭은 최신 본문 좌표로 처리한다', () => {
+    const h = mount()
+    h.enter()
+    const target = new Element()
+    h.setup.startPointer(h.pointer(target, 70, 120), h.setup.rows.value[0]!)
+    h.setup.movePointer(h.pointer(target, 70, 650))
+    h.flushFrames()
+    expect(h.panel.scrollBy).toHaveBeenCalled()
+    expect(h.panel.scrollTop).toBeGreaterThan(0)
+    const dragged = h.setup.handleStyle(h.setup.rows.value[0]!)
+    expect(Number.parseFloat(dragged.top) + h.content.getBoundingClientRect().top + 22).toBe(650)
+    expect(Number.parseFloat(dragged.left) + h.content.getBoundingClientRect().left + 22).toBe(70)
+    h.setup.endPointer(h.pointer(target, 70, 650))
+    expect(h.editor.state.doc.textContent).toBe('BCA')
+    expect(target.captures.size).toBe(0)
+    expect(h.frames.size).toBeLessThanOrEqual(1)
+  })
+
   it('키보드 이동은 이동한 블록의 손잡이로 포커스를 옮기고 경계에서는 그대로 둔다', () => {
     const h = mount()
     h.enter()
     h.setup.move(0, 2, true)
     expect(h.editor.state.doc.textContent).toBe('BAC')
-    expect(h.panel.querySelector).toHaveBeenCalledWith('[data-testid="memo-block-move-handle-1"]')
-    expect(h.panel.focus).toHaveBeenCalledWith({ preventScroll: true })
+    expect(h.content.querySelector).toHaveBeenCalledWith('[data-testid="memo-block-move-handle-1"]')
+    expect(h.content.focus).toHaveBeenCalledWith({ preventScroll: true })
     h.setup.move(0, -1, true)
     expect(h.editor.state.doc.textContent).toBe('BAC')
     expect(h.editor.view.dispatch).toHaveBeenCalledTimes(2)
@@ -313,7 +337,7 @@ describe('모바일 블록 이동의 실제 setup 동작', () => {
     const handlers = handle.props!.onKeydown as ((event: object) => void)[]
     for (const handler of handlers) handler({ key: 'ArrowDown', preventDefault: vi.fn() })
     expect(h.editor.state.doc.textContent).toBe('BAC')
-    const teleport = templateNodes(h).find(node => node.type === Vue.Teleport && node.props!.to === h.panel)
+    const teleport = templateNodes(h).find(node => node.type === Vue.Teleport && node.props!.to === h.content)
     expect(teleport).toBeDefined()
     h.sidebarOpen.value = true
     expect(templateNodes(h).some(node => node.props?.['data-testid'] === 'memo-block-move-handles')).toBe(false)
@@ -336,12 +360,36 @@ describe('모바일 블록 이동의 실제 setup 동작', () => {
     expect(h.setup.active.value).toBe(true)
   })
 
-  it('손잡이 레이어는 시각 뷰포트와 패널 영역으로 잘려 헤더·키보드 위로 넘지 않는다', () => {
+  it('본문과 같은 콘텐츠 좌표를 사용해 스크롤 재측정 전에도 손잡이가 정확히 함께 움직인다', () => {
     const h = mount()
-    h.window.visualViewport.offsetTop = 80
-    h.window.visualViewport.height = 500
     h.enter()
-    expect(h.setup.overlayStyle.value.clipPath).toBe('inset(80px 0 120px 0)')
+    const before = h.setup.handleStyle(h.setup.rows.value[0]!)
+    expect(h.setup.overlayTarget.value).toBe(h.content)
+    const initialScreenTop = Number.parseFloat(before.top) + h.content.getBoundingClientRect().top
+    h.panel.scrollTop = 240
+    // 브라우저의 비동기 스크롤 중 JS/rAF가 아직 실행되지 않아도 같은 부모가 이동한다.
+    expect(Number.parseFloat(h.setup.handleStyle(h.setup.rows.value[0]!).top) + h.content.getBoundingClientRect().top).toBe(initialScreenTop - 240)
+    for (const listener of h.document.listeners.get('scroll') ?? []) listener()
+    h.flushFrames()
+    expect(h.setup.handleStyle(h.setup.rows.value[0]!)).toEqual(before)
+    const controls = templateNodes(h).find(node => node.props?.['data-testid'] === 'memo-block-move-handles')!
+    expect(controls.props!.class).toContain('absolute')
+    expect(controls.props!.class).not.toContain('fixed')
+    expect(templateButton(h, 'handle-0')).toBeDefined()
+    expect(templateButton(h, 'add-0')).toBeDefined()
+  })
+
+  it('이전 네이티브 텍스트 선택을 지우고 컨트롤 전체에서 선택·기본 드래그·팝업을 차단한다', () => {
+    const h = mount()
+    h.enter()
+    expect(h.selection.removeAllRanges).toHaveBeenCalledOnce()
+    const controls = templateNodes(h).find(node => node.props?.['data-testid'] === 'memo-block-move-handles')!
+    for (const name of ['onContextmenu', 'onDragstart', 'onSelectstart']) {
+      const event = { preventDefault: vi.fn() }
+      controls.props![name](event)
+      expect(event.preventDefault).toHaveBeenCalledOnce()
+    }
+    for (const name of ['add-0', 'handle-0']) expect(templateButton(h, name).props!.draggable).toBe(false)
   })
 
   it.each(['pointercancel', '내용 변경', '화면 숨김'] as const)('%s 시 이동하지 않고 포인터와 스크롤 frame을 해제한다', (reason) => {

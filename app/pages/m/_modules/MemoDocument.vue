@@ -486,7 +486,12 @@ function showTableBubble({ editor, view, state }: MenuContext) {
         <MemoActions v-if="!blockMoveActive" :memo-id="autosave.currentId" :title="() => savedTitle" :folder="currentFolder" />
       </Teleport>
 
-      <MobileBlockMove v-model:active="blockMoveActive" :editor="editor" :disabled="memo.unreadable" />
+      <MobileBlockMove
+        v-model:active="blockMoveActive"
+        :editor="editor"
+        :disabled="memo.unreadable"
+        @add-block="pos => handlers.suggestion?.execute(editor, { pos }).run()"
+      />
 
       <!-- 좁은 화면의 브라우저(껍데기 밖)에서는 위 줄 가운데가 숨는다 — 툴바를 한 줄 아래로 내린다 -->
       <Teleport v-if="!bridge.native && !blockMoveActive" to="#app-header-secondary" defer>

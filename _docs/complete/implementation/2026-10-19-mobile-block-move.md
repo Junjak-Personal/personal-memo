@@ -1,5 +1,7 @@
 # 모바일 블록 이동 모드
 
+> 이 문서는 초기 구현 기록이다. 탭 모달·완료 텍스트·화면 안내는 [후속 수정](./2026-10-19-mobile-block-move-refinement.md)에서 제거했으며 현재 UI/잔여 QA는 후속 기록을 따른다.
+
 - status: complete
 - baseRef: 7f602c0685eafb66bd1e05b47b7eab9b46788d85
 - startedAt: 2026-10-19T13:15:00Z

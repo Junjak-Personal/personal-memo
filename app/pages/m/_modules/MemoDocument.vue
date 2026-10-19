@@ -18,6 +18,8 @@ import { memoExtensions } from '~/utils/editor-extensions'
 import { prepareImage, type PreparedImage } from '~/utils/image-resize'
 import { type MemoDraft, removeDraft } from '~/utils/memo-drafts'
 import { ImageUpload } from './editor/ImageUploadExtension'
+import { blockHandleOptions, blockHandleUi } from './editor/drag-handle-options'
+import MobileBlockMove from './editor/MobileBlockMove.vue'
 import {
   bubbleToolbarItems,
   customHandlers,
@@ -32,7 +34,7 @@ import LinkPopover from './editor/LinkPopover.vue'
 import MemoActions from './MemoActions.vue'
 import MemoCalendarSyncBadge from './MemoCalendarSyncBadge.vue'
 import MemoSaveStatus from './MemoSaveStatus.vue'
-import { canonicalMarkdown, type SaveState, useMemoAutosave } from './useMemoAutosave'
+import { canonicalMarkdown, shouldSaveMarkdown, type SaveState, useMemoAutosave } from './useMemoAutosave'
 import { useNativeBridge } from './useNativeBridge'
 
 interface MenuContext {
@@ -83,6 +85,7 @@ const dateEnd = ref(memo.value?.dateEnd ?? null)
 const tags = ref<string[]>(memo.value?.tags ?? [])
 const currentFolder = ref(memo.value?.folder ?? '')
 const selectedNode = ref<{ node: JSONContent | null; pos: number }>()
+const blockMoveActive = ref(false)
 const linkOpen = ref(false)
 /** 원본 보기 창에 띄울 원본 주소 */
 const originalUrl = ref<string | null>(null)
@@ -226,12 +229,13 @@ let baseline: string | null = null
  */
 function onContentChange(value: string) {
   const editor = editorRef.value?.editor
+  const initial = baseline === null
   if (baseline === null && editor?.markdown) {
     baseline = canonicalMarkdown(editor.markdown.serialize(editor.markdown.parse(memo.value?.content ?? '')))
   }
-  const untouched = canonicalMarkdown(value) === canonicalMarkdown(content.value) || canonicalMarkdown(value) === baseline
+  const changed = shouldSaveMarkdown(value, content.value, initial ? baseline : null)
   content.value = value
-  if (!untouched) autosave?.changed()
+  if (changed) autosave?.changed()
 }
 
 const TITLE_DELAY_MS = 5000
@@ -429,13 +433,13 @@ function onNodeChange(event: { node: JSONContent | null; pos: number }) {
 }
 
 function showTextBubble({ editor, view, state }: MenuContext) {
-  if (coarsePointer) return false
+  if (coarsePointer || blockMoveActive.value) return false
   if (editor.isActive('imageUpload') || editor.isActive('image') || state.selection instanceof CellSelection) return false
   return view.hasFocus() && !state.selection.empty
 }
 
 function showImageBubble({ editor, view }: MenuContext) {
-  return editor.isActive('image') && view.hasFocus()
+  return !blockMoveActive.value && editor.isActive('image') && view.hasFocus()
 }
 
 /**
@@ -443,7 +447,7 @@ function showImageBubble({ editor, view }: MenuContext) {
  * 행·열을 더하려고 칸을 끌어 고르는 사람은 없다. 글자를 고르면 글자 말풍선이 대신 뜬다.
  */
 function showTableBubble({ editor, view, state }: MenuContext) {
-  if (!view.hasFocus()) return false
+  if (blockMoveActive.value || !view.hasFocus()) return false
   return state.selection instanceof CellSelection || (editor.isActive('table') && state.selection.empty)
 }
 </script>
@@ -475,15 +479,17 @@ function showTableBubble({ editor, view, state }: MenuContext) {
       @paste="onPaste"
     >
       <Teleport to="#app-header-toolbar" defer>
-        <UEditorToolbar :editor="editor" :items="toolbarItems" />
+        <UEditorToolbar v-if="!blockMoveActive" :editor="editor" :items="toolbarItems" />
       </Teleport>
       <Teleport to="#app-header-actions" defer>
         <MemoSaveStatus :state="saveState" @retry="autosave.save()" />
-        <MemoActions :memo-id="autosave.currentId" :title="() => savedTitle" :folder="currentFolder" />
+        <MemoActions v-if="!blockMoveActive" :memo-id="autosave.currentId" :title="() => savedTitle" :folder="currentFolder" />
       </Teleport>
 
+      <MobileBlockMove v-model:active="blockMoveActive" :editor="editor" :disabled="memo.unreadable" />
+
       <!-- 좁은 화면의 브라우저(껍데기 밖)에서는 위 줄 가운데가 숨는다 — 툴바를 한 줄 아래로 내린다 -->
-      <Teleport v-if="!bridge.native" to="#app-header-secondary" defer>
+      <Teleport v-if="!bridge.native && !blockMoveActive" to="#app-header-secondary" defer>
         <div class="overflow-x-auto border-b border-default px-2 py-1 lg:hidden">
           <UEditorToolbar :editor="editor" :items="toolbarItems" />
         </div>
@@ -553,7 +559,7 @@ function showTableBubble({ editor, view, state }: MenuContext) {
             placeholder="제목"
             class="min-w-0 flex-1 bg-transparent text-3xl font-bold outline-none placeholder:text-dimmed"
             :class="todoDone && 'text-muted line-through'"
-            :readonly="memo.unreadable"
+            :readonly="memo.unreadable || blockMoveActive"
             enterkeyhint="next"
             data-testid="memo-title-input"
             @input="onTitleInput"
@@ -604,7 +610,7 @@ function showTableBubble({ editor, view, state }: MenuContext) {
 
       <UEditorSuggestionMenu :editor="editor" :items="suggestionItems" :filter-fields="['label', 'keywords']" />
 
-      <UEditorDragHandle v-slot="{ ui, onClick }" :editor="editor" @node-change="onNodeChange">
+      <UEditorDragHandle v-if="!blockMoveActive" v-slot="{ ui, onClick }" :editor="editor" :options="blockHandleOptions" :ui="blockHandleUi" @node-change="onNodeChange">
         <UButton
           icon="i-material-symbols-add"
           color="neutral"

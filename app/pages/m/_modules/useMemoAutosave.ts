@@ -50,6 +50,14 @@ export function canonicalMarkdown(markdown: string) {
     .trim()
 }
 
+export function shouldSaveMarkdown(value: string, current: string, initialBaseline: string | null): boolean {
+  const canonical = canonicalMarkdown(value)
+  if (canonical === canonicalMarkdown(current)) return false
+  // 최초 에디터 왕복 정규화만 무시한다. 이후 원문으로 되돌리는 undo는 다시 저장해야 한다.
+  if (initialBaseline !== null && canonical === canonicalMarkdown(initialBaseline)) return false
+  return true
+}
+
 interface Options {
   memo: Memo
   /** 지금 화면의 제목·본문·날짜·태그 */

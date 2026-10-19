@@ -73,4 +73,5 @@ Lifecycle: active/{planning,processing}/ · complete/ · reference/ · deprecate
 - 2026-10-16: AI 연결(MCP + OAuth 인증 서버, `/mcp`, `/ai`, `server/oauth/`, `server/mcp/`) — 설계문서 §11.1
 
 ## 최근 구현 기록
+- [2026-10-19 모바일 블록 이동·PC hover 손잡이](../../_docs/complete/implementation/2026-10-19-mobile-block-move.md): VERIFY_PASS, 31파일 297개·타입검사·빌드 통과, 400px 개발 스모크·UI 보정. 실기기 QA 4항목 pending.
 - [2026-10-19 모바일 메뉴 전환·마지막 화면 복원](../../_docs/complete/implementation/2026-10-19-navigation-restore.md): VERIFY_PASS, 27파일 264개·타입검사·빌드 통과, iPhone QA 5항목 pending.

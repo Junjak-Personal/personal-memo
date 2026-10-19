@@ -27,6 +27,8 @@
 - 폰 목록: 사이드바 slideover 전체 화면 (`mode="slideover"`)
 - 하단 탐색: 할 일·캘린더·태그 아이콘과 ⋯ 메뉴(휴지통·AI 연결·로그아웃). 할 일 수·오늘 일정은 빨간 뱃지. 태그 목록은 `/tags` 전용 화면. (원격 2026-10-18 변경 유지)
 - PC 끌어 놓기, 폰은 메뉴(다른 폴더로 옮기기)
+- 본문 블록 이동(2026-10-19): 모바일 상단 명시 모드 + 44px 전용 손잡이, 본문은 비편집·스크롤. 드래그/탭 위아래/undo·redo 지원, 종료 시 편집 복원. 목록·표 전체 단위 이동. 평소 long press 텍스트 선택 유지. `MobileBlockMove.vue`, `block-move.ts`.
+- PC 본문 손잡이: floating offset 0 + 내부 px-2로 8px 빈 hover 간격 제거 (`drag-handle-options.ts`).
 - 애니메이션: 사이드바 폭 전환, 페이지 페이드, `prefers-reduced-motion` 존중
 - 모바일 메뉴 이동(2026-10-19): 자동 route watch 닫힘 대신 목적 화면 준비를 기다린 뒤 slide-out. 메뉴 뒤 페이지는 fade 0ms, 일반 탐색은 기존 fade 유지.
 - 🔴 dev 서버가 떠 있는 동안 새 폴더를 만들면 그 안의 Tailwind 클래스가 빠질 수 있다 → `touch app/assets/css/main.css`

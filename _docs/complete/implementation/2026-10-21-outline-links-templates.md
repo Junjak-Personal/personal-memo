@@ -159,5 +159,5 @@ flowchart TD
 - 기존 workflow에 main 대상 PR verify만 추가하고 deploy는 main의 non-PR 이벤트로 제한했다. Actions 이미지의 OCI revision 라벨로 실제 운영 버전을 확인한다. 데이터 볼륨·비밀·지속 권한은 바꾸지 않는다.
 - PC/iPhone 실제 화면 QA5개는 pending을 유지한다. 최종 배포 성공 여부는 이후 PR/Actions/운영 확인 결과로 구분한다.
 
-- 릴리스 검증 수량 구분: 로컬 전체542개에는 보존한 사용자 미추적 `mobile-menu-navigation.test 2.ts`의10개가 포함된다. 커밋/깨끗한 CI 범위는50 files/532 tests다. 이 사용자 파일과 node_modules2는 스테이징에서 제외했다.
+- 릴리스 테스트 inventory 확인:51개 파일의 parameterized case 실행 결과542 tests PASS. 사용자 미추적 `mobile-menu-navigation.test 2.ts`는 기존 `**/*.test.ts` 패턴에 해당하지 않아 수집되지 않는다. 로컬·커밋 범위가 같으며 이 사용자 파일과 node_modules2는 스테이징에서 제외했다.
 - 이번 로컬 타입 재검사에서는 의존성 안의 중복 `*.d 2.ts`가 없는 선택 의존성 `ai`를 요구해 실패했다. 소스 오류와 구분하고 byte-identical 의존성 사본 일부는 ignored 작업 폴더에 보존한 채 격리했다. 장시간 중복 스캔은 소유 프로세스만 중단했다. PR CI의 깨끗한 설치 환경에서 타입·빌드 통과를 필수 조건으로 둔다.

@@ -29,6 +29,8 @@
 - 삭제/읽기 불가 메모·없는 태그는 인증된 tree 메타로 검증하며 실패 시 홈. 연속 이동·세션 변경 중 늦은 저장/복원을 revision으로 무효화한다.
 
 ## Reactivity Rules
+- 초기 tree 공유(2026-10-20): useMemoTree의 NuxtApp별 WeakMap controller. ensure는 현재 요청/유효 결과 재사용, refresh는 새 revision, settled는 같은 세션의 최신 요청 최종 결과 대기(실패 자동 retry 없음). 세션 sync watcher로 tree/error 즉시 초기화·늦은 응답 차단. 메모리 한정이며 runtime별 격리.
+- 초기 준비 계측: startup.client의 window.memoStartup 및 html data-memo-startup에 상태/숫자만 남긴다. treeRequests는 실제 controller fetch 시작 수, 나머지 요청 시간은 ResourceTiming 관측분만 존재한다. 경로/계정/메모 정보는 노출하지 않는다.
 - watch/effect 기피 (이벤트·훅으로 갱신). 써야 하면 이유를 먼저 적는다
 - 템플릿에서 composable 이 돌려준 객체 안의 ref 는 자동으로 풀리지 않는다 → `calendarSync.running.value`
 - `shallowRef` 로 외부 객체(DateRange 등)를 그대로 든다

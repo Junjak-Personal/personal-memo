@@ -104,6 +104,8 @@ export default defineNuxtConfig({
     },
   },
   experimental: {
+    // 루트 Suspense가 첫 문서/에디터를 기다리는 동안에도 초기 HTML 표식은 남겨 둔다.
+    spaLoadingTemplateLocation: 'body',
     // 화면 코드를 못 받았을 때 페이지를 통째로 다시 부르지 않는다 — 오프라인이면 쓰던 화면을 잃는다 (plugins/route-chunk-error.client.ts)
     emitRouteChunkError: 'manual',
   },

@@ -1,24 +1,45 @@
 import type { FolderOrder, TreeResponse } from '#shared/types/memo'
 import { EMPTY_ORDER } from '#shared/utils/order'
+import { screenScope } from '~/utils/last-screen'
+import { createSessionTree } from '~/utils/session-tree'
+
+const appTrees = new WeakMap<object, ReturnType<typeof createSessionTree>>()
 
 /**
  * 사이드바의 폴더·메모 트리. 화면 전체가 한 벌을 같이 쓴다.
  * 저장·이동·삭제처럼 트리가 바뀌는 동작 뒤에 refresh 를 부른다 — watch 로 따라가지 않는다.
  */
 export function useMemoTree() {
-  const toast = useToast()
+  const nuxtApp = useNuxtApp()
+  // middleware/plugin의 초기 ensure에서도 쓰므로 Vue inject가 가능한 앱 문맥을 준다.
+  const toast = nuxtApp.vueApp.runWithContext(() => useToast())
+  const { session } = useUserSession()
 
   const tree = useState<TreeResponse | null>('memo-tree', () => null)
   const error = useState<string | null>('memo-tree-error', () => null)
+  const requests = useState('startup-tree-requests', () => 0)
 
-  async function refresh() {
-    try {
-      tree.value = await $fetch<TreeResponse>('/api/tree')
-      error.value = null
-    } catch (e) {
-      error.value = apiMessage(e, '목록을 불러오지 못했습니다')
-    }
+  let shared = appTrees.get(nuxtApp)
+  if (!shared) {
+    shared = createSessionTree({
+      scope: () => screenScope(session.value),
+      tree: () => tree.value,
+      setTree: (value) => { tree.value = value },
+      setError: (value) => { error.value = value },
+      fetch: () => {
+        requests.value++
+        return $fetch<TreeResponse>('/api/tree')
+      },
+      message: (e) => apiMessage(e, '목록을 불러오지 못했습니다'),
+    })
+    appTrees.set(nuxtApp, shared)
+    const controller = shared
+    // 인증 상태는 이 composable 밖에서도 바뀐다. 컴포넌트 수명과 무관하게 즉시 이전 목록을 지운다.
+    const scope = effectScope(true)
+    scope.run(() => watch(() => screenScope(session.value), () => controller.syncScope(), { flush: 'sync' }))
+    nuxtApp.vueApp.onUnmount(() => scope.stop())
   }
+  const { ensure, settled, refresh } = shared
 
   /**
    * 폴더 안의 순서 (설계문서 §3.6). 화면에 바로 반영하고 저장한다 — 끌어 놓은 줄이 제자리로 튀었다 오지 않게.
@@ -48,5 +69,5 @@ export function useMemoTree() {
     }
   }
 
-  return { tree, error, refresh, setFolderOrder, setTodoOrder }
+  return { tree, error, ensure, settled, refresh, setFolderOrder, setTodoOrder }
 }

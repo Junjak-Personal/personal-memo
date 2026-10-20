@@ -1,6 +1,18 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
+/* 첫 HTML 준비 화면과 Vue 인계 뒤 화면은 같은 크기·바탕을 유지한다. */
+.memo-startup { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; padding: 32px; background: #fff; color: #171717; text-align: center; }
+.dark .memo-startup { background: #0a0a0a; color: #fafafa; }
+.memo-startup-inner img { display: block; margin: 0 auto 8px; }
+.memo-startup-inner strong { font: 600 28px system-ui, sans-serif; }
+.memo-startup-inner p { margin: 16px 0; font-size: 14px; color: var(--ui-text-muted); }
+.memo-startup-spinner { display: block; width: 18px; height: 18px; margin: 24px auto 0; border: 2px solid #a3a3a350; border-top-color: #737373; border-radius: 50%; animation: memo-startup-spin 1s linear infinite; }
+.memo-startup-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
+.memo-startup-actions button { padding: 8px 14px; border: 1px solid #737373; border-radius: 6px; cursor: pointer; }
+@keyframes memo-startup-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .memo-startup-spinner { animation: none; } }
+
 @theme static {
   /* Pretendard 는 nuxt.config 의 CDN 링크로 들어온다 (pic-blog 와 같음) */
   --font-sans: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;

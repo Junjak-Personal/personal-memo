@@ -25,7 +25,7 @@ const nuxtApp = useNuxtApp()
 const { clear: clearSession } = useUserSession()
 const toast = useToast()
 
-const { tree, error: treeError, refresh, setFolderOrder } = useMemoTree()
+const { tree, error: treeError, ensure, refresh, setFolderOrder } = useMemoTree()
 const { creating, createMemo } = useCreateMemo()
 const queue = useStructureQueue()
 const folders = useFolderActions({ onRelocated: relocate })
@@ -169,7 +169,7 @@ function menuMemoId(to: RouteLocationNormalized) {
 onMounted(async () => {
   // 앱을 내리거나 탭을 바꾸면 대기 중인 폴더 구조 변경을 기다리지 않고 반영한다
   document.addEventListener('visibilitychange', onVisibility)
-  await refresh()
+  try { await ensure() } catch { /* 목록 오류는 treeError로 표시한다 */ }
   // 이 기기에 기억한 펼침 상태로 — 없으면 전부 접힘 (폴더가 깊어 전부 펼치면 너무 길었다, 2026-10-18)
   const saved = readExpanded() ?? []
   // 사라진 폴더의 키는 버린다. 트리를 못 받았으면 그대로 둔다 — 기억을 지우지 않게
@@ -600,7 +600,10 @@ async function logout() {
     </div>
 
     <template v-else>
-      <p v-if="treeError" class="px-1 text-sm text-error">{{ treeError }}</p>
+      <div v-if="treeError" class="space-y-2 px-1">
+        <p class="text-sm text-error">{{ treeError }}</p>
+        <UButton color="neutral" variant="outline" size="sm" @click="refresh">다시 시도</UButton>
+      </div>
       <UTree
         v-if="!treeError"
         v-model:expanded="expanded"

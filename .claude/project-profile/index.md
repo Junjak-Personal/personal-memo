@@ -10,7 +10,7 @@
 ## Quick Summary
 - **Stack**: Nuxt 4.6 (SPA, `ssr: false`) + Nitro + TypeScript 6 + Nuxt UI 4 / Tailwind v4 · 폰 껍데기 Flutter
 - **Package manager**: pnpm 12.6
-- **Test framework**: Vitest 5 (98 tests) · E2E 없음 (Playwright MCP 수동 확인)
+- **Test framework**: Vitest 5 (370 tests / 37 files, 2026-10-20 startup 웹 배포 후보) · 브라우저 스모크 수동 확인
 - **State management**: Pinia 없음 — `useState` composable + 모듈 변수
 - **API layer**: 수동 (Nitro 파일 라우트 + `shared/types` 공용 타입), 생성기 없음
 - **CI/CD**: 없음 (배포는 3단계 예정 — pic-blog 의 Dockerfile·deploy.sh·GitHub Actions 복제, 설계문서 §13)
@@ -73,6 +73,7 @@ Lifecycle: active/{planning,processing}/ · complete/ · reference/ · deprecate
 - 2026-10-16: AI 연결(MCP + OAuth 인증 서버, `/mcp`, `/ai`, `server/oauth/`, `server/mcp/`) — 설계문서 §11.1
 
 ## 최근 구현 기록
+- [첫 실행 스플래시·세션 목록 공유](../../_docs/complete/implementation/2026-10-20-startup-loading.md): 웹 369개·타입·빌드 PASS, native 분석/독립9검증 PASS. 초기 로고·editor/복원/딥링크/저장 전환 확인, tree 1회. Flutter runner/실기기 등 QA 3개 pending. 배포·설치 없음.
 - [2026-10-20 표 실제 내용 폭·수동 개행](../../_docs/complete/implementation/2026-10-20-table-content-width.md): PC/모바일 공통 max-content/auto·자동 개행 제거. 실제 Chrome 390px·PC, 긴 표 가로 스크롤·짧은 병합 표·수동 개행 확인. 저장/스키마 변경 없음.
 - [2026-10-20 모바일 터치 드래그 취소·정렬 수정](../../_docs/complete/implementation/2026-10-20-mobile-touch-drag.md): 전역 비레이어 touch-action이 touch-none utility를 덮어 pointercancel되는 문제 재현·수정. 손잡이만 비레이어 none, 아이콘 중앙 정렬. 333개·타입 통과, Chrome 실제 터치 드롭/목록/undo/스크롤 후 이동 확인. iPhone 실기기·가장자리 장시간 유지 QA 남음.
 - [2026-10-20 병합 표 테두리·모서리 수정](../../_docs/complete/implementation/2026-10-20-merged-table-borders.md): TableMap 실제 외곽 decoration, 개발 좌하단 rounded·검증 내부 직각·중복 선 제거. 전체 332개·타입·Chrome 16개 통과, 실제 앱 라이트/다크의 일반/세로/가로·세로 병합 시각 확인. 기존 조건부 승인과 후속 「ㅇ 배포」로 배포 진행.

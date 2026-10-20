@@ -1,0 +1,14 @@
+<style>
+  #memo-initial{position:fixed;inset:0;z-index:9999;background:#fff;color:#171717;display:grid;place-items:center;font-family:system-ui,sans-serif;text-align:center;padding:32px;color-scheme:light dark}
+  #memo-initial img{display:block;margin:0 auto 8px}#memo-initial strong{font-size:28px;font-weight:600}#memo-initial p{font-size:14px;color:#737373;margin:16px 0}
+  #memo-initial .spinner{display:block;width:18px;height:18px;border:2px solid #a3a3a350;border-top-color:#737373;border-radius:50%;margin:24px auto 0;animation:memo-spin 1s linear infinite}
+  #memo-initial>div{position:relative}#memo-initial .recovery{position:absolute;top:100%;left:50%;transform:translateX(-50%);width:min(320px,80vw);visibility:hidden;animation:memo-recover 0s 15s forwards}#memo-initial button{font:inherit;padding:8px 14px;border:1px solid #737373;border-radius:6px;background:transparent;color:inherit;cursor:pointer}
+  @keyframes memo-spin{to{transform:rotate(360deg)}}@keyframes memo-recover{to{visibility:visible}}
+  @media(prefers-color-scheme:dark){#memo-initial{background:#0a0a0a;color:#fafafa}#memo-initial p{color:#a3a3a3}}
+  @media(prefers-reduced-motion:reduce){#memo-initial .spinner{animation:none}}
+</style>
+<div id="memo-initial" role="status" aria-live="polite">
+  <div><img src="/memo-logo.png" width="48" height="48" alt=""><strong>memo</strong><span class="spinner" aria-hidden="true"></span><p>메모를 준비하고 있어요</p>
+    <div class="recovery"><p>화면 준비가 오래 걸리면 다시 시도해 주세요.</p><button type="button" onclick="window.location.reload()">다시 시도</button></div>
+  </div>
+</div>

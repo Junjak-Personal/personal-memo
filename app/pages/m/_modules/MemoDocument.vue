@@ -52,6 +52,7 @@ const toast = useToast()
 const { refresh: refreshTree } = useMemoTree()
 const activeMemo = useActiveMemo()
 const mobileMenu = useMobileMenuNavigation()
+const startup = useStartupLoading()
 // await 뒤에 현재 route/id를 읽으면 새 요청으로 바뀔 수 있다. 이 문서를 만든 요청을 미리 고정한다.
 const openingMemoId = props.memoId
 const menuSequence = mobileMenu.pending.value?.memoId === openingMemoId ? mobileMenu.pending.value.sequence : null
@@ -146,6 +147,7 @@ onMounted(() => {
   rootRef.value?.closest('[data-slot="body"]')?.scrollTo({ top: 0 })
   document.addEventListener('visibilitychange', onVisibility)
   attachBridge()
+  if (error.value || !memo.value || !autosave) startup.memoReady(openingMemoId)
   void calendarSync.refresh()
   if (restoredDraft) {
     autosave?.changed()
@@ -191,7 +193,10 @@ async function saveBeforeLeaving(to: RouteLocationNormalized) {
 /** UEditor 가 editor 를 만든 뒤에 네이티브 툴바를 붙인다. 몇 프레임 늦을 수 있어 기다린다 */
 function attachBridge(tries = 30) {
   const editor = editorRef.value?.editor
-  if (editor) bridge.attach(editor)
+  if (editor) {
+    bridge.attach(editor)
+    startup.memoReady(openingMemoId)
+  }
   else if (tries > 0) requestAnimationFrame(() => attachBridge(tries - 1))
 }
 

@@ -4,6 +4,7 @@ import { ko } from '@nuxt/ui/locale'
 
 <template>
   <UApp :locale="ko">
+    <StartupSplash />
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>

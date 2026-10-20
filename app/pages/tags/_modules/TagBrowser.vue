@@ -4,7 +4,7 @@ import { isDateString, kstDay } from '#shared/utils/memo-date'
 import { cleanTag, cleanTags, hasTag } from '#shared/utils/tags'
 
 const route = useRoute()
-const { tree, error, refresh } = useMemoTree()
+const { tree, error, ensure, refresh } = useMemoTree()
 
 const refreshing = ref(false)
 const selectedTag = computed(() => (typeof route.query.tag === 'string' ? cleanTag(route.query.tag) : null))
@@ -35,7 +35,7 @@ const items = computed(() => {
 })
 
 onMounted(() => {
-  if (!tree.value) void reload()
+  void ensure().catch(() => { /* 목록 오류는 error로 표시한다 */ })
 })
 
 function isSelected(tag: string) {

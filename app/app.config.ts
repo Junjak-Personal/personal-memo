@@ -46,11 +46,13 @@ export default defineAppConfig({
           // 넓은 표는 표 안에서만 민다 — 문서 패널·상단 툴바까지 가로로 움직이지 않게.
           '[&_.tableWrapper]:max-w-full [&_.tableWrapper]:overflow-x-auto [&_.tableWrapper]:overscroll-x-contain',
           '[&_table]:w-full [&_table]:border-separate [&_table]:border-spacing-0 [&_table]:rounded-md',
-          '[&_th]:py-3 [&_th]:px-4 [&_th]:font-semibold [&_th]:text-sm [&_th]:text-left [&_th]:bg-muted/50 [&_th]:border-t [&_th]:border-b [&_th]:border-e [&_th]:first:border-s [&_th]:border-muted',
+          '[&_th]:py-3 [&_th]:px-4 [&_th]:font-semibold [&_th]:text-sm [&_th]:text-left [&_th]:bg-muted/50 [&_th]:border-b [&_th]:border-e [&_th]:border-muted',
           '[&_th_p]:my-0 [&_th_p]:leading-5',
-          '[&_td]:py-3 [&_td]:px-4 [&_td]:text-sm [&_td]:text-left [&_td]:border-b [&_td]:border-e [&_td]:first:border-s [&_td]:border-muted',
+          '[&_td]:py-3 [&_td]:px-4 [&_td]:text-sm [&_td]:text-left [&_td]:border-b [&_td]:border-e [&_td]:border-muted',
           '[&_td_p]:my-0 [&_td_p]:leading-5 [&_td_code]:text-xs/5 [&_td_ul]:my-0 [&_td_ol]:my-0 [&_td_ul]:ps-4.5 [&_td_ol]:ps-4.5 [&_td_li]:leading-6 [&_td_li]:my-0.5',
-          '[&_tr:first-child_th:first-child]:rounded-tl-md [&_tr:first-child_th:last-child]:rounded-tr-md [&_tr:last-child_td:first-child]:rounded-bl-md [&_tr:last-child_td:last-child]:rounded-br-md',
+          // rowspan/colspan에서 DOM first/last 셀은 실제 표 외곽과 다르다. TableMap decoration을 쓴다.
+          '[&_.memo-table-edge-t]:border-t [&_.memo-table-edge-s]:border-s',
+          '[&_.memo-table-corner-tl]:rounded-tl-md [&_.memo-table-corner-tr]:rounded-tr-md [&_.memo-table-corner-bl]:rounded-bl-md [&_.memo-table-corner-br]:rounded-br-md',
           '[&_.selectedCell]:bg-primary/10 [&_.selectedCell]:ring-2 [&_.selectedCell]:ring-primary [&_.selectedCell]:ring-inset',
           // Task lists
           '[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:ps-1',

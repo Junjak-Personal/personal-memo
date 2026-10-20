@@ -48,6 +48,21 @@ function spans(editor: Editor) {
 function same(actual: unknown, expected: unknown, message: string) {
   assert(JSON.stringify(actual) === JSON.stringify(expected), `${message}: ${JSON.stringify(actual)} ≠ ${JSON.stringify(expected)}`)
 }
+const layoutClasses = ['edge-s', 'edge-t', 'corner-tl', 'corner-tr', 'corner-bl', 'corner-br'].map(name => `memo-table-${name}`)
+function cellLayout(editor: Editor, text: string, expected: string[]) {
+  const cell = [...editor.view.dom.querySelectorAll('td,th')].find(node => node.textContent === text)
+  assert(cell, `셀을 찾지 못함: ${text}`)
+  const actual = [...cell.classList].filter(name => layoutClasses.includes(name)).sort()
+  same(actual, expected.map(name => `memo-table-${name}`).sort(), `${text}의 논리적 외곽/모서리`)
+}
+function editCell(editor: Editor, text: string) {
+  let position = -1
+  editor.state.doc.descendants((node, pos) => { if (position < 0 && node.isText && node.text === text) position = pos + node.nodeSize })
+  assert(position >= 0, `수정할 셀의 텍스트가 없음: ${text}`)
+  assert(editor.commands.insertContentAt(position, { type: 'text', text: ' 수정' }), '셀 내용 수정 실패')
+  // 표 앞 문단 삽입으로 모든 셀의 문서 위치도 바꾼다. decoration이 옛 위치에 남아서는 안 된다.
+  assert(editor.commands.insertContentAt(0, { type: 'paragraph', content: [{ type: 'text', text: '표 앞 합성 문단' }] }), '표 앞 문단 삽입 실패')
+}
 async function check(name: string, action: () => void | Promise<void>) {
   count++
   const item = document.createElement('li')
@@ -232,6 +247,57 @@ run.addEventListener('click', async () => {
     assert(canonicalMarkdown(fence) !== canonicalMarkdown('```html\n' + normalized + '\n```'), 'fence 안 HTML까지 정규화함')
     const unsupported = '<div data-original="yes">그대로</div>\n\n' + source
     assert(canonicalMarkdown(unsupported) !== canonicalMarkdown('그대로\n\n' + normalized), '표 밖 HTML 손실 검사를 완화함')
+  })
+  await check('rowspan 외곽: 개발은 왼쪽 아래, 다음 행 첫 DOM 셀인 검증은 왼쪽 외곽이 아니다', () => {
+    for (const readonly of [false, true]) {
+      const editor = makeEditor(examples[0][1], { readonly })
+      try {
+        cellLayout(editor, '유형', ['edge-s', 'edge-t', 'corner-tl'])
+        cellLayout(editor, '오늘 요약', ['edge-t', 'corner-tr'])
+        cellLayout(editor, '개발', ['edge-s', 'corner-bl'])
+        cellLayout(editor, '검증', ['corner-br'])
+        assert(!editor.getMarkdown().includes('memo-table-corner'), '보기용 모서리 class가 저장됨')
+        if (!readonly) {
+          editCell(editor, '개발')
+          cellLayout(editor, '개발 수정', ['edge-s', 'corner-bl'])
+          cellLayout(editor, '검증', ['corner-br'])
+          cellLayout(editor, '유형', ['edge-s', 'edge-t', 'corner-tl'])
+        }
+      } finally { editor.destroy() }
+    }
+  })
+  await check('colspan 외곽: 가로 병합 헤더 하나가 위쪽 두 실제 모서리를 가진다', () => {
+    const editor = makeEditor(examples[1][1])
+    try {
+      cellLayout(editor, '오늘 요약', ['edge-s', 'edge-t', 'corner-tl', 'corner-tr'])
+      cellLayout(editor, '개발', ['edge-s', 'corner-bl'])
+      cellLayout(editor, '검증', ['corner-br'])
+      editCell(editor, '오늘 요약')
+      cellLayout(editor, '오늘 요약 수정', ['edge-s', 'edge-t', 'corner-tl', 'corner-tr'])
+      cellLayout(editor, '개발', ['edge-s', 'corner-bl'])
+      cellLayout(editor, '검증', ['corner-br'])
+    } finally { editor.destroy() }
+  })
+  await check('일반 GFM 외곽은 셀 편집과 표 앞 문단 삽입 뒤에도 정확히 갱신된다', () => {
+    const editor = makeEditor('| 유형 | 요약 |\n| --- | --- |\n| 개발 | 구현 |\n| 검증 | 완료 |')
+    try {
+      cellLayout(editor, '유형', ['edge-s', 'edge-t', 'corner-tl'])
+      cellLayout(editor, '요약', ['edge-t', 'corner-tr'])
+      cellLayout(editor, '개발', ['edge-s'])
+      cellLayout(editor, '구현', [])
+      cellLayout(editor, '검증', ['edge-s', 'corner-bl'])
+      cellLayout(editor, '완료', ['corner-br'])
+      editCell(editor, '검증')
+      cellLayout(editor, '유형', ['edge-s', 'edge-t', 'corner-tl'])
+      cellLayout(editor, '요약', ['edge-t', 'corner-tr'])
+      cellLayout(editor, '개발', ['edge-s'])
+      cellLayout(editor, '구현', [])
+      cellLayout(editor, '검증 수정', ['edge-s', 'corner-bl'])
+      cellLayout(editor, '완료', ['corner-br'])
+      same(tableFormat(editor), 'markdown', '레이아웃 갱신 후 GFM 유형')
+      const content = editor.getMarkdown()
+      assert(!content.includes('<table') && !content.includes('memo-table-corner'), '보기용 레이아웃이 GFM 저장 형식에 섞임')
+    } finally { editor.destroy() }
   })
   status.dataset.state = failed ? 'failed' : 'passed'
   status.textContent = failed ? `FAIL · ${count}개 중 ${failed}개 실패` : `PASS · ${count}개 회귀 검사 통과`

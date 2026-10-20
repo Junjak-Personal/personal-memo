@@ -3,6 +3,7 @@ import { DOMSerializer } from '@tiptap/pm/model'
 import type { Schema } from '@tiptap/pm/model'
 import { Table, TableCell, TableHeader, TableKit } from '@tiptap/extension-table'
 import type { TableOptions } from '@tiptap/extension-table'
+import { tableLayoutPlugin } from './table-layout'
 
 /** 큰/음수/소수 span으로 비정상적인 표 grid가 생기지 않게 한다. 병합은 양의 정수만 지원한다. */
 export function tableSpan(value: unknown): number {
@@ -58,6 +59,7 @@ export function memoTableKit() {
       }
     },
     onBeforeCreate() { schema = this.editor.schema },
+    addProseMirrorPlugins() { return [...(this.parent?.() ?? []), tableLayoutPlugin()] },
     renderMarkdown(node, helpers, context) {
       if (!tableUsesHtml(node)) return this.parent!(node, helpers, context)
       // GFM 표에는 span이 없다. HTML 파싱/보기는 기존 스키마를 그대로 쓰고 HTML 유형은 병합을 풀어도 HTML로 보관한다.

@@ -420,6 +420,7 @@ PC의 +/끌기 손잡이는 본문과 버튼 사이 빈 hover 간격을 없애 �
 - 확대·축소 막음 (확정 2026-10-07, pic-blog 와 같은 방식): viewport `maximum-scale=1, user-scalable=no`
   (입력칸 자동 확대도 막힘) + 사파리용 `plugins/no-pinch-zoom.client.ts`(gesture 이벤트) + 두 번 탭 확대 `touch-action: manipulation`.
 - 템플릿 `app.config.ts` 의 표·체크리스트 스타일을 그대로 가져온다.
+  병합 표의 테두리·라운딩은 TableMap의 실제 격자 외곽을 따른다. `rowspan` 아래 행의 첫 DOM 셀을 왼쪽 외곽으로 취급하지 않는다. 모든 셀의 아래/오른쪽 선과 실제 위/왼쪽 외곽선만 그려 중복 선을 피한다(2026-10-20). 표시용 decoration은 저장 내용에 섞이지 않는다.
   넓은 표의 가로 스크롤은 `.tableWrapper` 안에서만 생기고 문서 패널은 좌우로 움직이지 않는다(2026-10-08).
 - **끌어 놓기 (PC, 확정 2026-10-07)**: 트리의 메모·폴더를 다른 폴더 줄에 놓으면 그 안으로, 끄는 동안 나타나는
   「최상위」 칸에 놓으면 최상위로. 브라우저 기본 DnD 를 쓴다 — Nuxt UI 예제(SortableJS)는 같은 목록 안 순서 바꾸기만 해서

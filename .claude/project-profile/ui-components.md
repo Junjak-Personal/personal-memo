@@ -20,6 +20,7 @@
 - 안전 여백: `env(safe-area-inset-*)` (dashboardPanel body·사이드바 footer)
 
 ## Common Patterns
+- 표 내용 폭(2026-10-20): PC/모바일 공통 `width:max-content` + `table-layout:auto`로 실제 글꼴/내용에 열을 맞춘다. 임의 최소 폭·문서 폭 채우기 없음. th/td white-space:pre로 자동 개행 없이 직접 개행 유지. 넓은 표만 기존 tableWrapper 안 가로 스크롤. 원문/스키마 변경 없음.
 - 모바일 손잡이 터치 예외(2026-10-20): 전역 main.css touch-action은 비레이어이므로 Tailwind touch-none만으로는 이기지 못한다. `.mobile-block-move-handle`의 비레이어 `touch-action: none`으로 드래그→스크롤 인계(pointercancel)를 막는다. 드래그 아이콘은 translate 없이 44px 버튼 정중앙, +만 기존 translate-x-2 유지.
 - 병합 표 테두리(2026-10-20): `table-layout.ts`의 ProseMirror TableMap decoration으로 실제 위/왼쪽 외곽과 네 모서리를 표시한다. DOM first/last-child는 rowspan 아래 내부 셀을 오판하므로 쓰지 않는다. 기본 아래/오른쪽 선에 외곽 위/왼쪽 선만 추가한다. 표시 class는 저장 내용에 포함되지 않는다. 일반/HTML 표에 동일 적용.
 - 표 저장 유형(2026-10-20): `memoTableKit()`은 같은 table schema의 `memoTableFormat`으로 markdown/html을 구분한다. GFM 출력은 기존 그대로, HTML은 `data-memo-table="html"`과 span을 저장해 병합 해제 후에도 HTML 유지. 공통 확장이어서 편집/외부 보기 동일. 사람용 표 UI·병합 버튼은 변경 없음. 1~1000 정수 span, 스키마 serializer·선택적 형식 비교 유지. `editor-table.ts`, `canonical-table-html.ts`.

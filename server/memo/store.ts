@@ -28,6 +28,7 @@ import { hasTag, parseSearchQuery } from '../../shared/utils/tags'
 import { isScheduled } from '../../shared/utils/todo'
 import { DAY_MS, TRASH_RETENTION_DAYS } from '../../shared/utils/trash'
 import { isUlid, ulid } from '../../shared/utils/ulid'
+import { extractMemoLinkIds } from '../../shared/utils/memo-links'
 import { MemoError } from './errors'
 import { parseMemo, serializeMemo, versionOf } from './file'
 import { exists, writeAtomic } from './fsx'
@@ -45,15 +46,24 @@ import {
 } from './paths'
 import { EMPTY_ORDER_FILE, ORDER_FILE, type OrderFile, parseOrderFile, serializeOrderFile } from './order'
 import { type IndexEntry, MemoIndex } from './scan'
+import { MemoHistory } from './history'
+import type { MemoRevision, MemoRevisionSummary } from '../../shared/types/memo-history'
+import { withStableMemoId } from './links'
+import { MemoTemplates } from './templates'
+import type { MemoTemplate, MemoTemplateSummary } from '../../shared/types/memo-templates'
 
 const SNIPPET_RADIUS = 40
 
 export class MemoStore {
   private readonly index: MemoIndex
+  private readonly templates: MemoTemplates
+  private readonly history: MemoHistory
   private queue: Promise<unknown> = Promise.resolve()
 
   constructor(readonly root: string) {
     this.index = new MemoIndex(root)
+    this.history = new MemoHistory(root)
+    this.templates = new MemoTemplates(root)
   }
 
   async init() {
@@ -94,6 +104,50 @@ export class MemoStore {
     return { ...this.index.meta(entry), content: parsed.body, version: versionOf(raw) }
   }
 
+  templateList(): Promise<MemoTemplateSummary[]> {
+    return this.exclusive(() => this.templates.list())
+  }
+
+  getTemplate(id: string): Promise<MemoTemplate> {
+    return this.exclusive(() => this.templates.get(id))
+  }
+
+  saveTemplate(memoId: string, name: string, baseVersion: string): Promise<MemoTemplateSummary> {
+    return this.exclusive(async () => {
+      await this.index.rescan()
+      const memo = await this.read(this.requirePath(memoId))
+      if (memo.unreadable) throw new MemoError('unreadable', '읽을 수 없는 메모는 템플릿으로 저장할 수 없습니다')
+      if (memo.version !== baseVersion) throw new MemoError('conflict', '메모가 다른 곳에서 수정되었습니다', { version: memo.version })
+      return this.templates.save(memo, name)
+    })
+  }
+
+  renameTemplate(id: string, name: string): Promise<MemoTemplateSummary> {
+    return this.exclusive(() => this.templates.rename(id, name))
+  }
+
+  removeTemplate(id: string): Promise<void> {
+    return this.exclusive(() => this.templates.remove(id))
+  }
+
+  createFromTemplate(id: string, folder: string): Promise<Memo> {
+    return this.exclusive(async () => {
+      await this.requireFolder(folder)
+      await this.index.rescan()
+      const snapshot = await this.templates.instantiate(id, folder)
+      let published = false
+      try {
+        const now = nowKst()
+        const rel = await uniqueMdPath(folder, fileBaseFromTitle(snapshot.title), this.relExists)
+        const raw = serializeMemo(null, { id: ulid(), title: snapshot.title, created: now, updated: now, date: null, dateEnd: null, tags: snapshot.tags, done: null, public: false }, snapshot.content)
+        await writeAtomic(await this.abs(rel), raw)
+        published = true
+        await this.index.refresh(rel)
+        return await this.read(rel)
+      } catch (error) { if (!published) await snapshot.cleanup(); throw error }
+    })
+  }
+
   // ── 읽기 ────────────────────────────────────────────────────────────
 
   tree(): Promise<TreeResponse> {
@@ -128,6 +182,35 @@ export class MemoStore {
     return this.exclusive(async () => {
       await this.index.rescan()
       return this.read(this.requirePath(id))
+    })
+  }
+
+  /** 백링크는 인증된 활성 원문에서만 계산한다. 휴지통·읽기 불가 문서의 메타를 내보내지 않는다. */
+  backlinks(id: string): Promise<MemoMeta[]> {
+    return this.exclusive(async () => {
+      await this.index.rescan()
+      const target = this.index.active.get(this.requirePath(id))!
+      if (target.unreadable) throw new MemoError('unreadable', '읽을 수 없는 메모의 연결은 열 수 없습니다')
+      return [...this.index.active.values()]
+        .filter(entry => !entry.unreadable && entry !== target && extractMemoLinkIds(entry.body).has(id))
+        .map(entry => this.index.meta(entry))
+        .sort((a, b) => (b.updated ?? '').localeCompare(a.updated ?? '') || a.title.localeCompare(b.title, 'ko') || a.path.localeCompare(b.path, 'ko'))
+    })
+  }
+
+  /** 사용자가 선택한 외부 파일에만 안정 ID를 준다. 제목·경로·본문·수정 시각을 바꾸지 않는다. */
+  ensureLinkTarget(id: string): Promise<MemoMeta> {
+    return this.exclusive(async () => {
+      await this.index.rescan()
+      const rel = this.requirePath(id)
+      const entry = this.index.active.get(rel)!
+      if (entry.unreadable) throw new MemoError('unreadable', '읽을 수 없는 메모는 연결할 수 없습니다')
+      if (!id.startsWith('p:')) return this.index.meta(entry)
+      const abs = await this.abs(rel)
+      const raw = await readFile(abs, 'utf8')
+      await writeAtomic(abs, withStableMemoId(raw, ulid()))
+      await this.index.refresh(rel)
+      return this.index.meta(this.index.active.get(rel)!)
     })
   }
 
@@ -255,58 +338,102 @@ export class MemoStore {
   }
 
   update(id: string, input: UpdateMemoInput): Promise<Memo> {
+    return this.exclusive(() => this.updateUnlocked(id, input))
+  }
+
+  /** restore도 같은 저장·충돌·이름 변경 경로를 쓴다. 호출자는 exclusive를 잡고 있어야 한다. */
+  private async updateUnlocked(id: string, input: UpdateMemoInput, skipCapture = false): Promise<Memo> {
+    await this.index.rescan()
+    const rel = this.requirePath(id)
+    const abs = await this.abs(rel)
+    const raw = await readFile(abs, 'utf8')
+    const current = versionOf(raw)
+    if (current !== input.baseVersion) {
+      throw new MemoError('conflict', '다른 곳에서 먼저 수정했습니다', { version: current })
+    }
+    const parsed = parseMemo(raw)
+    if (!parsed.ok) {
+      throw new MemoError('unreadable', 'frontmatter 를 읽을 수 없어 저장하지 않았습니다. 파일을 직접 고쳐 주세요')
+    }
+
+    // 경로 id(`p:`)로 열린 파일 — id 가 없거나 다른 파일과 겹친다. 이번 저장에서 새 id 를 준다
+    const keepId = parsed.fields.id && isUlid(parsed.fields.id) && !id.startsWith('p:')
+    const nextId = keepId ? parsed.fields.id! : ulid()
+    if (!skipCapture) {
+      const meta = this.index.meta(this.index.active.get(rel)!)
+      await this.history.capture(nextId, {
+        title: meta.title,
+        content: parsed.body, date: meta.date, dateEnd: meta.dateEnd, tags: meta.tags,
+      }, folderOf(rel))
+    }
+    const now = nowKst()
+    const next = serializeMemo(
+      parsed.doc,
+      {
+        id: nextId,
+        title: input.title,
+        created: parsed.fields.created ?? now,
+        updated: now,
+        date: input.date,
+        dateEnd: input.dateEnd,
+        tags: input.tags ?? parsed.fields.tags,
+        // 할 일 체크·외부 공개는 저장 입력에 없다 — 파일의 값을 그대로 둔다 (버전도 done·public 을 빼고 잰다)
+        done: parsed.fields.done,
+        public: parsed.fields.public,
+      },
+      input.content,
+    )
+    await writeAtomic(abs, next)
+
+    /*
+     * 이번 저장에서 제목이 바뀌었을 때만 파일 이름이 따라간다. 밖에서 지은 이름(`meeting.md`)을
+     * 앱에서 한 번 저장했다는 이유로 바꾸지 않는다. 같은 이름의 `(2)` 꼴이면 그대로 둔다.
+     */
+    const folder = folderOf(rel)
+    const name = rel.slice(folder ? folder.length + 1 : 0).replace(/\.md$/, '')
+    const titleChanged = input.title !== (parsed.fields.title ?? name)
+    const base = fileBaseFromTitle(input.title)
+    const sameBase = name === base || (name.startsWith(base) && /^ \(\d+\)$/.test(name.slice(base.length)))
+    let finalRel = rel
+    if (titleChanged && !sameBase) {
+      finalRel = await uniqueMdPath(folder, base, this.relExists)
+      await rename(abs, await this.abs(finalRel))
+    }
+    await this.index.refresh(rel)
+    if (finalRel !== rel) await this.index.refresh(finalRel)
+    return this.read(finalRel)
+  }
+
+  getRevisions(id: string): Promise<MemoRevisionSummary[]> {
     return this.exclusive(async () => {
       await this.index.rescan()
-      const rel = this.requirePath(id)
-      const abs = await this.abs(rel)
-      const raw = await readFile(abs, 'utf8')
-      const current = versionOf(raw)
-      if (current !== input.baseVersion) {
-        throw new MemoError('conflict', '다른 곳에서 먼저 수정했습니다', { version: current })
-      }
-      const parsed = parseMemo(raw)
-      if (!parsed.ok) {
-        throw new MemoError('unreadable', 'frontmatter 를 읽을 수 없어 저장하지 않았습니다. 파일을 직접 고쳐 주세요')
-      }
+      const memo = await this.read(this.requirePath(id))
+      if (memo.unreadable) throw new MemoError('unreadable', '읽을 수 없는 메모의 수정 이력은 열 수 없습니다')
+      return this.history.list(id)
+    })
+  }
 
-      // 경로 id(`p:`)로 열린 파일 — id 가 없거나 다른 파일과 겹친다. 이번 저장에서 새 id 를 준다
-      const keepId = parsed.fields.id && isUlid(parsed.fields.id) && !id.startsWith('p:')
-      const now = nowKst()
-      const next = serializeMemo(
-        parsed.doc,
-        {
-          id: keepId ? parsed.fields.id : ulid(),
-          title: input.title,
-          created: parsed.fields.created ?? now,
-          updated: now,
-          date: input.date,
-          dateEnd: input.dateEnd,
-          tags: input.tags ?? parsed.fields.tags,
-          // 할 일 체크·외부 공개는 저장 입력에 없다 — 파일의 값을 그대로 둔다 (버전도 done·public 을 빼고 잰다)
-          done: parsed.fields.done,
-          public: parsed.fields.public,
-        },
-        input.content,
-      )
-      await writeAtomic(abs, next)
+  getRevision(id: string, revision: string): Promise<MemoRevision> {
+    return this.exclusive(async () => {
+      await this.index.rescan()
+      const memo = await this.read(this.requirePath(id))
+      if (memo.unreadable) throw new MemoError('unreadable', '읽을 수 없는 메모의 수정 이력은 열 수 없습니다')
+      return this.history.get(id, revision)
+    })
+  }
 
-      /*
-       * 이번 저장에서 제목이 바뀌었을 때만 파일 이름이 따라간다. 밖에서 지은 이름(`meeting.md`)을
-       * 앱에서 한 번 저장했다는 이유로 바꾸지 않는다. 같은 이름의 `(2)` 꼴이면 그대로 둔다.
-       */
-      const folder = folderOf(rel)
-      const name = rel.slice(folder ? folder.length + 1 : 0).replace(/\.md$/, '')
-      const titleChanged = input.title !== (parsed.fields.title ?? name)
-      const base = fileBaseFromTitle(input.title)
-      const sameBase = name === base || (name.startsWith(base) && /^ \(\d+\)$/.test(name.slice(base.length)))
-      let finalRel = rel
-      if (titleChanged && !sameBase) {
-        finalRel = await uniqueMdPath(folder, base, this.relExists)
-        await rename(abs, await this.abs(finalRel))
-      }
-      await this.index.refresh(rel)
-      if (finalRel !== rel) await this.index.refresh(finalRel)
-      return this.read(finalRel)
+  restoreRevision(id: string, revision: string, baseVersion: string): Promise<Memo> {
+    return this.exclusive(async () => {
+      await this.index.rescan()
+      const memo = await this.read(this.requirePath(id))
+      if (memo.version !== baseVersion) throw new MemoError('conflict', '다른 곳에서 먼저 수정했습니다', { version: memo.version })
+      if (memo.unreadable) throw new MemoError('unreadable', '읽을 수 없는 메모는 복원할 수 없습니다')
+      // 선택한 버전 존재/보관 기간부터 확인한다. 잘못된 요청은 이력을 만들지 않는다.
+      await this.history.get(id, revision)
+      // 보관 상한에 걸린 가장 오래된 선택 버전도 먼저 읽어 둔다. 이후 보관 정리가 선택을 지울 수 있다.
+      const input = await this.history.restoreInput(id, revision, memo.folder)
+      await this.history.capture(id, memo, memo.folder, true)
+      return this.updateUnlocked(id, { ...input, baseVersion }, true)
     })
   }
 
@@ -451,9 +578,11 @@ export class MemoStore {
     return this.exclusive(async () => {
       await this.index.rescan()
       const memos = this.index.trash.size
+      const removedIds = this.historyIds(this.index.trash.values())
       await rm(await this.abs(TRASH_DIR), { recursive: true, force: true })
       await mkdir(await this.abs(TRASH_DIR), { recursive: true })
       await this.index.rescan()
+      await this.removeDeletedHistory(removedIds)
       return { memos, images: await this.removeUnreferencedImages() }
     })
   }
@@ -469,11 +598,33 @@ export class MemoStore {
       const cutoff = now - TRASH_RETENTION_DAYS * DAY_MS
       const expired = [...this.index.trash.entries()].filter(([, e]) => e.mtimeMs < cutoff).map(([rel]) => rel)
       if (!expired.length) return { memos: 0, images: 0 }
+      const removedIds = this.historyIds(expired.map((rel) => this.index.trash.get(rel)!))
       for (const rel of expired) await rm(await this.abs(joinRel(TRASH_DIR, rel)), { force: true })
       await this.removeEmptyDirs(TRASH_DIR)
       await this.index.rescan()
+      await this.removeDeletedHistory(removedIds)
       return { memos: expired.length, images: await this.removeUnreferencedImages() }
     })
+  }
+
+  private historyIds(entries: Iterable<IndexEntry>) {
+    const out = new Set<string>()
+    for (const entry of entries) {
+      out.add(this.index.meta(entry).id)
+      // 같은 ID로 외부에서 복사한 파일은 p:로 보이더라도 살아 있는 원본 이력을 보호한다.
+      if (entry.fields.id && isUlid(entry.fields.id)) out.add(entry.fields.id)
+    }
+    return out
+  }
+
+  private async removeDeletedHistory(removedIds: Set<string>) {
+    const remaining = this.historyIds([...this.index.active.values(), ...this.index.trash.values()])
+    for (const id of removedIds) if (!remaining.has(id)) await this.history.remove(id)
+  }
+
+  /** 휴지통과 같은 기존 하루 정리 훅을 사용한다. capture/restore와 동시에 실행되지 않는다. */
+  purgeHistory(now = Date.now()): Promise<number> {
+    return this.exclusive(async () => (await this.history.purgeExpired(now)) + (await this.templates.purgeStaging(now)))
   }
 
   /** 어떤 메모(활성 + 휴지통)도 참조하지 않는 `assets/` 이미지를 지운다. 지운 수 */
@@ -522,7 +673,8 @@ export class MemoStore {
     const out = new Set<string>()
     for (const entry of [...this.index.active.values(), ...this.index.trash.values()]) {
       if (!include(entry)) continue
-      for (const p of referencedImages(folderOf(entry.path), entry.body)) out.add(p)
+      // GC/공유 이미지 보존은 모호한 코드 참조까지 남긴다. 공개 허용 목록은 기본 strict 검사다.
+      for (const p of referencedImages(folderOf(entry.path), entry.body, true)) out.add(p)
     }
     return out
   }

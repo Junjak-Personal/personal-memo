@@ -33,6 +33,9 @@ const folders = useFolderActions({ onRelocated: relocate })
 const dnd = useTreeDragDrop({ onRelocated: relocate, onReorder, pinned: (key) => key === TODO_FOLDER })
 const todo = useTodo()
 const activeMemo = useActiveMemo()
+const navigation = useMemoNavigation()
+const quickSwitch = useTemplateRef<{ show: () => void }>('quickSwitch')
+const templatesDialog = useTemplateRef<{ show: () => Promise<void> }>('templatesDialog')
 
 const mobileMenu = useMobileMenuNavigation()
 const sidebarOpen = mobileMenu.open
@@ -96,6 +99,7 @@ const links = computed<FooterLink[]>(() => [
 
 /** ⋯ 메뉴 — 잘 안 가는 것들 */
 const moreMenu: SidebarMenuItem[] = [
+  { label: '내 템플릿', icon: 'i-material-symbols-note-stack-outline', testId: 'sidebar-templates-button', onSelect: () => void templatesDialog.value?.show() },
   { label: '휴지통', icon: 'i-material-symbols-delete-outline', to: '/trash', testId: 'sidebar-trash-link' },
   { label: 'AI 연결', icon: 'i-material-symbols-smart-toy-outline', to: '/ai', testId: 'sidebar-ai-link' },
   { label: '로그아웃', icon: 'i-material-symbols-logout', testId: 'sidebar-logout-button', onSelect: () => void logout() },
@@ -168,6 +172,7 @@ function menuMemoId(to: RouteLocationNormalized) {
 }
 
 onMounted(async () => {
+  void navigation.ensure()
   // 앱을 내리거나 탭을 바꾸면 대기 중인 폴더 구조 변경을 기다리지 않고 반영한다
   document.addEventListener('visibilitychange', onVisibility)
   try { await ensure() } catch { /* 목록 오류는 treeError로 표시한다 */ }
@@ -566,6 +571,18 @@ async function logout() {
           />
         </template>
       </UInput>
+      <UTooltip text="최근 메모·즐겨찾기 (⌘K / Ctrl+K)">
+        <UButton
+          type="button"
+          icon="i-material-symbols-manage-search"
+          color="neutral"
+          variant="outline"
+          class="size-9 shrink-0 justify-center"
+          aria-label="최근 메모·즐겨찾기 빠르게 열기"
+          data-testid="sidebar-quick-switch"
+          @click="quickSwitch?.show()"
+        />
+      </UTooltip>
     </form>
 
     <p role="status" class="h-4 shrink-0 px-1 text-xs text-muted" data-testid="sidebar-navigation-pending">{{ mobileMenu.pending.value ? '화면을 여는 중…' : '' }}</p>
@@ -757,6 +774,9 @@ async function logout() {
       </div>
     </template>
   </UDashboardSidebar>
+
+  <MemoQuickSwitch ref="quickSwitch" />
+  <MemoTemplatesDialog ref="templatesDialog" />
 
   <FolderPickDialog
     v-model:open="folders.moveOpen.value"

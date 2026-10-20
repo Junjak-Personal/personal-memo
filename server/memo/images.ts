@@ -1,6 +1,7 @@
 /**
  * 이미지 판별과 본문 속 이미지 참조 (설계문서 §4).
  */
+import { imageRefs } from './image-refs'
 import { isRelativeSrc, normalizePath } from '../../shared/utils/asset-path'
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -83,26 +84,18 @@ export function extOf(name: string): ImageExt | null {
   return ext in IMAGE_TYPES ? (ext as ImageExt) : null
 }
 
-/** `![alt](src)` / `![alt](<src> "title")` 의 src */
-const IMAGE_REF = /!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g
-
-/**
- * 본문이 참조하는 이미지의 `memos/` 기준 경로들.
- * 상대경로만 센다. `../다른폴더/assets/x.jpg` 처럼 다른 폴더를 가리켜도 센다 — 다른 도구로 쓴
- * 참조까지 세야 휴지통 비우기가 남의 이미지를 지우지 않는다.
- */
-export function referencedImages(folder: string, body: string) {
+/** Markdown/HTML 표의 실제 이미지만 센다. 코드 속 예시는 파일 참조가 아니다. */
+export function referencedImages(folder: string, body: string, conservative = false) {
   const out = new Set<string>()
-  for (const m of body.matchAll(IMAGE_REF)) {
-    let src = m[1]!
+  for (const { src: raw } of imageRefs(body, conservative)) {
+    let src = raw
     try {
-      src = decodeURI(src)
-    } catch {
-      // 잘못된 % 인코딩 — 적힌 그대로 쓴다
-    }
-    if (!isRelativeSrc(src)) continue
-    const path = normalizePath(folder ? `${folder}/${src}` : src)
-    if (path) out.add(path)
+      src = src.startsWith('/api/files/') ? '/api/files/' + decodeURIComponent(src.slice('/api/files/'.length)) : decodeURI(src)
+    } catch { /* 잘못된 인코딩은 원문 그대로 검사한다 */ }
+    const path = src.startsWith('/api/files/')
+      ? normalizePath(src.slice('/api/files/'.length))
+      : isRelativeSrc(src) ? normalizePath(folder ? `${folder}/${src}` : src) : null
+    if (path && !path.split('/').some(part => part.startsWith('.') || /[\\\0]/.test(part)) && /(?:^|\/)assets\/[^/]+$/.test(path) && extOf(path)) out.add(path)
   }
   return out
 }

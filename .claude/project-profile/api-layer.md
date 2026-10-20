@@ -24,6 +24,8 @@ export default defineMemoHandler(async (event, store) => store.update(memoIdPara
 - id 는 path param 으로 넣을 때 `encodeURIComponent` (`p:` 경로 id 에 `/` 가 있다)
 
 ## Auth
+
+탐색·이력(2026-10-21): `GET /api/navigation`, `POST /api/navigation/open`, `PUT /api/navigation/favorite`는 단일 owner의 ID 목록을 숨김 파일에 저장한다. 메모 이력은 `/api/memos/:id/history` 목록·`:revision` 상세·`:revision/restore` POST(`baseVersion`)이며 기존 인증/충돌 경계를 따른다. 숨김 이력은 공개 API/이미지 응답에서 제외한다. 공용 타입은 `memo-navigation.ts`, `memo-history.ts`. SSOT §3.3.1/§9.1.
 - Token storage: nuxt-auth-utils 봉인 쿠키 `memo-session` (httpOnly, 30일 절대 만료, `secure` 는 운영만)
 - 서버: `server/middleware/auth.ts` — `/api/*` 전부 로그인 필요. 예외 `/api/auth/login`, `/api/health`, `/api/_auth/*`, `/api/_nuxt_icon/*`
 - 화면: `app/middleware/auth.global.ts`
@@ -48,3 +50,7 @@ export default defineMemoHandler(async (event, store) => store.update(memoIdPara
 - 앱이 자기 OAuth 인증 서버: `server/oauth/{client,grants}.ts`(Nuxt 없이 Vitest), 찾기 문서는 `server/middleware/oauth-discovery.ts`.
   CIMD 만, 허용 출처 `runtimeConfig.mcp.clientOrigins`(기본 https://claude.ai), PKCE S256, 접근 1h·갱신 60일 회전, `<dataDir>/oauth/`.
 - 🔴 응답 헤더 값은 ASCII 만 (WWW-Authenticate 에 한국어 → 500). 설계문서 §11.1.
+
+## 목차·링크·템플릿 (2026-10-21)
+- 목차/접기는 API·저장 형식을 추가하지 않는다. ID 링크는 `shared/utils/memo-links.ts`, 백링크 타입은 `shared/types/memo-links.ts`; 인증된 GET `/api/memos/:id/backlinks`와 POST `link-target`를 추가한다. p: 승격은 navigation→store 잠금 순서로 ID 이전을 직렬화한다.
+- `shared/types/memo-templates.ts`, GET/POST `/api/templates`, GET/PATCH/DELETE `/:id`, POST `/:id/memos`. POST 저장·생성은201. `baseVersion`은 기존32hex. `MemoStore`의 배타 큐에서 `.templates`와 이미지 복사를 처리한다. SSOT §3.3.2~4.

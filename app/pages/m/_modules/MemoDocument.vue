@@ -15,6 +15,7 @@ import { toDisplaySrc, toOriginalSrc, toStoredSrc } from '#shared/utils/asset-pa
 import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS, sameTags, TAG_DELIMITER } from '#shared/utils/tags'
 import { emojiItems } from '~/utils/editor-emoji'
 import { memoExtensions } from '~/utils/editor-extensions'
+import { MemoOutlineExtension } from '~/utils/memo-outline'
 import { type MemoDraft, removeDraft } from '~/utils/memo-drafts'
 import { ImageUpload } from './editor/ImageUploadExtension'
 import { blockHandleOptions, blockHandleUi } from './editor/drag-handle-options'
@@ -33,6 +34,9 @@ import LinkPopover from './editor/LinkPopover.vue'
 import MemoActions from './MemoActions.vue'
 import MemoCalendarSyncBadge from './MemoCalendarSyncBadge.vue'
 import MemoSaveStatus from './MemoSaveStatus.vue'
+import MemoOutline from './MemoOutline.vue'
+import MemoBacklinks from './MemoBacklinks.vue'
+import MemoLinkSuggestions from './MemoLinkSuggestions.vue'
 import { canonicalMarkdown, shouldSaveMarkdown, type SaveState, useMemoAutosave } from './useMemoAutosave'
 import { useMemoImages } from './useMemoImages'
 import { useNativeBridge } from './useNativeBridge'
@@ -49,7 +53,7 @@ const props = defineProps<{ memoId: string }>()
 const emit = defineEmits<{ renamed: [from: string, to: string] }>()
 
 const toast = useToast()
-const { refresh: refreshTree } = useMemoTree()
+const { tree, refresh: refreshTree } = useMemoTree()
 const activeMemo = useActiveMemo()
 const mobileMenu = useMobileMenuNavigation()
 const startup = useStartupLoading()
@@ -58,6 +62,7 @@ const openingMemoId = props.memoId
 const menuSequence = mobileMenu.pending.value?.memoId === openingMemoId ? mobileMenu.pending.value.sequence : null
 const calendarSync = useCalendarSyncStatus()
 const todo = useTodo()
+const navigation = useMemoNavigation()
 
 const { data: memo, error } = await useAsyncData(
   /*
@@ -85,6 +90,8 @@ const date = ref(memo.value?.date ?? null)
 const dateEnd = ref(memo.value?.dateEnd ?? null)
 const tags = ref<string[]>(memo.value?.tags ?? [])
 const currentFolder = ref(memo.value?.folder ?? '')
+const liveMemoId = ref(memo.value?.id ?? props.memoId)
+const referenceTitles = computed(() => tree.value ? new Map(tree.value.memos.filter(item => !item.unreadable).map(item => [item.id, item.title || '제목 없음'])) : null)
 const selectedNode = ref<{ node: JSONContent | null; pos: number }>()
 const blockMoveActive = ref(false)
 const linkOpen = ref(false)
@@ -134,7 +141,12 @@ const extensions = memoExtensions(
     toDisplay: (src: string) => toDisplaySrc(folder, src),
     toStored: (src: string) => toStoredSrc(folder, src),
   },
-  [ImageUpload.configure({ upload: uploadImage })],
+  [ImageUpload.configure({ upload: uploadImage }), MemoOutlineExtension],
+  {
+    interactive: true,
+    title: (id, fallback) => referenceTitles.value ? (referenceTitles.value.get(id) ?? '삭제되었거나 열 수 없는 메모') : fallback,
+    onOpen: (id) => { void navigateTo(memoPath(id)) },
+  },
 )
 const editorProps = {
   attributes: { autocorrect: 'on', autocapitalize: 'off' },
@@ -151,6 +163,7 @@ onMounted(() => {
   rootRef.value?.closest('[data-slot="body"]')?.scrollTo({ top: 0 })
   document.addEventListener('visibilitychange', onVisibility)
   attachBridge()
+  if (!error.value && memo.value && !memo.value.unreadable) void navigation.recordOpened(memo.value.id)
   if (error.value || !memo.value || !autosave) startup.memoReady(openingMemoId)
   void calendarSync.refresh()
   if (restoredDraft) {
@@ -216,6 +229,7 @@ function onVisibility() {
 
 function onSaved(saved: Memo, previous: Memo) {
   currentFolder.value = saved.folder
+  liveMemoId.value = saved.id
   // 사이드바가 쓰는 것(제목·경로·날짜·태그)이 바뀌었을 때만 트리를 다시 받는다
   if (
     saved.title !== previous.title ||
@@ -227,7 +241,10 @@ function onSaved(saved: Memo, previous: Memo) {
   }
   // 캘린더에 보이는 것(제목·날짜)이 바뀌었으면 서버의 대조가 끝난 뒤 반영 실패 여부를 다시 본다
   if (saved.title !== previous.title || saved.date !== previous.date || saved.dateEnd !== previous.dateEnd) calendarSync.recheckSoon()
-  if (saved.id !== previous.id) emit('renamed', previous.id, saved.id)
+  if (saved.id !== previous.id) {
+    void navigation.recordOpened(saved.id, previous.id)
+    emit('renamed', previous.id, saved.id)
+  }
 }
 
 let baseline: string | null = null
@@ -418,7 +435,8 @@ function showTableBubble({ editor, view, state }: MenuContext) {
       </Teleport>
       <Teleport to="#app-header-actions" defer>
         <MemoSaveStatus :state="saveState" @retry="autosave.save()" />
-        <MemoActions v-if="!blockMoveActive" :memo-id="autosave.currentId" :title="() => savedTitle" :folder="currentFolder" />
+        <MemoOutline :editor="editor" :disabled="blockMoveActive" />
+        <MemoActions v-if="!blockMoveActive" :memo-id="autosave.currentId" :version="autosave.currentVersion" :flush="flushAll" :title="() => savedTitle" :folder="currentFolder" />
       </Teleport>
 
       <MobileBlockMove
@@ -586,6 +604,7 @@ function showTableBubble({ editor, view, state }: MenuContext) {
       </UEditorDragHandle>
 
       <LinkDialog v-model:open="linkOpen" :editor="editor" />
+      <MemoLinkSuggestions :editor="editor" :flush="flushAll" :memo-id="autosave.currentId" :folder="() => currentFolder" :disabled="blockMoveActive || memo.unreadable" />
 
       <!-- 원본 보기 — 확대가 막혀 있으니 「원래 크기」로 놓고 밀어서 본다 -->
       <UModal
@@ -634,5 +653,6 @@ function showTableBubble({ editor, view, state }: MenuContext) {
         </template>
       </UModal>
     </UEditor>
+    <MemoBacklinks v-if="memo && !error && !memo.unreadable" :memo-id="liveMemoId" />
   </div>
 </template>

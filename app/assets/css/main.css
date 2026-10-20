@@ -82,3 +82,17 @@
 :where(*) {
   touch-action: manipulation;
 }
+
+/* 접기는 화면 decoration만 바꾼다. 저장/복사하는 문서에는 이 class가 들어가지 않는다. */
+.tiptap .memo-outline-hidden {
+  display: none !important;
+}
+.tiptap :is(h1, h2, h3, h4, h5, h6) {
+  scroll-margin-top: 1rem;
+}
+.tiptap .memo-reference {
+  color: var(--ui-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}

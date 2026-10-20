@@ -6,6 +6,8 @@ import Underline from '@tiptap/extension-underline'
 import { CodeBlockShiki } from 'tiptap-extension-code-block-shiki'
 import { MemoEmoji } from './editor-emoji'
 import { memoTableKit } from './editor-table'
+import { MemoReference } from './memo-reference'
+import type { MemoReferenceOptions } from './memo-reference'
 
 /**
  * 밑줄 — 마크다운에는 `<u>text</u>` 로 쓴다.
@@ -76,7 +78,7 @@ export const MemoImage = Image.extend<MemoImageOptions>({
  * 메모 본문을 읽고 그리는 확장 — 편집기(MemoDocument)와 외부 공개 화면(/ext)이 같은 것을 쓴다. 둘이 다르면 같은 마크다운이
  * 다르게 보인다. editOnly 는 편집기만 쓰는 것(이미지 올리기 자리표시)이고, 원래 순서대로 이미지 앞에 둔다.
  */
-export function memoExtensions(image: Pick<MemoImageOptions, 'toDisplay' | 'toStored'>, editOnly: AnyExtension[] = []): AnyExtension[] {
+export function memoExtensions(image: Pick<MemoImageOptions, 'toDisplay' | 'toStored'>, editOnly: AnyExtension[] = [], reference: Partial<MemoReferenceOptions> = {}): AnyExtension[] {
   return [
     HtmlUnderline,
     TaskList,
@@ -90,6 +92,7 @@ export function memoExtensions(image: Pick<MemoImageOptions, 'toDisplay' | 'toSt
       themes: { light: 'material-theme-lighter', dark: 'material-theme-palenight' },
     }),
     MemoEmoji,
+    MemoReference.configure(reference),
     ...editOnly,
     MemoImage.configure(image),
   ]

@@ -29,3 +29,7 @@
 - `.dockerignore` 를 적용한 컨텍스트에서 install·build, `.output` 만 둔 폴더(node_modules 없음)에서 운영 모드 API 스모크 13/13.
 - base64 키 경로: 존재하지 않는 캘린더로 띄워 구글 인증 통과 → 404 확인 (실제 캘린더 미접촉).
 - 이미지 빌드 자체는 맥에서 못 돌렸다(Docker 데몬 꺼짐) — 첫 배포 때 서버에서 처음 빌드된다.
+
+## PR 검증·배포 버전 (2026-10-21)
+- `Deploy` workflow는 main 대상 PR에서도 verify(typecheck/test/build)만 수행한다. deploy job은 PR 이벤트를 제외한 main에만 실행한다. PR별 동시성 그룹과 main 배포 그룹을 분리한다.
+- main Actions 이미지에는 OCI `org.opencontainers.image.revision=$GITHUB_SHA` 라벨을 넣어 실행 중 컨테이너 이미지가 머지 버전인지 확인한다. 로컬 배포 스크립트는 기존 동작을 유지한다.

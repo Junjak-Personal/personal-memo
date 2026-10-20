@@ -73,6 +73,7 @@ Lifecycle: active/{planning,processing}/ · complete/ · reference/ · deprecate
 - 2026-10-16: AI 연결(MCP + OAuth 인증 서버, `/mcp`, `/ai`, `server/oauth/`, `server/mcp/`) — 설계문서 §11.1
 
 ## 최근 구현 기록
+- [2026-10-20 에이전트 HTML 표 병합 보존](../../_docs/complete/implementation/2026-10-20-html-table-spans.md): VERIFY_PASS, Markdown/HTML 저장 유형 분리·병합 해제 후 HTML 유지. Chrome 13개·전체 326개·타입/빌드 통과. iOS·복잡한 HTML·실제 MCP QA 3항목 pending. 다크 개발 화면에서 두 표 스타일 비교 후 사용자 승인으로 Actions 배포 진행.
 - [2026-10-20 모바일 블록 선택·스크롤 회귀 수정](../../_docs/complete/implementation/2026-10-20-mobile-block-scroll.md): 컨트롤 선택 차단·본문과 같은 콘텐츠 좌표, 31파일 306개·타입검사·빌드 통과. 390px 긴 문서 스크롤/목록/추가/방향키 이동·undo 확인. iPhone 실기기 터치 QA pending. 사용자 「ㅇ 배포」 승인으로 기존 Actions 배포 진행.
 - [2026-10-19~20 블록 이동 모달 제거·왼쪽 +/손잡이·아이콘 통일](../../_docs/complete/implementation/2026-10-19-mobile-block-move-refinement.md): 자동 VERIFY_PASS, 31파일 304개·타입검사·빌드 통과. Mac 잠금 해제 후 개발 화면·블록 추가·popup/sidebar 확인. 실기기 drag QA 등 3항목 pending. 10/20 사용자 승인으로 기존 Actions 배포 진행.
 - [2026-10-19 모바일 블록 이동·PC hover 손잡이](../../_docs/complete/implementation/2026-10-19-mobile-block-move.md): VERIFY_PASS, 31파일 297개·타입검사·빌드 통과, 400px 개발 스모크·UI 보정. 실기기 QA 4항목 pending.

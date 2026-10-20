@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>메모 HTML 표 회귀 검사</title>
+  <style>
+    body { margin: 2rem auto; padding: 0 1rem; max-width: 64rem; font: 16px/1.5 system-ui; color: #222; background: #fafafa }
+    button { font: inherit; padding: .6rem 1rem }
+    li[data-result="pass"] { color: #11642c } li[data-result="fail"] { color: #a01515 }
+    table { border-collapse: collapse; margin: 1rem 0 } th, td { border: 1px solid #777; padding: .5rem; vertical-align: top }
+    #working { display: none } #preview { background: white; padding: 1rem; border: 1px solid #ccc }
+  </style>
+</head>
+<body>
+  <h1>메모 HTML 표 회귀 검사</h1>
+  <p>실제 에디터와 임시 MemoStore로 검사합니다. 운영 메모·인증·캘린더에는 연결하지 않습니다.</p>
+  <button id="run" type="button">회귀 검사 실행</button>
+  <p id="status" role="status" data-state="idle">실행 대기</p>
+  <ol id="results"></ol>
+  <h2>마지막 재조회 결과 · 읽기 전용</h2>
+  <div id="preview"></div>
+  <div id="working"></div>
+  <script type="module" src="/regression.ts"></script>
+</body>
+</html>

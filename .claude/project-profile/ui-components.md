@@ -20,6 +20,7 @@
 - 안전 여백: `env(safe-area-inset-*)` (dashboardPanel body·사이드바 footer)
 
 ## Common Patterns
+- 표 저장 유형(2026-10-20): `memoTableKit()`은 같은 table schema의 `memoTableFormat`으로 markdown/html을 구분한다. GFM 출력은 기존 그대로, HTML은 `data-memo-table="html"`과 span을 저장해 병합 해제 후에도 HTML 유지. 공통 확장이어서 편집/외부 보기 동일. 사람용 표 UI·병합 버튼은 변경 없음. 1~1000 정수 span, 스키마 serializer·선택적 형식 비교 유지. `editor-table.ts`, `canonical-table-html.ts`.
 - 버튼: 배경이나 테두리가 반드시 있다. 헤더·툴바 = 아이콘 ghost, 섹션 = outline, 모달 하단 = 취소(outline) > 확인(default), 위험 = error
 - 모달: `UModal` + `#body` + `#footer`(오른쪽 정렬)
 - 실패·경고 안내: `UAlert` (subtle) + actions, 짧은 결과는 `useToast()`

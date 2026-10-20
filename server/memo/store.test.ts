@@ -83,6 +83,18 @@ describe('생성·수정', () => {
     expect(m.title).toBe('a/b\\c')
   })
 
+  it('에이전트의 병합 HTML 표는 저장·재조회·다시 저장에서 그대로 유지한다', async () => {
+    const html = '<table><tr><th colspan="2">오늘 요약</th></tr><tr><td rowspan="2">개발</td><td>수정</td></tr><tr><td>검토</td></tr></table>'
+    const memo = await store.create({ ...input('합성 표', html), folder: '' })
+    const loaded = await store.get(memo.id)
+    expect(loaded.content.trim()).toBe(html)
+    const edited = `${loaded.content.trim()}\n\n관련 없는 문단 수정`
+    await store.update(loaded.id, { ...input('합성 표', edited), baseVersion: loaded.version })
+    const reloaded = await store.get(loaded.id)
+    expect(reloaded.content.trim()).toBe(edited)
+    expect(await readFile(memos(reloaded.path), 'utf8')).toContain(html)
+  })
+
   it('frontmatter 의 모르는 키와 주석을 지우지 않는다', async () => {
     await externalWrite(
       '외부.md',

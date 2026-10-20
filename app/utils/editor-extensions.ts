@@ -2,10 +2,10 @@ import type { AnyExtension } from '@tiptap/core'
 import Image from '@tiptap/extension-image'
 import type { ImageOptions } from '@tiptap/extension-image'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
-import { TableKit } from '@tiptap/extension-table'
 import Underline from '@tiptap/extension-underline'
 import { CodeBlockShiki } from 'tiptap-extension-code-block-shiki'
 import { MemoEmoji } from './editor-emoji'
+import { memoTableKit } from './editor-table'
 
 /**
  * 밑줄 — 마크다운에는 `<u>text</u>` 로 쓴다.
@@ -84,7 +84,7 @@ export function memoExtensions(image: Pick<MemoImageOptions, 'toDisplay' | 'toSt
       nested: true,
       a11y: { checkboxLabel: (node, checked) => `${checked ? '완료' : '할 일'}: ${node.textContent || '빈 항목'}` },
     }),
-    TableKit,
+    memoTableKit(),
     CodeBlockShiki.configure({
       defaultTheme: 'material-theme',
       themes: { light: 'material-theme-lighter', dark: 'material-theme-palenight' },

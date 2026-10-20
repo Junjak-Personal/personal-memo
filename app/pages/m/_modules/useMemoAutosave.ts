@@ -12,6 +12,7 @@
  * watch 로 입력을 따라가지 않는다 — 화면이 changed() 를 직접 부른다.
  */
 import type { Memo, MemoInput } from '#shared/types/memo'
+import { canonicalHtmlTables } from '~/utils/canonical-table-html'
 import { isNetworkError, type MemoDraft, readDraft, removeDraft, writeDraft } from '~/utils/memo-drafts'
 
 export type SaveState =
@@ -38,7 +39,7 @@ const OFFLINE_RETRY_MS = 30_000
  *    뜻이 깨진다 — 그게 이 검사가 잡으려는 바로 그 손실이다.
  */
 export function canonicalMarkdown(markdown: string) {
-  return markdown
+  return canonicalHtmlTables(markdown)
     .split('\n')
     .map((line) => {
       const spaced = line.replace(/[ \t]+/g, ' ').trimEnd()

@@ -216,5 +216,5 @@ export function useMemoAutosave(options: Options) {
     return readDraft(id)
   }
 
-  return { state, changed, save, flush, reload, overwrite, acceptFormat, pendingDraft, currentId: () => id }
+  return { state, changed, save, flush, reload, overwrite, acceptFormat, pendingDraft, currentId: () => id, currentVersion: () => version }
 }

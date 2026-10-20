@@ -14,6 +14,13 @@ export default defineNitroPlugin((nitroApp) => {
     } catch (e) {
       console.error('[trash-purge] 실패', e)
     }
+    // 별도 try로 두어 한 정리 실패가 다른 정리를 막지 않게 한다. 새 타이머는 만들지 않는다.
+    try {
+      const revisions = await (await useMemoStore()).purgeHistory()
+      if (revisions) console.info(`[history-purge] 보관 기간이 지난 수정 이력 ${revisions}개를 지웠습니다`)
+    } catch (e) {
+      console.error('[history-purge] 실패', e)
+    }
   }
   const first = setTimeout(() => void purge(), START_DELAY_MS)
   const timer = setInterval(() => void purge(), INTERVAL_MS)

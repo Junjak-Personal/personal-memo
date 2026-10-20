@@ -7,8 +7,11 @@
 import type { PublicMemo } from '#shared/types/memo'
 import { isRelativeSrc } from '#shared/utils/asset-path'
 import { memoExtensions } from '~/utils/editor-extensions'
+import { disablePublicMemoLinks, preventPublicMemoLink } from '~/utils/public-memo-links'
 
 const props = defineProps<{ memoId: string }>()
+const publicRoot = useTemplateRef<HTMLElement>('publicRoot')
+let linkObserver: MutationObserver | null = null
 
 const { data: memo, error } = await useAsyncData(`ext-${props.memoId}`, () => $fetch<PublicMemo>(`/api/ext/${encodeURIComponent(props.memoId)}`))
 
@@ -22,6 +25,15 @@ const updatedLabel = computed(() =>
   memo.value?.updated ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', timeZone: 'Asia/Seoul' }).format(new Date(memo.value.updated)) : null,
 )
 
+onMounted(() => {
+  const root = publicRoot.value
+  if (!root) return
+  disablePublicMemoLinks(root)
+  linkObserver = new MutationObserver(() => disablePublicMemoLinks(root))
+  linkObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['href'] })
+})
+onBeforeUnmount(() => linkObserver?.disconnect())
+
 useHead({
   title: () => memo.value?.title || '메모',
   meta: [
@@ -32,7 +44,7 @@ useHead({
 </script>
 
 <template>
-  <main class="min-h-dvh bg-default">
+  <main ref="publicRoot" class="min-h-dvh bg-default" @click.capture="preventPublicMemoLink" @keydown.capture="preventPublicMemoLink">
     <div v-if="error || !memo" class="flex min-h-dvh flex-col items-center justify-center gap-3 px-4 text-center" data-testid="ext-missing">
       <UIcon name="i-material-symbols-lock-outline" class="size-10 text-dimmed" />
       <p class="text-muted">

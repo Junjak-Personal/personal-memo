@@ -20,6 +20,9 @@
 - 안전 여백: `env(safe-area-inset-*)` (dashboardPanel body·사이드바 footer)
 
 ## Common Patterns
+
+- 빠른 탐색(2026-10-21): MemoQuickSwitch를 Sidebar 바깥 sibling modal로 한 번 장착한다. 검색 옆 버튼/⌘K·Ctrl+K, 즐겨찾기·최근·기존 검색과↑↓/Enter/Esc/IME. PC shortcut은 capture에서 한 번 처리해 editor 링크 단축키와 중복되지 않는다. 최근 정상 mounted 문서만 기록한다.
+- 수정 이력(2026-10-21): MemoActions→MemoHistoryDialog. 시간/제목 목록과 escape된 원문 preview, 명시 확인 후 복원. 409는 현재 메모 재조회 선택 제공. 실제 PC/iPhone 화면 QA는 구현 archive의 pending5개를 따른다.
 - 첫 실행 splash(2026-10-20): app/spa-loading-template.html(body 밖 loader) → StartupSplash.vue. Memo 책·펜 로고48px/글자28px, 시스템 색/동작 줄이기. 페이지·tree·메모 에디터 실제 준비 뒤 제거, SPA 이동 중 재표시 없음. 기존 설치 앱은 새 채널 없이 웹 표식을 사용한다. native 별도 MemoStartup 채널/current state probe·assets/memo-logo.png 등록은 후속 로컬 작업이며 웹 배포 커밋에서 제외했다.
 - 표 내용 폭(2026-10-20): PC/모바일 공통 `width:max-content` + `table-layout:auto`로 실제 글꼴/내용에 열을 맞춘다. 임의 최소 폭·문서 폭 채우기 없음. th/td white-space:pre로 자동 개행 없이 직접 개행 유지. 넓은 표만 기존 tableWrapper 안 가로 스크롤. 원문/스키마 변경 없음.
 - 모바일 손잡이 터치 예외(2026-10-20): 전역 main.css touch-action은 비레이어이므로 Tailwind touch-none만으로는 이기지 못한다. `.mobile-block-move-handle`의 비레이어 `touch-action: none`으로 드래그→스크롤 인계(pointercancel)를 막는다. 드래그 아이콘은 translate 없이 44px 버튼 정중앙, +만 기존 translate-x-2 유지.
@@ -37,3 +40,8 @@
 - 애니메이션: 사이드바 폭 전환, 페이지 페이드, `prefers-reduced-motion` 존중
 - 모바일 메뉴 이동(2026-10-19): 자동 route watch 닫힘 대신 목적 화면 준비를 기다린 뒤 slide-out. 메뉴 뒤 페이지는 fade 0ms, 일반 탐색은 기존 fade 유지.
 - 🔴 dev 서버가 떠 있는 동안 새 폴더를 만들면 그 안의 Tailwind 클래스가 빠질 수 있다 → `touch app/assets/css/main.css`
+
+## 목차·링크·내 템플릿 (2026-10-21)
+- `MemoOutline` 헤더 팝오버: 단계별 목차·이동·접기, 모바일44px 컨트롤. 블록 모드는 펼친 후 비활성화.
+- `MemoLinkSuggestions`: `[[` caret 팝오버·기존 메모 선택/명시 생성·폴더 구분·키보드/IME. `MemoBacklinks`는 editor 밖 문서 하단 목록이다. 공개 `ExtMemo`는 내부 href 제거와 이벤트 경계를 적용한다.
+- `MemoActions`→`MemoSaveTemplateDialog`; Sidebar 더보기→`MemoTemplatesDialog`. 관리창 원문은 escaped pre이며 이름 변경·삭제 확인·root 포함 폴더 선택·새 메모 생성/생성 후 이동 오류를 처리한다. 실제 PC/iPhone 화면은 별도 미검증이다.

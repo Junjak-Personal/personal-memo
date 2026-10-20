@@ -8,9 +8,13 @@
  * 삭제는 휴지통으로 옮기는 것이라 확인창 대신 「되돌리기」 알림을 준다.
  */
 import type { DropdownMenuItem } from '@nuxt/ui'
+import MemoHistoryDialog from './MemoHistoryDialog.vue'
+import MemoSaveTemplateDialog from './MemoSaveTemplateDialog.vue'
 
 const props = defineProps<{
   memoId: () => string
+  version: () => string
+  flush: () => Promise<boolean>
   title: () => string
   folder: string
 }>()
@@ -21,6 +25,9 @@ const activeMemo = useActiveMemo()
 const queue = useStructureQueue()
 const todo = useTodo()
 const share = usePublicMemo()
+const navigation = useMemoNavigation()
+const historyDialog = useTemplateRef<{ show: () => Promise<void> }>('historyDialog')
+const saveTemplateDialog = useTemplateRef<{ show: () => void }>('saveTemplateDialog')
 
 const moveOpen = ref(false)
 const removing = ref(false)
@@ -30,6 +37,11 @@ const done = computed(() => todo.find(props.memoId())?.done ?? null)
 const isPublic = computed(() => share.isPublic(props.memoId()))
 
 const items = computed<DropdownMenuItem[][]>(() => [
+  [
+    { label: navigation.isFavorite(props.memoId()) ? '즐겨찾기 해제' : '즐겨찾기에 추가', icon: navigation.isFavorite(props.memoId()) ? 'i-material-symbols-star' : 'i-material-symbols-star-outline', disabled: navigation.pending.value, onSelect: toggleFavorite },
+    { label: '수정 이력', icon: 'i-material-symbols-history', onSelect: () => void historyDialog.value?.show() },
+    { label: '템플릿으로 저장', icon: 'i-material-symbols-note-stack-add-outline', onSelect: () => saveTemplateDialog.value?.show() },
+  ],
   [
     done.value === null
       ? { label: '할 일로 두기', icon: 'i-material-symbols-add-task', onSelect: () => void todo.setDone(props.memoId(), false) }
@@ -44,6 +56,12 @@ const items = computed<DropdownMenuItem[][]>(() => [
   [{ label: '폴더 이동', icon: 'i-material-symbols-drive-file-move-outline', onSelect: () => (moveOpen.value = true) }],
   [{ label: '휴지통으로', icon: 'i-material-symbols-delete-outline', color: 'error', onSelect: remove }],
 ])
+
+async function toggleFavorite() {
+  if (!(await navigation.toggleFavorite(props.memoId()))) {
+    toast.add({ color: 'error', title: navigation.error.value ?? '즐겨찾기를 저장하지 못했습니다' })
+  }
+}
 
 function move(folder: string) {
   queue.push({ kind: 'moveMemo', id: props.memoId(), title: props.title(), folder })
@@ -94,4 +112,6 @@ async function remove() {
   </UDropdownMenu>
 
   <FolderPickDialog v-model:open="moveOpen" title="폴더 이동" :current="folder" @pick="move" />
+  <MemoHistoryDialog ref="historyDialog" :memo-id="props.memoId" :version="props.version" :flush="props.flush" />
+  <MemoSaveTemplateDialog ref="saveTemplateDialog" :memo-id="props.memoId" :version="props.version" :flush="props.flush" :title="props.title" />
 </template>

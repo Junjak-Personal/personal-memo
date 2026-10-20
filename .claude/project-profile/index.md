@@ -10,7 +10,7 @@
 ## Quick Summary
 - **Stack**: Nuxt 4.6 (SPA, `ssr: false`) + Nitro + TypeScript 6 + Nuxt UI 4 / Tailwind v4 · 폰 껍데기 Flutter
 - **Package manager**: pnpm 12.6
-- **Test framework**: Vitest 5 (370 tests / 37 files, 2026-10-20 startup 웹 배포 후보) · 브라우저 스모크 수동 확인
+- **Test framework**: Vitest 5 (542 tests / 51 files, 2026-10-21 목차·링크·템플릿 구현) · 브라우저 스모크 수동 확인
 - **State management**: Pinia 없음 — `useState` composable + 모듈 변수
 - **API layer**: 수동 (Nitro 파일 라우트 + `shared/types` 공용 타입), 생성기 없음
 - **CI/CD**: 없음 (배포는 3단계 예정 — pic-blog 의 Dockerfile·deploy.sh·GitHub Actions 복제, 설계문서 §13)
@@ -73,6 +73,8 @@ Lifecycle: active/{planning,processing}/ · complete/ · reference/ · deprecate
 - 2026-10-16: AI 연결(MCP + OAuth 인증 서버, `/mcp`, `/ai`, `server/oauth/`, `server/mcp/`) — 설계문서 §11.1
 
 ## 최근 구현 기록
+- [목차·접기→내부 링크→템플릿](../../_docs/complete/implementation/2026-10-21-outline-links-templates.md): #5/#6/#7 순차 구현. VERIFY_PASS·540개/타입/빌드·격리 HTTP17개 PASS. #3/#4 미커밋 구현 보존, 실제 PC/iPhone QA5개 pending. 커밋·배포·설치 없음.
+- [최근 메모·즐겨찾기와 수정 이력](../../_docs/complete/implementation/2026-10-21-navigation-history.md): 이슈 #3~#7, 1·2번 구현. VERIFY_PASS·434개/타입/빌드·격리 HTTP9개 PASS. 실제 PC/iPhone Deferred QA5개. 미커밋·미배포.
 - [검증 잔여: 메모 책임 분리·공통화](../../_docs/active/processing/2026-10-20-shared-editor-refactor.md): 구현·388개·타입·빌드 PASS. 이미지/휴지통 실제 UI는 브라우저 연결 중단·승인 결과 불명으로 VERIFY_BLOCKED. 기존 native 보존, 커밋·배포·설치 없음.
 - [첫 실행 스플래시·세션 목록 공유](../../_docs/complete/implementation/2026-10-20-startup-loading.md): 웹 369개·타입·빌드 PASS, native 분석/독립9검증 PASS. 초기 로고·editor/복원/딥링크/저장 전환 확인, tree 1회. Flutter runner/실기기 등 QA 3개 pending. 배포·설치 없음.
 - [2026-10-20 표 실제 내용 폭·수동 개행](../../_docs/complete/implementation/2026-10-20-table-content-width.md): PC/모바일 공통 max-content/auto·자동 개행 제거. 실제 Chrome 390px·PC, 긴 표 가로 스크롤·짧은 병합 표·수동 개행 확인. 저장/스키마 변경 없음.

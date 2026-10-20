@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
+import 'startup_loading.dart';
+
 /// 웹앱이 사는 곳. 이 껍데기는 «키보드 위 서식 툴바»만 가져가고 나머지는 전부 웹이 한다.
 ///
 /// 왜 이 앱이 있는가: iOS WKWebView 는 interactive-widget=resizes-content 를 지원하지 않아서
@@ -63,6 +65,9 @@ const kChannel = 'MemoNative';
 /// 공유 시트 보관함 (설계문서 §10.4). 툴바 브리지(kChannel)의 모양을 바꾸지 않으려고 따로 둔다 — 새 정보는 새 창으로.
 /// 웹 → `{type:'pull'}` (꺼내 줘) · `{type:'ack', ids}` (서버에 저장했음)
 const kInboxChannel = 'MemoInbox';
+
+/// 웹/앱 배포 순서가 달라도 기존 툴바·보관함 계약은 바뀌지 않는다.
+const kStartupChannel = 'MemoStartup';
 
 /// 보관함을 들고 있는 네이티브 쪽 (ios/Shared/MemoInbox.swift, App Group)
 const _inbox = MethodChannel('memo/inbox');
@@ -129,6 +134,8 @@ class Shell extends StatefulWidget {
 
 class _ShellState extends State<Shell> with WidgetsBindingObserver {
   late final WebViewController _web;
+  late final StartupLoading _startup;
+  bool _awaitingDocumentStart = true;
 
   /// 에디터에 포커스가 있는가 — 웹이 알려준다
   bool _focused = false;
@@ -144,6 +151,11 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _startup = StartupLoading(
+      onChanged: () {
+        if (mounted) setState(() {});
+      },
+    )..begin();
     _web = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setOnConsoleMessage((m) => debugPrint('[web] ${m.message}'))
@@ -155,18 +167,31 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
         kInboxChannel,
         onMessageReceived: (m) => _onInboxMessage(m.message),
       )
+      ..addJavaScriptChannel(
+        kStartupChannel,
+        onMessageReceived: (m) => _onStartupMessage(m.message),
+      )
       ..setNavigationDelegate(
         NavigationDelegate(
           /*
          * 🔴 웹 콘텐츠 프로세스가 죽으면 WKWebView 는 «빈 화면을 그대로 둔다» (pic-blog 와 같은 이유).
          */
           onPageStarted: (_) {
-            if (_loadError != null) setState(() => _loadError = null);
+            if (!mounted) return;
+            _awaitingDocumentStart = false;
+            // SPA 내부 이동은 이 콜백을 부르지 않으므로 편집/자동저장에 관여하지 않는다.
+            setState(() {
+              _loadError = null;
+              _focused = false;
+            });
+            _startup.begin();
           },
+          onPageFinished: (_) => _probeStartup(),
           onWebResourceError: (e) {
+            if (!mounted) return;
             if (e.errorType ==
                 WebResourceErrorType.webContentProcessTerminated) {
-              _web.loadRequest(Uri.parse(kSite));
+              _retry();
               return;
             }
             /*
@@ -175,6 +200,7 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
            *    이미지 하나 못 받은 것 같은 하위 요청 실패는 무시한다.
            */
             if (e.isForMainFrame ?? true) {
+              _startup.fail();
               setState(() => _loadError = '${e.description} (${e.errorCode})');
             }
           },
@@ -186,6 +212,38 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
     final platform = _web.platform;
     if (platform is WebKitWebViewController) {
       platform.setAllowsBackForwardNavigationGestures(false);
+    }
+  }
+
+  void _onStartupMessage(String raw) {
+    try {
+      final message = jsonDecode(raw);
+      if (message is! Map ||
+          (message['type'] != 'ready' && message['type'] != 'error')) {
+        return;
+      }
+    } catch (_) {
+      return;
+    }
+    // 큐에 늦게 도착한 이전 문서의 메시지도 현재 문서 상태로 다시 확인한다.
+    _probeStartup();
+  }
+
+  Future<void> _probeStartup() async {
+    if (!mounted || _awaitingDocumentStart || !_startup.visible) return;
+    final generation = _startup.generation;
+    try {
+      final result = await _web.runJavaScriptReturningResult(
+        'window.memoStartup && window.memoStartup.failed === true ? 2 : '
+        '(window.memoStartup && window.memoStartup.ready === true ? 1 : 0)',
+      );
+      if (!mounted) return;
+      _startup.acceptProbe(result, generation);
+      if (_startup.phase == StartupPhase.failed && _loadError == null) {
+        setState(() => _loadError = '첫 화면을 준비하는 중 오류가 발생했습니다.');
+      }
+    } catch (_) {
+      // 문서 교체 중에는 JS 실행이 실패할 수 있다. 다음 ready/완료 콜백이나 안내를 기다린다.
     }
   }
 
@@ -208,6 +266,7 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _startup.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -242,7 +301,9 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
   }
 
   void _retry() {
+    _awaitingDocumentStart = true;
     setState(() => _loadError = null);
+    _startup.begin();
     _web.loadRequest(Uri.parse(kSite));
   }
 
@@ -281,6 +342,13 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
                 child: Stack(
                   children: [
                     WebViewWidget(controller: _web),
+                    if (_startup.visible && _loadError == null)
+                      _StartupLoadingView(
+                        palette: palette,
+                        slow: _startup.phase == StartupPhase.slow,
+                        onRetry: _retry,
+                        onReveal: _startup.reveal,
+                      ),
                     if (_loadError != null)
                       _LoadError(
                         palette: palette,
@@ -428,6 +496,77 @@ class _Toolbar extends StatelessWidget {
   }
 }
 
+/// 웹뷰가 화면을 준비할 동안 네트워크 이미지 없이 바로 그릴 수 있는 표식을 둔다.
+class _StartupLoadingView extends StatelessWidget {
+  const _StartupLoadingView({
+    required this.palette,
+    required this.slow,
+    required this.onRetry,
+    required this.onReveal,
+  });
+
+  final Palette palette;
+  final bool slow;
+  final VoidCallback onRetry;
+  final VoidCallback onReveal;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    color: palette.ground,
+    alignment: Alignment.center,
+    padding: const EdgeInsets.all(32),
+    child: Semantics(
+      liveRegion: true,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            'assets/memo-logo.png',
+            width: 48,
+            height: 48,
+            excludeFromSemantics: true,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'memo',
+            style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 24),
+          if (!slow)
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: MediaQuery.disableAnimationsOf(context)
+                  ? Icon(Icons.more_horiz, size: 18, color: palette.muted)
+                  : CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: palette.muted,
+                    ),
+            ),
+          const SizedBox(height: 12),
+          Text(
+            slow ? '화면 준비가 평소보다 오래 걸리고 있습니다' : '메모를 준비하고 있어요',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: palette.muted),
+          ),
+          if (slow) ...[
+            const SizedBox(height: 8),
+            Text(
+              '다시 시도하거나 현재 웹 화면을 확인할 수 있습니다.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: palette.muted),
+            ),
+            const SizedBox(height: 20),
+            FilledButton(onPressed: onRetry, child: const Text('다시 시도')),
+            const SizedBox(height: 8),
+            OutlinedButton(onPressed: onReveal, child: const Text('웹 화면 보기')),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
 /// 첫 페이지를 못 불러왔을 때 — 흰 화면 대신 이유와 다시 시도를 보여준다
 class _LoadError extends StatelessWidget {
   const _LoadError({
@@ -451,7 +590,7 @@ class _LoadError extends StatelessWidget {
         Icon(Icons.cloud_off_outlined, size: 40, color: palette.muted),
         const SizedBox(height: 12),
         const Text(
-          '메모 서버에 연결하지 못했습니다',
+          '메모를 불러오지 못했습니다',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 6),

@@ -73,6 +73,7 @@ Lifecycle: active/{planning,processing}/ · complete/ · reference/ · deprecate
 - 2026-10-16: AI 연결(MCP + OAuth 인증 서버, `/mcp`, `/ai`, `server/oauth/`, `server/mcp/`) — 설계문서 §11.1
 
 ## 최근 구현 기록
+- [검증 잔여: 메모 책임 분리·공통화](../../_docs/active/processing/2026-10-20-shared-editor-refactor.md): 구현·388개·타입·빌드 PASS. 이미지/휴지통 실제 UI는 브라우저 연결 중단·승인 결과 불명으로 VERIFY_BLOCKED. 기존 native 보존, 커밋·배포·설치 없음.
 - [첫 실행 스플래시·세션 목록 공유](../../_docs/complete/implementation/2026-10-20-startup-loading.md): 웹 369개·타입·빌드 PASS, native 분석/독립9검증 PASS. 초기 로고·editor/복원/딥링크/저장 전환 확인, tree 1회. Flutter runner/실기기 등 QA 3개 pending. 배포·설치 없음.
 - [2026-10-20 표 실제 내용 폭·수동 개행](../../_docs/complete/implementation/2026-10-20-table-content-width.md): PC/모바일 공통 max-content/auto·자동 개행 제거. 실제 Chrome 390px·PC, 긴 표 가로 스크롤·짧은 병합 표·수동 개행 확인. 저장/스키마 변경 없음.
 - [2026-10-20 모바일 터치 드래그 취소·정렬 수정](../../_docs/complete/implementation/2026-10-20-mobile-touch-drag.md): 전역 비레이어 touch-action이 touch-none utility를 덮어 pointercancel되는 문제 재현·수정. 손잡이만 비레이어 none, 아이콘 중앙 정렬. 333개·타입 통과, Chrome 실제 터치 드롭/목록/undo/스크롤 후 이동 확인. iPhone 실기기·가장자리 장시간 유지 QA 남음.

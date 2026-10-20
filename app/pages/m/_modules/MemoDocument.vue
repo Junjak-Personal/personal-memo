@@ -11,11 +11,10 @@ import type { EditorView } from '@tiptap/pm/view'
 import type { Editor, JSONContent } from '@tiptap/vue-3'
 import type { RouteLocationNormalized } from 'vue-router'
 import type { Memo } from '#shared/types/memo'
-import { originalOfDisplay, toDisplaySrc, toOriginalSrc, toStoredSrc } from '#shared/utils/asset-path'
+import { toDisplaySrc, toOriginalSrc, toStoredSrc } from '#shared/utils/asset-path'
 import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS, sameTags, TAG_DELIMITER } from '#shared/utils/tags'
 import { emojiItems } from '~/utils/editor-emoji'
 import { memoExtensions } from '~/utils/editor-extensions'
-import { prepareImage, type PreparedImage } from '~/utils/image-resize'
 import { type MemoDraft, removeDraft } from '~/utils/memo-drafts'
 import { ImageUpload } from './editor/ImageUploadExtension'
 import { blockHandleOptions, blockHandleUi } from './editor/drag-handle-options'
@@ -35,6 +34,7 @@ import MemoActions from './MemoActions.vue'
 import MemoCalendarSyncBadge from './MemoCalendarSyncBadge.vue'
 import MemoSaveStatus from './MemoSaveStatus.vue'
 import { canonicalMarkdown, shouldSaveMarkdown, type SaveState, useMemoAutosave } from './useMemoAutosave'
+import { useMemoImages } from './useMemoImages'
 import { useNativeBridge } from './useNativeBridge'
 
 interface MenuContext {
@@ -107,6 +107,10 @@ const autosave = memo.value
       onSaved,
     })
   : null
+const { uploadImage, insertImageFiles, onPaste } = useMemoImages({
+  getEditor: () => editorRef.value?.editor,
+  currentMemoId: () => autosave?.currentId() ?? props.memoId,
+})
 const bridge = useNativeBridge(() => editorRef.value?.editor, () => (linkOpen.value = true))
 /** 제목을 확정하지 않은 채면 「저장됨」 대신 「고치는 중」 */
 const saveState = computed<SaveState>(() => {
@@ -332,75 +336,6 @@ async function reloadFromServer() {
   tags.value = fresh.tags
 }
 
-/** 브라우저에서 줄여서 이 메모 폴더의 assets/ 로 올린다(줄였으면 원본도). 본문에 넣을 상대경로를 돌려준다 */
-async function uploadImage(file: Blob, name = 'image') {
-  return uploadPrepared(await prepareImage(file), name)
-}
-
-async function uploadPrepared(image: PreparedImage, name = 'image') {
-  const body = new FormData()
-  body.append('file', image.display, name)
-  if (image.original) body.append('original', image.original, name)
-  const id = autosave?.currentId() ?? props.memoId
-  const { src } = await $fetch<{ src: string }>(`/api/memos/${encodeURIComponent(id)}/images`, { method: 'POST', body })
-  if (image.originalSkipped) {
-    toast.add({
-      color: 'warning',
-      title: '줄인 이미지만 저장했습니다',
-      description: image.originalSkipped === 'size' ? '원본이 30MB 를 넘어 보관하지 못했습니다.' : '이 형식(HEIC 등)은 원본을 보관하지 못합니다.',
-    })
-  }
-  return src
-}
-
-/** 붙여넣기·끌어 놓기로 들어온 이미지 파일. 이미지가 없으면 false — 원래 동작에 맡긴다 */
-function insertImageFiles(files: File[], at?: number) {
-  const images = files.filter((f) => f.type.startsWith('image/'))
-  const editor = editorRef.value?.editor
-  if (!images.length || !editor) return false
-  void (async () => {
-    for (const file of images) {
-      try {
-        const src = await uploadImage(file, file.name)
-        const chain = editor.chain().focus()
-        ;(at === undefined ? chain.setImage({ src }) : chain.insertContentAt(at, { type: 'image', attrs: { src } })).run()
-      } catch (e) {
-        toast.add({ color: 'error', title: apiMessage(e, `「${file.name}」 을 올리지 못했습니다`) })
-      }
-    }
-  })()
-  return true
-}
-
-/**
- * 다른 폴더의 이미지를 붙여넣으면 상대경로로 되돌릴 수 없어 화면 주소(/api/files/…)가 남는다.
- * 그 이미지를 받아 이 메모 폴더에 다시 올리고 src 를 바꾼다 (설계문서 §4 — 이미지는 항상 같은 폴더의 assets/).
- */
-async function rehomeForeignImages(editor: Editor) {
-  const foreign = new Set<string>()
-  editor.state.doc.descendants((node) => {
-    if (node.type.name === 'image' && typeof node.attrs.src === 'string' && node.attrs.src.startsWith('/api/files/')) foreign.add(node.attrs.src)
-  })
-  for (const src of foreign) {
-    try {
-      // 원본을 따로 보관한 이미지면 원본도 같이 옮긴다 — 안 그러면 원래 메모가 이미지를 지울 때 원본이 사라진다
-      const display = await $fetch<Blob>(src, { responseType: 'blob' })
-      const originalSrc = originalOfDisplay(src)
-      const originalRes = originalSrc ? await $fetch.raw<Blob>(originalSrc, { responseType: 'blob' }) : null
-      const original = originalRes?.headers.get('x-memo-original') === 'stored' ? (originalRes._data ?? null) : null
-      const next = await uploadPrepared({ display, original, originalSkipped: null })
-      // 올리는 동안 문서가 바뀌었을 수 있다 — 위치가 아니라 src 로 다시 찾는다
-      editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === 'image' && node.attrs.src === src) {
-          editor.view.dispatch(editor.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: next }))
-        }
-      })
-    } catch (e) {
-      toast.add({ color: 'error', title: apiMessage(e, '다른 폴더의 이미지를 가져오지 못했습니다') })
-    }
-  }
-}
-
 /**
  * 🔴 열 주소는 이 앱의 원본 주소나 http(s) 만 — `![](javascript:…)` 같은 이미지가 내려받기 링크(href)로 새면 스크립트가 돈다
  *    (2026-10-07 보안 검토 지적).
@@ -426,11 +361,6 @@ function pasteMarkdown(event: ClipboardEvent) {
   const text = data.getData('text/plain')
   if (!text || isRichHtml(data.getData('text/html')) || !looksLikeMarkdown(text)) return false
   return editor.chain().focus().insertContent(text, { contentType: 'markdown' }).run()
-}
-
-function onPaste() {
-  const editor = editorRef.value?.editor
-  if (editor) setTimeout(() => rehomeForeignImages(editor))
 }
 
 function onNodeChange(event: { node: JSONContent | null; pos: number }) {

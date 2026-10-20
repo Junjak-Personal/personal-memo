@@ -8,7 +8,6 @@
  * 삭제는 휴지통으로 옮기는 것이라 확인창 대신 「되돌리기」 알림을 준다.
  */
 import type { DropdownMenuItem } from '@nuxt/ui'
-import type { MemoMeta } from '#shared/types/memo'
 
 const props = defineProps<{
   memoId: () => string
@@ -17,7 +16,7 @@ const props = defineProps<{
 }>()
 
 const toast = useToast()
-const { refresh } = useMemoTree()
+const { moveToTrash, notifyMoved } = useMemoTrashActions()
 const activeMemo = useActiveMemo()
 const queue = useStructureQueue()
 const todo = useTodo()
@@ -61,13 +60,8 @@ async function remove() {
   }
   removing.value = true
   try {
-    // 휴지통 안의 실제 경로 — 같은 이름이 이미 있으면 (2) 가 붙어 원래 경로와 다르다
-    const { trashPath } = await $fetch<{ trashPath: string }>(`/api/memos/${encodeURIComponent(props.memoId())}`, { method: 'DELETE' })
-    await refresh()
-    toast.add({
-      title: '휴지통으로 옮겼습니다',
-      actions: [{ label: '되돌리기', color: 'neutral', variant: 'outline', onClick: () => void restore(trashPath) }],
-    })
+    const trashPath = await moveToTrash(props.memoId())
+    notifyMoved(trashPath)
     await navigateTo('/')
   } catch (e) {
     toast.add({ color: 'error', title: apiMessage(e, '지우지 못했습니다') })
@@ -76,15 +70,6 @@ async function remove() {
   }
 }
 
-async function restore(trashPath: string) {
-  try {
-    const restored = await $fetch<MemoMeta>('/api/trash/restore', { method: 'POST', body: { path: trashPath } })
-    await refresh()
-    await navigateTo(memoPath(restored.id))
-  } catch (e) {
-    toast.add({ color: 'error', title: apiMessage(e, '되돌리지 못했습니다'), description: '휴지통 화면에서 복원하세요.' })
-  }
-}
 </script>
 
 <template>

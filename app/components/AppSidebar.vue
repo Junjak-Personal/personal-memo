@@ -26,6 +26,7 @@ const { clear: clearSession } = useUserSession()
 const toast = useToast()
 
 const { tree, error: treeError, ensure, refresh, setFolderOrder } = useMemoTree()
+const { moveToTrash, notifyMoved } = useMemoTrashActions()
 const { creating, createMemo } = useCreateMemo()
 const queue = useStructureQueue()
 const folders = useFolderActions({ onRelocated: relocate })
@@ -401,28 +402,14 @@ async function removeMemo(id: string) {
       toast.add({ color: 'error', title: '저장하지 못해서 지우지 않았습니다', description: '저장 상태를 먼저 확인하세요.' })
       return
     }
-    const { trashPath } = await $fetch<{ trashPath: string }>(`/api/memos/${encodeURIComponent(id)}`, { method: 'DELETE' })
-    await refresh()
+    const trashPath = await moveToTrash(id)
     sidebarOpen.value = false
-    toast.add({
-      title: '휴지통으로 옮겼습니다',
-      actions: [{ label: '되돌리기', color: 'neutral', variant: 'outline', onClick: () => void restoreMemo(trashPath) }],
-    })
+    notifyMoved(trashPath)
     if (currentId.value === id) await navigateTo('/')
   } catch (e) {
     toast.add({ color: 'error', title: apiMessage(e, '지우지 못했습니다') })
   } finally {
     removingMemo.value = null
-  }
-}
-
-async function restoreMemo(trashPath: string) {
-  try {
-    const restored = await $fetch<MemoMeta>('/api/trash/restore', { method: 'POST', body: { path: trashPath } })
-    await refresh()
-    await navigateTo(memoPath(restored.id))
-  } catch (e) {
-    toast.add({ color: 'error', title: apiMessage(e, '되돌리지 못했습니다'), description: '휴지통 화면에서 복원하세요.' })
   }
 }
 

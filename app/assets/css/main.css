@@ -63,7 +63,8 @@
 /*
  * 두 번 탭해서 확대하는 동작을 끈다 (앱처럼 쓰기 위한 요청, pic-blog 와 같음).
  * touch-action 은 «가장 가까운 스크롤 상자까지»만 조상의 값을 합치므로 body 하나로는 패널 안쪽에 닿지 않는다 —
- * 모든 요소에 건다. :where 로 우선순위를 0 으로 두어 컴포넌트가 따로 건 값이 이긴다.
+ * 모든 요소에 건다. 비레이어 규칙이므로 Tailwind utility보다 우선한다.
+ * 블록 이동 손잡이처럼 예외가 필요한 컴포넌트도 비레이어 CSS로 touch-action을 선언한다.
  * 두 손가락 확대는 viewport(nuxt.config)와 plugins/no-pinch-zoom.client.ts 가 막는다.
  */
 :where(*) {

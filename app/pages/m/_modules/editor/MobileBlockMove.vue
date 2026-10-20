@@ -345,8 +345,7 @@ onBeforeUnmount(() => {
             :color="drag?.moving && drag.from === row.index ? 'primary' : 'neutral'"
             variant="ghost"
             size="sm"
-            :ui="{ leadingIcon: '-translate-x-2' }"
-            class="pointer-events-auto absolute size-11 touch-none select-none justify-center"
+            class="mobile-block-move-handle pointer-events-auto absolute size-11 select-none justify-center"
             :style="handleStyle(row)"
             :draggable="false"
             :disabled="!!drag && drag.from !== row.index"
@@ -375,6 +374,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
+/* main.css의 비레이어 전역 touch-action은 Tailwind utility보다 우선한다.
+ * 손잡이의 예외도 같은 레이어에서 선언해야 터치가 스크롤로 넘어가 pointercancel되지 않는다. */
+.mobile-block-move-handle {
+  touch-action: none;
+}
+
 .mobile-block-move-active,
 .mobile-block-move-controls,
 .mobile-block-move-controls * {

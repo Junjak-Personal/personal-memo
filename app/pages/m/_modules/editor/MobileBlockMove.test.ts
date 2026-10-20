@@ -165,8 +165,8 @@ function mount(disabled = false, editable = true) {
     for (const [id, callback] of pending) { frames.delete(id); callback() }
   }
   function enter() { setup.enter(); flushFrames() }
-  function pointer(target: Element, x = 350, y = 120, id = 1): PointerEvent {
-    return { currentTarget: target, clientX: x, clientY: y, pointerId: id, isPrimary: true, button: 0, preventDefault: vi.fn() } as unknown as PointerEvent
+  function pointer(target: Element, x = 350, y = 120, id = 1, pointerType = 'mouse'): PointerEvent {
+    return { currentTarget: target, clientX: x, clientY: y, pointerId: id, pointerType, isPrimary: true, button: 0, preventDefault: vi.fn() } as unknown as PointerEvent
   }
   return { setup, props, editor, dom, panel, content, selection, window, document, media, observers, frames, subscribers, toast, emitted, sidebarOpen, flushFrames, enter, pointer, unmount: () => unmounted.forEach(callback => callback()) }
 }
@@ -228,7 +228,7 @@ describe('모바일 블록 이동의 실제 setup 동작', () => {
     const plus = templateButton(h, 'add-1')
     expect(plus.props).toMatchObject({ icon: 'i-material-symbols-add', color: 'neutral', variant: 'ghost', size: 'sm' })
     expect(plus.props!.ui).toEqual({ leadingIcon: 'translate-x-2' })
-    expect(templateButton(h, 'handle-1').props!.ui).toEqual({ leadingIcon: '-translate-x-2' })
+    expect(templateButton(h, 'handle-1').props!.ui).toBeUndefined()
     plus.props!.onClick({ stopPropagation: vi.fn(), preventDefault: vi.fn() })
     expect(h.emitted).toHaveBeenCalledWith('addBlock', 3)
     expect(h.editor.view.dispatch).not.toHaveBeenCalled()
@@ -277,6 +277,30 @@ describe('모바일 블록 이동의 실제 setup 동작', () => {
     h.editor.commands.undo()
     expect(h.editor.state.doc.textContent).toBe('ABC')
     expect(h.frames.size).toBeLessThanOrEqual(1)
+  })
+
+  it('touch 포인터는 실제 손잡이 바인딩에서 시작해 왼쪽 세로 이동·드롭·undo/redo까지 이어진다', () => {
+    const h = mount()
+    h.enter()
+    const target = new Element()
+    const handle = templateButton(h, 'handle-0')
+    handle.props!.onPointerdown(h.pointer(target, 70, 120, 9, 'touch'))
+    for (const listener of h.window.listeners.get('pointermove') ?? []) {
+      ;(listener as (event: PointerEvent) => void)(h.pointer(target, 70, 420, 9, 'touch'))
+    }
+    expect(h.setup.drag.value?.moving).toBe(true)
+    expect(target.captures.has(9)).toBe(true)
+    expect(templateButton(h, 'handle-0').props!.disabled).toBe(false)
+    for (const listener of [...h.window.listeners.get('pointerup') ?? []]) {
+      ;(listener as (event: PointerEvent) => void)(h.pointer(target, 70, 420, 9, 'touch'))
+    }
+    expect(h.editor.state.doc.textContent).toBe('BCA')
+    expect(target.captures.size).toBe(0)
+    expect(h.window.count('pointermove')).toBe(0)
+    h.editor.commands.undo()
+    expect(h.editor.state.doc.textContent).toBe('ABC')
+    h.editor.commands.redo()
+    expect(h.editor.state.doc.textContent).toBe('BCA')
   })
 
   it('가장자리 자동 스크롤 중에도 잡은 손잡이는 포인터를 따르고 드롭은 최신 본문 좌표로 처리한다', () => {

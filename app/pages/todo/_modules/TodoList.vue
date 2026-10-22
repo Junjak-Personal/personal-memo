@@ -5,10 +5,9 @@
  * 이 화면에서 끝낸 것은 떠날 때까지 줄을 그은 채 남긴다 — 잘못 눌렀으면 바로 되돌릴 수 있게.
  * 순서는 정해져 있다 (2026-10-22) — 날짜 빠른 순, 날짜 없는 것은 맨 아래, 같은 날짜 안에서는 중요도 상 → 중 → 하 (compareOpenTodos).
  */
-import type { MemoMeta, TodoPriority } from '#shared/types/memo'
+import type { MemoMeta } from '#shared/types/memo'
 import { todayKst } from '#shared/utils/memo-date'
-import { compareOpenTodos, TODO_FOLDER } from '#shared/utils/todo'
-import TodoPriorityMenu from './TodoPriorityMenu.vue'
+import { compareOpenTodos } from '#shared/utils/todo'
 
 const toast = useToast()
 const { tree, error } = useMemoTree()
@@ -18,8 +17,6 @@ const titleInput = ref('')
 /** 새 할 일의 날짜 — 기본은 오늘. 추가한 뒤에도 그대로 둔다(같은 날 할 일을 이어서 넣기 좋게). 지우면 날짜 없는 할 일 */
 const newDate = ref<string | null>(todayKst())
 const newDateEnd = ref<string | null>(null)
-/** 새 할 일의 중요도 — 추가한 뒤에는 중으로 되돌린다 */
-const newPriority = ref<TodoPriority>('medium')
 const adding = ref(false)
 /** 이 화면에서 끝낸 할 일 — 떠날 때까지 목록에 남긴다 */
 const finishedHere = ref<string[]>([])
@@ -47,9 +44,8 @@ async function add() {
   if (!title || adding.value) return
   adding.value = true
   try {
-    await todo.addTodo(title, newDate.value, newDateEnd.value, newPriority.value)
+    await todo.addTodo(title, newDate.value, newDateEnd.value)
     titleInput.value = ''
-    newPriority.value = 'medium'
   } catch (e) {
     toast.add({ color: 'error', title: apiMessage(e, '할 일을 추가하지 못했습니다') })
   } finally {
@@ -88,11 +84,7 @@ async function toggle(memo: MemoMeta) {
         />
         <UButton type="submit" :loading="adding" :disabled="!titleInput.trim()" data-testid="todo-add-button">추가</UButton>
         <MemoDatePicker :date="newDate" :date-end="newDateEnd" size="md" test-id="todo-date" @change="onNewDate" />
-        <TodoPriorityMenu :priority="newPriority" size="md" test-id="todo-add-priority" @pick="newPriority = $event" />
       </form>
-      <p class="-mt-2 text-xs text-muted">「{{ TODO_FOLDER }}」 폴더에 생깁니다. 다른 메모는 메모 메뉴의 「할 일로 두기」나 그 폴더로 옮기면 할 일이 됩니다.
-        날짜순으로, 같은 날짜는 중요도순으로 놓이고 날짜 없는 할 일은 맨 아래에 둡니다.
-      </p>
 
       <p v-if="error" class="py-20 text-center text-error">{{ error }}</p>
       <div v-else-if="tree && !items.length" class="flex flex-col items-center gap-3 py-20 text-center text-muted" data-testid="todo-empty">

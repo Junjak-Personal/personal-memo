@@ -127,6 +127,7 @@ const saveState = computed<SaveState>(() => {
 if (autosave) activeMemo.register({ id: autosave.currentId, folder: () => currentFolder.value, flush: flushAll })
 /** 할 일 체크 — 사이드바 트리가 원본이다(useTodo). 이 메모가 할 일이 아니면 null */
 const todoDone = computed(() => (autosave ? (todo.find(autosave.currentId())?.done ?? null) : null))
+const todoPriority = computed(() => (autosave ? (todo.find(autosave.currentId())?.priority ?? 'medium') : 'medium'))
 /**
  * 이 기기에 저장하지 못한 수정이 남아 있으면 (오프라인 보호 — memo-drafts):
  * - 서버가 그 뒤로 바뀌지 않았으면 바로 되살려 저장한다
@@ -527,6 +528,14 @@ function showTableBubble({ editor, view, state }: MenuContext) {
         </div>
         <div class="mt-3 flex flex-wrap items-center gap-2">
           <MemoDatePicker :date="date" :date-end="dateEnd" :disabled="memo.unreadable" @change="onDateChange" />
+          <TodoPriorityMenu
+            v-if="todoDone !== null && autosave"
+            :priority="todoPriority"
+            :disabled="todoDone || todo.pending.value.includes(autosave.currentId())"
+            size="sm"
+            test-id="memo-todo-priority"
+            @pick="todo.setPriority(autosave.currentId(), $event)"
+          />
           <MemoCalendarSyncBadge :memo-id="autosave.currentId()" :has-date="!!date" />
           <span class="text-xs text-dimmed">{{ currentFolder || '최상위' }}</span>
         </div>

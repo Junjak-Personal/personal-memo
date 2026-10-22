@@ -86,11 +86,11 @@ export function useTodo() {
     }
   }
 
-  /** 「할 일」 폴더에 새 할 일을 만든다. 제목·날짜·중요도만 받는다 — 본문은 열어서 쓴다. 폴더가 없으면 서버가 만든다 */
-  async function addTodo(title: string, date: string | null = null, dateEnd: string | null = null, priority: TodoPriority = 'medium'): Promise<Memo> {
+  /** 「할 일」 폴더에 새 할 일을 만든다. 제목·날짜만 받는다 — 중요도는 중으로 두고 나중에 바꾼다. 폴더가 없으면 서버가 만든다 */
+  async function addTodo(title: string, date: string | null = null, dateEnd: string | null = null): Promise<Memo> {
     const memo = await $fetch<Memo>('/api/memos', {
       method: 'POST',
-      body: { folder: TODO_FOLDER, title, content: '', date, dateEnd, done: false, priority },
+      body: { folder: TODO_FOLDER, title, content: '', date, dateEnd, done: false },
     })
     await refresh()
     return memo

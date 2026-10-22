@@ -21,6 +21,9 @@
 
 ## Common Patterns
 
+- 사이드바 검색과 트리/검색 결과 간격(2026-10-21): DashboardSidebar 기본 gap-4 대신 body gap-2(8px)를 PC·모바일 공통 적용한다. 이동 상태 sr-only 안내는 레이아웃 공간을 차지하지 않는다.
+- 사이드바 검색 입력·빠른 열기 버튼 높이(2026-10-22): PC는 둘 다36px, 모바일은 둘 다44px로 일치시킨다. 입력 base h-11 lg:h-9와 버튼 size-11 lg:size-9로 같은 경계를 사용한다.
+- 로딩 높이 안정화(2026-10-21): `MemoLoadingRegion`은 직전 실제 높이만 로딩 동안 유지하고 absolute·pointer-events-none spinner와 sr-only 상태를 제공한다. 빠른 열기는 dvh 제한 목록 viewport + 입력 spinner(높이 보존 옵션 해제), 검색은 입력 spinner, 이력/템플릿은 목록·preview 유지와 내부 spinner, 참조 목록은 기존 새로고침 spinner. 별도 loading 텍스트 행은 넣지 않는다. 오류·빈 결과 안내는 유지한다.
 - 빠른 탐색(2026-10-21): MemoQuickSwitch를 Sidebar 바깥 sibling modal로 한 번 장착한다. 검색 옆 버튼/⌘K·Ctrl+K, 즐겨찾기·최근·기존 검색과↑↓/Enter/Esc/IME. PC shortcut은 capture에서 한 번 처리해 editor 링크 단축키와 중복되지 않는다. 최근 정상 mounted 문서만 기록한다.
 - 수정 이력(2026-10-21): MemoActions→MemoHistoryDialog. 시간/제목 목록과 escape된 원문 preview, 명시 확인 후 복원. 409는 현재 메모 재조회 선택 제공. 실제 PC/iPhone 화면 QA는 구현 archive의 pending5개를 따른다.
 - 첫 실행 splash(2026-10-20): app/spa-loading-template.html(body 밖 loader) → StartupSplash.vue. Memo 책·펜 로고48px/글자28px, 시스템 색/동작 줄이기. 페이지·tree·메모 에디터 실제 준비 뒤 제거, SPA 이동 중 재표시 없음. 기존 설치 앱은 새 채널 없이 웹 표식을 사용한다. native 별도 MemoStartup 채널/current state probe·assets/memo-logo.png 등록은 후속 로컬 작업이며 웹 배포 커밋에서 제외했다.

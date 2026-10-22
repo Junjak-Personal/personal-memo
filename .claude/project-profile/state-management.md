@@ -30,6 +30,7 @@
 
 ## Reactivity Rules
 
+- 재조회 보존(2026-10-21): 빠른 검색의 prepare/cancel은 같은 scope의 표시 결과를 유지하고 reset은 닫기/계정 전환 때 본문까지 지운다. 결과 query와 loading을 분리하고 sequence/abort로 늦은 응답을 버린다. 이력·템플릿은 selectedReady로 표시 중인 이전 preview와 새 선택 완료를 구분하여 대기/실패의 잘못된 변경·복원·생성을 차단한다. 참조 목록도 같은 문서 refresh만 보존한다.
 - 탐색(2026-10-21): useMemoNavigation은 NuxtApp별 controller와 session scope 동기 watcher를 사용한다. 서버 ID 목록은 owner 저장소에 영구 보관하고 브라우저의 이전 세션·늦은 GET/검색은 무효화한다. 방문·별표 쓰기는 직렬화, 빠른 탐색을 열 때 tree/목록을 갱신한다.
 - 이력 UI: useMemoHistory는 창·선택 요청 revision과 session scope로 늦은 제목/원문을 버린다. flush 후 autosave.currentVersion을 기준으로 복원하며 새 서버 버전 조회로409를 우회하지 않는다. 성공은 activeMemo.reload + tree refresh.
 - 초기 tree 공유(2026-10-20): useMemoTree의 NuxtApp별 WeakMap controller. ensure는 현재 요청/유효 결과 재사용, refresh는 새 revision, settled는 같은 세션의 최신 요청 최종 결과 대기(실패 자동 retry 없음). 세션 sync watcher로 tree/error 즉시 초기화·늦은 응답 차단. 메모리 한정이며 runtime별 격리.

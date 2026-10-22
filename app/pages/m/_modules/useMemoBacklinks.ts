@@ -18,7 +18,8 @@ export function useMemoBacklinks(memoId: () => string) {
   }
 
   async function refresh() {
-    clear()
+    ++revision
+    error.value = ''
     const scope = screenScope(session.value)
     const id = memoId()
     if (!mounted || !scope || !id) return

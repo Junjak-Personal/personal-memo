@@ -1,5 +1,6 @@
 import type { Memo } from '#shared/types/memo'
 import type { MemoRevision, MemoRevisionSummary } from '#shared/types/memo-history'
+import { isUlid } from '#shared/utils/ulid'
 import { screenScope } from '~/utils/last-screen'
 
 interface Options {
@@ -21,6 +22,8 @@ export function useMemoHistory(options: Options) {
   const conflict = ref(false)
   const revisions = ref<MemoRevisionSummary[]>([])
   const selected = ref<MemoRevision | null>(null)
+  // 이전 미리보기를 유지해도 새 선택의 응답 확인 전에는 복원할 수 없다.
+  const selectedReady = ref(false)
   let request = 0
   let selection = 0
   let scope: string | null = null
@@ -37,6 +40,7 @@ export function useMemoHistory(options: Options) {
     open.value = false
     revisions.value = []
     selected.value = null
+    selectedReady.value = false
     error.value = ''
     conflict.value = false
     loading.value = selecting.value = restoring.value = confirming.value = false
@@ -46,16 +50,27 @@ export function useMemoHistory(options: Options) {
 
   // 인증 전환은 외부 이벤트다. 모달의 이전 제목·본문도 같은 tick에 지운다.
   watch(() => screenScope(session.value), close, { flush: 'sync' })
+  watch(options.memoId, (id) => {
+    if (open.value && id !== memoId && !(loading.value && memoId.startsWith('p:') && isUlid(id))) close()
+  }, { flush: 'sync' })
   onBeforeUnmount(close)
 
   async function show() {
-    close()
-    scope = screenScope(session.value)
+    if (restoring.value) return
+    const initialScope = screenScope(session.value)
+    const initialId = options.memoId()
+    const preserve = open.value && scope === initialScope && memoId === initialId
+    if (!preserve) close()
+    else { ++request; ++selection }
+    scope = initialScope
     if (!scope) return
+    memoId = initialId
     open.value = true
     loading.value = true
+    selecting.value = confirming.value = selectedReady.value = false
+    error.value = ''
+    conflict.value = false
     const token = request
-    const initialScope = scope
     try {
       const saved = await options.flush()
       if (request !== token || !open.value || screenScope(session.value) !== initialScope) return
@@ -64,12 +79,16 @@ export function useMemoHistory(options: Options) {
         return
       }
       // 경로 id는 flush의 첫 저장에서 ULID로 바뀔 수 있다.
-      memoId = options.memoId()
+      const savedId = options.memoId()
+      if (savedId !== initialId && !(initialId.startsWith('p:') && isUlid(savedId))) { close(); return }
+      memoId = savedId
       baseVersion = options.version()
       const list = await $fetch<MemoRevisionSummary[]>(`/api/memos/${encodeURIComponent(memoId)}/history`)
       if (!valid(token)) return
       revisions.value = list
-      if (list[0]) await select(list[0].id)
+      const target = list.find(item => item.id === selected.value?.id) ?? list[0]
+      if (target) await select(target.id)
+      else { selected.value = null; selectedReady.value = false }
     } catch (e) {
       if (request === token && open.value && screenScope(session.value) === initialScope) error.value = apiMessage(e, '수정 이력을 불러오지 못했습니다')
     } finally {
@@ -81,14 +100,14 @@ export function useMemoHistory(options: Options) {
     if (restoring.value || !revisions.value.some(revision => revision.id === id)) return
     const token = request
     const current = ++selection
-    selected.value = null
+    selectedReady.value = false
     confirming.value = false
     error.value = ''
     conflict.value = false
     selecting.value = true
     try {
       const detail = await $fetch<MemoRevision>(`/api/memos/${encodeURIComponent(memoId)}/history/${encodeURIComponent(id)}`)
-      if (valid(token) && selection === current) selected.value = detail
+      if (valid(token) && selection === current) { selected.value = detail; selectedReady.value = true }
     } catch (e) {
       if (valid(token) && selection === current) error.value = apiMessage(e, '이 버전을 불러오지 못했습니다')
     } finally {
@@ -99,7 +118,7 @@ export function useMemoHistory(options: Options) {
   async function restore() {
     const revision = selected.value
     const token = request
-    if (!revision || restoring.value || !confirming.value || !valid(token)) return
+    if (!revision || !selectedReady.value || loading.value || selecting.value || restoring.value || !confirming.value || !valid(token)) return
     restoring.value = true
     error.value = ''
     conflict.value = false
@@ -133,5 +152,5 @@ export function useMemoHistory(options: Options) {
     }
   }
 
-  return { open, loading, selecting, restoring, confirming, error, conflict, revisions, selected, show, close, select, restore }
+  return { open, loading, selecting, restoring, confirming, error, conflict, revisions, selected, selectedReady, show, close, select, restore }
 }

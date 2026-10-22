@@ -15,7 +15,8 @@ function useTemplateScope(reset: () => void) {
     scope = null
     reset()
   }
-  function begin() {
+  function begin(preserve = false) {
+    if (preserve && current()) return ++revision
     close()
     scope = screenScope(session.value)
     open.value = scope !== null
@@ -37,6 +38,8 @@ export function useMemoTemplates(options: { flush: () => Promise<boolean> }) {
   const error = ref('')
   const templates = ref<MemoTemplateSummary[]>([])
   const selected = ref<MemoTemplate | null>(null)
+  // 이전 미리보기를 유지해도 새 선택의 응답 확인 전에는 변경할 수 없다.
+  const selectedReady = ref(false)
   const name = ref('')
   const confirming = ref(false)
   const created = ref<Memo | null>(null)
@@ -45,20 +48,27 @@ export function useMemoTemplates(options: { flush: () => Promise<boolean> }) {
     ++selection
     loading.value = selecting.value = busy.value = confirming.value = false
     templates.value = []
+    selectedReady.value = false
     selected.value = created.value = null
     name.value = error.value = ''
   })
 
   async function show() {
     if (busy.value) return
-    const token = lifetime.begin()
+    const token = lifetime.begin(true)
     if (!lifetime.current(token)) return
+    ++selection
+    error.value = ''
+    confirming.value = selecting.value = selectedReady.value = false
     loading.value = true
     try {
       const list = await $fetch<MemoTemplateSummary[]>('/api/templates')
       if (!lifetime.current(token)) return
       templates.value = list
-      if (list[0]) await select(list[0].id)
+      const previous = selected.value?.id
+      const target = list.find(item => item.id === previous) ?? list[0]
+      if (target) await select(target.id, target.id === previous)
+      else { selected.value = null; name.value = ''; selectedReady.value = false }
     } catch (e) {
       if (lifetime.current(token)) error.value = apiMessage(e, '템플릿 목록을 불러오지 못했습니다.')
     } finally {
@@ -66,12 +76,13 @@ export function useMemoTemplates(options: { flush: () => Promise<boolean> }) {
     }
   }
 
-  async function select(id: string) {
+  async function select(id: string, preserveCreated = false) {
     if (busy.value || !lifetime.current() || !templates.value.some(item => item.id === id)) return
     const token = lifetime.token()
     const chosen = ++selection
-    selected.value = created.value = null
-    name.value = error.value = ''
+    if (!preserveCreated) created.value = null
+    selectedReady.value = false
+    error.value = ''
     confirming.value = false
     selecting.value = true
     try {
@@ -79,6 +90,7 @@ export function useMemoTemplates(options: { flush: () => Promise<boolean> }) {
       if (lifetime.current(token) && chosen === selection) {
         selected.value = detail
         name.value = detail.name
+        selectedReady.value = true
       }
     } catch (e) {
       if (lifetime.current(token) && chosen === selection) error.value = apiMessage(e, '템플릿을 불러오지 못했습니다. 목록에서 다시 선택하세요.')
@@ -90,7 +102,7 @@ export function useMemoTemplates(options: { flush: () => Promise<boolean> }) {
   async function rename() {
     const item = selected.value
     const next = name.value.trim()
-    if (!item || busy.value || !lifetime.current() || !next || next.length > 200 || next === item.name) return
+    if (!item || !selectedReady.value || loading.value || selecting.value || busy.value || !lifetime.current() || !next || next.length > 200 || next === item.name) return
     const token = lifetime.token()
     busy.value = true
     error.value = ''
@@ -109,7 +121,7 @@ export function useMemoTemplates(options: { flush: () => Promise<boolean> }) {
 
   async function remove() {
     const item = selected.value
-    if (!item || busy.value || !confirming.value || !lifetime.current()) return
+    if (!item || !selectedReady.value || loading.value || selecting.value || busy.value || !confirming.value || !lifetime.current()) return
     const token = lifetime.token()
     busy.value = true
     error.value = ''
@@ -118,6 +130,7 @@ export function useMemoTemplates(options: { flush: () => Promise<boolean> }) {
       if (!lifetime.current(token)) return
       templates.value = templates.value.filter(entry => entry.id !== item.id)
       selected.value = null
+      selectedReady.value = false
       name.value = ''
       confirming.value = false
     } catch (e) {
@@ -129,7 +142,7 @@ export function useMemoTemplates(options: { flush: () => Promise<boolean> }) {
 
   async function create(folder: string) {
     const item = selected.value
-    if (!item || busy.value || created.value || !lifetime.current()) return null
+    if (!item || !selectedReady.value || loading.value || selecting.value || busy.value || created.value || !lifetime.current()) return null
     const token = lifetime.token()
     busy.value = true
     error.value = ''
@@ -152,7 +165,7 @@ export function useMemoTemplates(options: { flush: () => Promise<boolean> }) {
     }
   }
 
-  return { ...lifetime, loading, selecting, busy, error, templates, selected, name, confirming, created, show, select, rename, remove, create }
+  return { ...lifetime, loading, selecting, busy, error, templates, selected, selectedReady, name, confirming, created, show, select, rename, remove, create }
 }
 
 interface SaveOptions {
@@ -171,6 +184,10 @@ export function useSaveMemoTemplate(options: SaveOptions) {
     name.value = error.value = sourceId = ''
     busy.value = false
   })
+  // 원본 문서 전환은 외부 사건이다. 첫 저장의 경로 ID 승격만 같은 원본으로 허용한다.
+  watch(options.memoId, (id) => {
+    if (lifetime.current() && id !== sourceId && !(busy.value && sourceId.startsWith('p:') && isUlid(id))) lifetime.close()
+  }, { flush: 'sync' })
   function show() {
     if (busy.value) return
     lifetime.begin()

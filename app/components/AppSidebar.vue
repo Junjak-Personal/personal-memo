@@ -15,6 +15,7 @@ import type { FolderNode, MemoMeta, SearchHit } from '#shared/types/memo'
 import { todayKst } from '#shared/utils/memo-date'
 import { applyOrder, byCreatedDesc, byName, EMPTY_ORDER, moveKey, stepKey } from '#shared/utils/order'
 import { compareDoneTodos, compareOpenTodos, TODO_FOLDER } from '#shared/utils/todo'
+import { currentSearchResults, searchResultMenu } from '~/utils/search-result-menu'
 import type { Dragged, OrderSlot, RowTarget } from '~/composables/useTreeDragDrop'
 
 type SidebarMenuItem = DropdownMenuItem & { testId: string }
@@ -44,6 +45,7 @@ const searchInput = ref('')
 const appliedQuery = ref('')
 const results = ref<SearchHit[] | null>(null)
 const searching = ref(false)
+let searchSequence = 0
 const movingMemo = ref<Pick<MemoMeta, 'id' | 'title' | 'folder'> | null>(null)
 const removingMemo = ref<string | null>(null)
 
@@ -57,6 +59,7 @@ const memoMoveOpen = computed({
 const currentId = computed(() => (typeof route.params.id === 'string' ? route.params.id : null))
 /** 그리는 트리 — 대기 중인 옮기기·이름 바꾸기까지 얹은 것 (useStructureQueue) */
 const view = queue.view
+const searchResults = computed(() => currentSearchResults(results.value ?? [], view.value?.memos ?? null))
 const currentFolder = computed(() => view.value?.memos.find((m) => m.id === currentId.value)?.folder ?? '')
 const items = computed(() => (view.value ? toItems(view.value.folders, view.value.memos, '') : []))
 const selected = computed(() => findItem(items.value, currentId.value))
@@ -187,6 +190,7 @@ onMounted(async () => {
 watch(expanded, (keys) => writeExpanded(keys))
 
 onBeforeUnmount(() => {
+  searchSequence++
   document.removeEventListener('visibilitychange', onVisibility)
   sidebarOpen.value = false
   for (const remove of removeMenuHooks) remove()
@@ -391,6 +395,34 @@ function rowMenu(item: TreeItem): SidebarMenuItem[][] {
   ]
 }
 
+/** 검색은 표시 순위가 폴더 순서와 다르므로 순서 이동 대신 메모 작업만 제공한다. */
+function searchMenu(memo: SearchHit) {
+  return searchResultMenu(memo, {
+    favorite: navigation.isFavorite(memo.id), favoritePending: navigation.pending.value,
+    todoPending: todo.pending.value.includes(memo.id), removing: removingMemo.value !== null, desktop: !coarsePointer,
+  }, {
+    favorite: () => void favoriteSearchMemo(memo.id),
+    copy: () => void copyMemoAddress(memo.id),
+    todo: (done) => void todo.setDone(memo.id, done),
+    move: () => { movingMemo.value = memo },
+    trash: () => void removeMemo(memo.id),
+  })
+}
+
+async function favoriteSearchMemo(id: string) {
+  if (!(await navigation.toggleFavorite(id))) toast.add({ color: 'error', title: navigation.error.value ?? '즐겨찾기를 저장하지 못했습니다' })
+}
+
+async function copyMemoAddress(id: string) {
+  const url = new URL(memoPath(id), window.location.origin).href
+  try {
+    await navigator.clipboard.writeText(url)
+    toast.add({ title: '메모 주소를 복사했습니다' })
+  } catch {
+    toast.add({ color: 'error', title: '주소를 복사하지 못했습니다', description: url })
+  }
+}
+
 async function createInFolder(folder: string) {
   if (await queue.apply()) await createMemo(folder)
 }
@@ -414,6 +446,10 @@ async function removeMemo(id: string) {
       return
     }
     const trashPath = await moveToTrash(id)
+    if (results.value) {
+      results.value = results.value.filter(hit => hit.id !== id)
+      void applySearch()
+    }
     sidebarOpen.value = false
     notifyMoved(trashPath)
     if (currentId.value === id) await navigateTo('/')
@@ -454,22 +490,31 @@ function findItem(list: TreeItem[], value: string | null): TreeItem | undefined 
 }
 
 async function applySearch() {
-  appliedQuery.value = searchInput.value.trim()
-  if (!appliedQuery.value) {
+  const sequence = ++searchSequence
+  const query = searchInput.value.trim()
+  appliedQuery.value = query
+  if (!query) {
     results.value = null
+    searching.value = false
     return
   }
   searching.value = true
   try {
-    results.value = await $fetch<SearchHit[]>('/api/search', { query: { q: appliedQuery.value } })
+    const hits = await $fetch<SearchHit[]>('/api/search', { query: { q: query } })
+    if (sequence !== searchSequence) return
+    // 외부 도구가 수정한 이름·폴더도 메뉴의 현재 상태와 맞춘다.
+    await refresh()
+    if (sequence === searchSequence) results.value = hits
   } catch (e) {
-    toast.add({ color: 'error', title: apiMessage(e, '검색하지 못했습니다') })
+    if (sequence === searchSequence) toast.add({ color: 'error', title: apiMessage(e, '검색하지 못했습니다') })
   } finally {
-    searching.value = false
+    if (sequence === searchSequence) searching.value = false
   }
 }
 
 function resetSearch() {
+  searchSequence++
+  searching.value = false
   searchInput.value = ''
   appliedQuery.value = ''
   results.value = null
@@ -502,7 +547,7 @@ async function logout() {
        */
       root: 'overflow-hidden transition-[width] duration-200 ease-out data-[dragging=true]:transition-none lg:data-[collapsed=true]:min-w-0 lg:data-[collapsed=true]:border-e-0',
       header: 'min-w-56',
-      body: 'min-w-56',
+      body: 'min-w-56 gap-2',
       // 홈 인디케이터·둥근 모서리 아래로 깔리지 않게 — viewport-fit=cover 라 화면 끝까지 그려진다 (아이패드에서 잘려 보였다)
       footer: 'min-w-56 border-t border-default pb-[calc(0.5rem+env(safe-area-inset-bottom))]',
     }"
@@ -561,6 +606,9 @@ async function logout() {
       <UInput
         v-model="searchInput"
         icon="i-material-symbols-search"
+        :loading="searching"
+        :aria-busy="searching"
+        :ui="{ base: 'h-11 lg:h-9', leadingIcon: 'motion-reduce:animate-none' }"
         placeholder="검색"
         class="flex-1"
         data-testid="sidebar-search-input"
@@ -583,7 +631,7 @@ async function logout() {
           icon="i-material-symbols-manage-search"
           color="neutral"
           variant="outline"
-          class="size-9 shrink-0 justify-center"
+          class="size-11 shrink-0 justify-center lg:size-9"
           aria-label="최근 메모·즐겨찾기 빠르게 열기"
           data-testid="sidebar-quick-switch"
           @click="quickSwitch?.show()"
@@ -591,22 +639,49 @@ async function logout() {
       </UTooltip>
     </form>
 
-    <p role="status" class="h-4 shrink-0 px-1 text-xs text-muted" data-testid="sidebar-navigation-pending">{{ mobileMenu.pending.value ? '화면을 여는 중…' : '' }}</p>
+    <p role="status" class="sr-only" data-testid="sidebar-navigation-pending">{{ mobileMenu.pending.value ? '화면을 여는 중…' : '' }}</p>
 
-    <div v-if="results" class="flex flex-col gap-1" data-testid="sidebar-search-results">
-      <p class="px-1 text-xs text-muted">「{{ appliedQuery }}」 {{ results.length }}건</p>
-      <NuxtLink
-        v-for="hit in results"
+    <div v-if="results" class="flex flex-col gap-1" :aria-busy="searching" data-testid="sidebar-search-results">
+      <p class="px-1 text-xs text-muted">「{{ appliedQuery }}」 {{ searchResults.length }}건</p>
+      <UContextMenu
+        v-for="hit in searchResults"
         :key="hit.id"
-        :to="memoPath(hit.id)"
-        class="rounded-md px-2 py-1.5 hover:bg-elevated"
-        :class="hit.id === currentId && 'bg-elevated'"
+        :items="searchMenu(hit)"
+        :ui="{ item: 'min-h-11 lg:min-h-0' }"
+        @update:open="onContextOpen({ value: hit.id }, $event)"
       >
-        <p class="truncate text-sm font-medium">{{ hit.title || '제목 없음' }}</p>
-        <p class="truncate text-xs text-muted">{{ hit.snippet }}</p>
-        <p v-if="hit.tags.length" class="truncate text-xs text-dimmed">{{ hit.tags.map((t) => `#${t}`).join(' ') }}</p>
-      </NuxtLink>
-      <p v-if="!results.length && !searching" class="px-1 py-4 text-center text-sm text-muted">찾은 메모가 없습니다</p>
+        <div class="group relative select-none rounded-md hover:bg-elevated [-webkit-touch-callout:none]" :class="hit.id === currentId && 'bg-elevated'" data-testid="sidebar-search-result">
+          <NuxtLink
+            :to="memoPath(hit.id)"
+            class="block min-h-11 rounded-md px-2 py-1.5 pe-11"
+            @pointerdown="pressedMenuRow = null"
+            @click.capture="suppressPressClick($event, { value: hit.id })"
+          >
+            <p class="truncate text-sm font-medium">{{ hit.title || '제목 없음' }}</p>
+            <p class="truncate text-xs text-muted">{{ hit.snippet }}</p>
+            <p v-if="hit.tags.length" class="truncate text-xs text-dimmed">{{ hit.tags.map((t) => `#${t}`).join(' ') }}</p>
+          </NuxtLink>
+          <UDropdownMenu :items="searchMenu(hit)" :content="{ align: 'end' }" :ui="{ item: 'min-h-11 lg:min-h-0' }" @update:open="onContextOpen({ value: hit.id }, $event)">
+            <UButton
+              icon="i-material-symbols-more-horiz"
+              color="neutral"
+              variant="ghost"
+              :aria-label="`${hit.title || '제목 없음'} 메모 메뉴`"
+              class="absolute end-0 top-0 size-11 justify-center lg:end-1 lg:top-1 lg:size-8 lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100 data-[state=open]:opacity-100"
+              data-testid="sidebar-search-menu"
+              @pointerdown.stop
+              @click.stop
+            />
+            <template #item-label="{ item: menuItem }">
+              <span :data-testid="menuItem.testId">{{ menuItem.label }}</span>
+            </template>
+          </UDropdownMenu>
+        </div>
+        <template #item-label="{ item: menuItem }">
+          <span :data-testid="menuItem.testId">{{ menuItem.label }}</span>
+        </template>
+      </UContextMenu>
+      <p v-if="!searchResults.length && !searching" class="px-1 py-4 text-center text-sm text-muted">찾은 메모가 없습니다</p>
     </div>
 
     <template v-else>

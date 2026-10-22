@@ -78,14 +78,16 @@ describe('수정 이력의 조회·선택·복원 수명', () => {
   })
 
   it('경로 ID 첫 저장 후 바뀐 ID와 편집 버전을 사용한다', async () => {
-    const history = setup()
-    flush.mockImplementationOnce(async () => { id = 'new-ulid'; version = 'new-version'; return true })
+    const source = ref('p:업무/메모.md')
+    const history = useMemoHistory({ memoId: () => source.value, version: () => version, flush, onRestored })
+    const permanent = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
+    flush.mockImplementationOnce(async () => { source.value = permanent; version = 'new-version'; return true })
     await history.show()
     history.confirming.value = true
-    const saved = { id: 'new-ulid' } as Memo
+    const saved = { id: permanent } as Memo
     fetch.mockResolvedValueOnce(saved)
     await history.restore()
-    expect(fetch).toHaveBeenLastCalledWith('/api/memos/new-ulid/history/r1/restore', { method: 'POST', body: { baseVersion: 'new-version' } })
+    expect(fetch).toHaveBeenLastCalledWith(`/api/memos/${permanent}/history/r1/restore`, { method: 'POST', body: { baseVersion: 'new-version' } })
     expect(onRestored).toHaveBeenCalledWith(saved)
     expect(history.open.value).toBe(false)
   })
@@ -100,6 +102,39 @@ describe('수정 이력의 조회·선택·복원 수명', () => {
     old.resolve(revision('r1'))
     await first
     expect(history.selected.value?.id).toBe('r2')
+  })
+
+  it('다른 버전을 기다리는 동안 이전 미리보기를 보존하되 복원은 보내지 않는다', async () => {
+    const history = setup()
+    await history.show()
+    const pending = deferred<MemoRevision>()
+    fetch.mockReturnValueOnce(pending.promise)
+    const selecting = history.select('r2')
+    expect(history.selected.value?.id).toBe('r1')
+    expect(history.selecting.value).toBe(true)
+    history.confirming.value = true
+    await history.restore()
+    expect(fetch.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(0)
+    pending.resolve(revision('r2'))
+    await selecting
+    expect(history.selected.value?.id).toBe('r2')
+  })
+
+  it('동일 메모 재조회 중 목록·본문을 유지하고 응답이 없을 때 복원하지 않는다', async () => {
+    const history = setup()
+    await history.show()
+    const pending = deferred<MemoRevisionSummary[]>()
+    fetch.mockReturnValueOnce(pending.promise)
+    const refreshing = history.show()
+    expect(history.revisions.value).toEqual(summaries)
+    expect(history.selected.value?.id).toBe('r1')
+    history.confirming.value = true
+    await history.restore()
+    expect(fetch.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(0)
+    pending.resolve(summaries)
+    await refreshing
+    expect(history.loading.value).toBe(false)
+    expect(history.selected.value?.id).toBe('r1')
   })
 
   it('닫은 뒤 늦게 온 본문과 다시 열기 전 목록을 버린다', async () => {
@@ -126,6 +161,23 @@ describe('수정 이력의 조회·선택·복원 수명', () => {
     expect(history.open.value).toBe(false)
     expect(history.revisions.value).toEqual([])
     old.resolve(revision('r2'))
+    await selecting
+    expect(history.selected.value).toBeNull()
+  })
+
+
+  it('다른 메모로 이동하면 기존 이력을 즉시 지우고 늦은 선택 응답을 버린다', async () => {
+    const source = ref('original')
+    const history = useMemoHistory({ memoId: () => source.value, version: () => version, flush, onRestored })
+    await history.show()
+    const pending = deferred<MemoRevision>()
+    fetch.mockReturnValueOnce(pending.promise)
+    const selecting = history.select('r2')
+    source.value = 'another'
+    expect(history.open.value).toBe(false)
+    expect(history.selected.value).toBeNull()
+    expect(history.revisions.value).toEqual([])
+    pending.resolve(revision('r2'))
     await selecting
     expect(history.selected.value).toBeNull()
   })
@@ -176,7 +228,11 @@ describe('수정 이력의 조회·선택·복원 수명', () => {
     fetch.mockRejectedValueOnce(new Error('offline'))
     await history.select('r2')
     expect(history.error.value).toContain('이 버전을 불러오지 못했습니다')
-    expect(history.selected.value).toBeNull()
+    expect(history.selected.value?.id).toBe('r1')
+    expect(history.selectedReady.value).toBe(false)
+    history.confirming.value = true
+    await history.restore()
+    expect(fetch.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(0)
     fetch.mockResolvedValueOnce(revision('r2'))
     await history.select('r2')
     expect(history.error.value).toBe('')

@@ -14,7 +14,8 @@ import { MemoTemplates, templateFolderInput, templateNameInput, templateSaveInpu
 let root: string
 let store: MemoStore
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-const create = (title = '회의', content = '- [x] 완료\n\n<table><tr><td>표</td></tr></table>') => store.create({ title, content, folder: '', date: '2026-10-21', dateEnd: '2026-10-22', tags: ['업무'], done: true })
+// 할 일로 만들면 「할 일」 폴더에 생긴다 — 이미지 경로를 최상위로 보는 테스트가 많아서 기본은 일반 메모
+const create = (title = '회의', content = '- [x] 완료\n\n<table><tr><td>표</td></tr></table>', done?: boolean) => store.create({ title, content, folder: '', date: '2026-10-21', dateEnd: '2026-10-22', tags: ['업무'], ...(done === undefined ? {} : { done }) })
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'memo-templates-')); store = new MemoStore(root); await store.init() })
 afterEach(async () => { vi.restoreAllMocks(); await rm(root, { recursive: true, force: true }) })
 
@@ -37,7 +38,7 @@ describe('내 템플릿', () => {
     expect(await store.get(memo.id)).toMatchObject({ version: memo.version })
   })
   it('새 ID·현재 폴더로 만들고 날짜·완료·공개를 초기화하며 본문과 체크 상태를 그대로 둔다', async () => {
-    const memo = await create()
+    const memo = await create(undefined, undefined, true)
     await store.setPublic(memo.id, true)
     const template = await store.saveTemplate(memo.id, '양식', memo.version)
     await store.createFolder('', '현재 폴더')
@@ -48,6 +49,8 @@ describe('내 템플릿', () => {
     expect(second.path).not.toBe(first.path)
     expect(first).toMatchObject({ folder: '현재 폴더', title: memo.title, content: memo.content, tags: ['업무'], done: null, public: false, date: null, dateEnd: null })
     expect(first.created).toBeTruthy()
+    // 「할 일」 폴더에 만들면 안 끝난 할 일
+    expect((await store.createFromTemplate(template.id, '할 일')).done).toBe(false)
   })
   it('오래된 버전·읽기 불가·삭제 메모 저장과 잘못된 ID·이름·폴더를 거절한다', async () => {
     const memo = await create()

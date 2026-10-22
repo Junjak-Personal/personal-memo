@@ -8,7 +8,7 @@ import { MemoNavigationStore, NAVIGATION_FILE, navigationId, parseNavigationInpu
 
 const meta = (id: string, extra: Partial<MemoMeta> = {}): MemoMeta => ({
   id, title: `제목 ${id}`, folder: '', path: `${id}.md`, created: null, updated: null,
-  date: null, dateEnd: null, tags: [], done: null, public: false, unreadable: false, ...extra,
+  date: null, dateEnd: null, tags: [], done: null, priority: 'medium', public: false, unreadable: false, ...extra,
 })
 
 describe('최근 메모·즐겨찾기 저장소', () => {

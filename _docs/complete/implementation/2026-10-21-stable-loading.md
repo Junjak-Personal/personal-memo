@@ -96,6 +96,7 @@ flowchart TD
 ## main 반영 요청 (2026-10-23)
 - 사용자 「main까지 일단 올려줘」 요청으로 기존 구현·간격·검색 입력/빠른 열기 높이(PC36px/모바일44px)를 함께 PR·main 반영한다. 앞선 배포/커밋 미실행 설명은 해당 구현 시점의 기록이다.
 - 원래 작업 트리에서 전체53 files/565 tests, Nuxt typecheck·build를 재검증했다. 원격 main에 이후 추가된 할 일 날짜·중요도/폴더 정책(`862c103`)을 유지하여 통합하고 최종 CI를 확인한다. 새 앱 설치나 수동 운영 데이터 조작은 하지 않는다.
+- 통합 시 사이드바 import 충돌은 할 일 정렬 comparator와 새 검색 메뉴 import를 모두 유지하여 해결했다. 새 검색 테스트의 메모 fixture에도 main의 `priority: medium` 기본값을 반영했다. 통합 후 전체53 files/580 tests·Nuxt typecheck가 통과했다. 근거는 `_workspace/issues/2026-10-21-sidebar-gap/integrated-{tests,typecheck,build}.log`이며 실제 화면 QA 범위는 기존과 같다.
 - 실제 사용자 확인은 개발 검색/트리 간격과 버튼 높이 화면에 한정된다. 아래 5개 심화 QA가 모두 완료된 것으로 간주하지 않는다.
 
 ## Deferred QA

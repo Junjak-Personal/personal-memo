@@ -40,20 +40,19 @@ describe('수정 이력 저장과 복원', () => {
   })
 
   it('복원 직전 상태를 강제 보관하고 현재 ID·폴더·생성시각·완료·공개·모르는 frontmatter를 유지한다', async () => {
-    await store.createFolder('', '옮긴 곳')
-    let memo = await store.create({ ...input(), folder: '', done: false })
+    let memo = await store.create({ ...input(), folder: '' })
     const created = memo.created
     const firstRaw = await readFile(join(root, memo.path), 'utf8')
     await writeFile(join(root, memo.path), firstRaw.replace('---\n', '---\ncustom: 유지\n'))
     memo = await store.get(memo.id)
     memo = await store.update(memo.id, { ...input('최신', '새 내용'), date: '2026-10-21', tags: ['새 태그'], baseVersion: memo.version })
     const initial = (await store.getRevisions(memo.id))[0]!
+    // 할 일로 두면 「할 일」 폴더로 옮겨진다 — 복원은 지금 폴더·완료를 지킨다
     await store.setDone(memo.id, true)
     await store.setPublic(memo.id, true)
-    await store.move(memo.id, '옮긴 곳')
     memo = await store.get(memo.id)
     const restored = await store.restoreRevision(memo.id, initial.id, memo.version)
-    expect(restored).toMatchObject({ id: memo.id, folder: '옮긴 곳', created, title: '처음', content: '이전 본문\n', date: null, tags: [], done: true, public: true })
+    expect(restored).toMatchObject({ id: memo.id, folder: '할 일', created, title: '처음', content: '이전 본문\n', date: null, tags: [], done: true, public: true })
     expect(await readFile(join(root, restored.path), 'utf8')).toContain('custom: 유지')
     const list = await store.getRevisions(memo.id)
     expect(list).toHaveLength(2)

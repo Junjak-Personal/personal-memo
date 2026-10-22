@@ -5,13 +5,16 @@
  * - 앱이 모르는 키(`aliases` …)와 주석은 지우지 않는다 — YAML 을 값이 아니라 문서(Document)로 다룬다.
  * - `tags` 는 앱도 쓴다. 바뀌었을 때만 고쳐 쓴다 — 밖에서 쓴 모양(`tags: a, b`, 블록 목록)은 그대로 남는다.
  * - `done`(할 일)도 바뀌었을 때만 쓴다. `true`/`false` 가 아닌 값은 모르는 값으로 두고 건드리지 않는다.
+ * - `priority`(할 일 중요도)도 바뀌었을 때만 쓴다. `medium` 이 기본이라 적지 않는다(키를 지운다). 모르는 값은 `medium` 으로 읽고 건드리지 않는다.
  * - `public`(외부 공개)은 `true` 일 때만 공개다. 끄면 키를 지운다. 그 밖의 값(`public: yes`)은 비공개로 읽고 건드리지 않는다.
  * - frontmatter 를 읽지 못하면 그 파일은 «앱에서 저장하지 않는다». 고쳐 쓰다가 남의 내용을 날리는 것보다
  *   저장을 거부하는 편이 낫다.
  */
 import { createHash } from 'node:crypto'
 import { Document, isMap, isSeq, parseDocument } from 'yaml'
+import type { TodoPriority } from '../../shared/types/memo'
 import { cleanTags, sameTags } from '../../shared/utils/tags'
+import { isTodoPriority } from '../../shared/utils/todo'
 
 export interface MemoFields {
   id: string | null
@@ -24,6 +27,8 @@ export interface MemoFields {
   tags: string[]
   /** 할 일 — null = 메모 (`done` 키가 없거나 true/false 가 아님) */
   done: boolean | null
+  /** 할 일 중요도 — 키가 없거나 모르는 값이면 medium */
+  priority: TodoPriority
   /** 외부 공개 — `public: true` 일 때만 true */
   public: boolean
 }
@@ -32,7 +37,7 @@ export type ParsedMemo =
   | { ok: true; doc: Document | null; fields: MemoFields; body: string }
   | { ok: false; body: string }
 
-const EMPTY: MemoFields = { id: null, title: null, created: null, updated: null, date: null, dateEnd: null, tags: [], done: null, public: false }
+const EMPTY: MemoFields = { id: null, title: null, created: null, updated: null, date: null, dateEnd: null, tags: [], done: null, priority: 'medium', public: false }
 
 /** 맨 앞의 `---` … `---` 블록. 비어 있는 frontmatter(`---\n---`)도 받는다 */
 const FRONTMATTER = /^---\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/
@@ -58,6 +63,10 @@ function tagsOf(value: unknown) {
 /** `done: true` / `done: false` 만 할 일이다. 밖에서 쓴 `done: yes` 같은 값은 메모로 본다 */
 function doneOf(value: unknown) {
   return typeof value === 'boolean' ? value : null
+}
+
+function priorityOf(value: unknown): TodoPriority {
+  return isTodoPriority(value) ? value : 'medium'
 }
 
 /** 공개는 `public: true` 하나뿐이다 — 애매한 값을 공개로 읽으면 안 된다 */
@@ -87,6 +96,7 @@ export function parseMemo(raw: string): ParsedMemo {
       dateEnd: text(doc.get('date_end')),
       tags: tagsOf(doc.get('tags')),
       done: doneOf(doc.get('done')),
+      priority: priorityOf(doc.get('priority')),
       public: publicOf(doc.get('public')),
     },
     body,
@@ -121,6 +131,10 @@ export function serializeMemo(doc: Document | null, fields: MemoFields, body: st
     if (fields.done === null) target.delete('done')
     else target.set('done', fields.done)
   }
+  if (priorityOf(target.get('priority')) !== fields.priority) {
+    if (fields.priority === 'medium') target.delete('priority')
+    else target.set('priority', fields.priority)
+  }
   if (publicOf(target.get('public')) !== fields.public) {
     if (fields.public) target.set('public', true)
     else target.delete('public')
@@ -131,12 +145,12 @@ export function serializeMemo(doc: Document | null, fields: MemoFields, body: st
   return `---\n${yaml}---\n\n${content}`
 }
 
-/** frontmatter 안의 `done:`·`public:` 줄 (맨 앞에서 시작하는 최상위 키만) */
-const UNVERSIONED_LINES = /^(?:done|public):[^\r\n]*(?:\r?\n|$)/gm
+/** frontmatter 안의 `done:`·`priority:`·`public:` 줄 (맨 앞에서 시작하는 최상위 키만) */
+const UNVERSIONED_LINES = /^(?:done|priority|public):[^\r\n]*(?:\r?\n|$)/gm
 
 /**
  * 파일 내용 해시 — 저장 충돌 판정용 (설계문서 §3.3).
- * frontmatter 의 `done:`·`public:` 줄은 뺀다. 할 일 체크·외부 공개는 편집기가 들고 있는 내용이 아니고 수정 저장은 파일의 값을
+ * frontmatter 의 `done:`·`priority:`·`public:` 줄은 뺀다. 할 일 체크·중요도·외부 공개는 편집기가 들고 있는 내용이 아니고 수정 저장은 파일의 값을
  * 그대로 두므로, 목록에서 체크했다고(메뉴에서 공개를 켰다고) 열린 편집기의 다음 저장이 「다른 곳에서 먼저 수정했습니다」로 막히면 안 된다.
  */
 export function versionOf(raw: string) {

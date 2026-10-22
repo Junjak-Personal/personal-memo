@@ -9,7 +9,11 @@
  * 터치 끌기는 iOS 웹뷰에서 믿을 수 없어 폰은 메뉴(다른 폴더로 옮기기, 위로·아래로)로 한다.
  *
  * 옮기기는 트리에 바로 보이고 실제 파일 이동은 3초 뒤 대기열이 한다 (useStructureQueue). 순서는 바로 저장한다.
+ * 「할 일」 폴더 (2026-10-22): 메모는 넣고 뺄 수 있지만(할 일이 되고 풀린다) 안의 순서는 날짜·중요도순이라 바꾸지 않는다.
+ * 그 폴더 자체는 옮기지 않고, 그 안에 폴더를 넣지 않는다 (서버도 거절).
  */
+import { TODO_FOLDER } from '#shared/utils/todo'
+
 export type Dragged =
   | { kind: 'memo'; id: string; folder: string; label: string }
   | { kind: 'folder'; path: string; label: string }
@@ -48,11 +52,12 @@ export function useTreeDragDrop({ onRelocated, onReorder, pinned }: Options) {
     return item.kind === 'memo' ? item.folder : parentOf(item.path)
   }
 
-  /** 제자리, 자기 자신, 자기 하위 폴더로는 못 놓는다 */
+  /** 제자리, 자기 자신, 자기 하위 폴더로는 못 놓는다. 「할 일」 폴더는 옮기지 않고, 그 안에 폴더를 넣지 않는다 */
   function canDrop(folder: string) {
     const d = dragging.value
     if (!d) return false
     if (d.kind === 'memo') return folder !== d.folder
+    if (d.path === TODO_FOLDER || folder === TODO_FOLDER || (!folder && d.label === TODO_FOLDER)) return false
     return folder !== parentOf(d.path) && folder !== d.path && !folder.startsWith(`${d.path}/`)
   }
 
@@ -60,7 +65,7 @@ export function useTreeDragDrop({ onRelocated, onReorder, pinned }: Options) {
   function canReorder(target: RowTarget) {
     const d = dragging.value
     if (!d || d.kind !== target.kind || keyOf(d) === keyOf(target)) return false
-    return parentKeyOf(d) === parentKeyOf(target) && !pinned(keyOf(d)) && !pinned(keyOf(target))
+    return parentKeyOf(d) === parentKeyOf(target) && parentKeyOf(target) !== TODO_FOLDER && !pinned(keyOf(d)) && !pinned(keyOf(target))
   }
 
   function start(event: DragEvent, dragged: Dragged) {

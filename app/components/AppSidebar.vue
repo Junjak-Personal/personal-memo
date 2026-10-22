@@ -14,7 +14,7 @@ import { isNavigationFailure, NavigationFailureType, type RouteLocationNormalize
 import type { FolderNode, MemoMeta, SearchHit } from '#shared/types/memo'
 import { todayKst } from '#shared/utils/memo-date'
 import { applyOrder, byCreatedDesc, byName, EMPTY_ORDER, moveKey, stepKey } from '#shared/utils/order'
-import { TODO_FOLDER } from '#shared/utils/todo'
+import { compareDoneTodos, compareOpenTodos, TODO_FOLDER } from '#shared/utils/todo'
 import { currentSearchResults, searchResultMenu } from '~/utils/search-result-menu'
 import type { Dragged, OrderSlot, RowTarget } from '~/composables/useTreeDragDrop'
 
@@ -267,8 +267,15 @@ function sortedFolders(folders: FolderNode[], parent: string) {
   return parent ? ordered : [...ordered].sort((a, b) => Number(isPinned(b.path)) - Number(isPinned(a.path)))
 }
 
-/** 폴더 안 메모 전부, 순서대로 (숨긴 것 포함) */
+/**
+ * 폴더 안 메모 전부, 순서대로 (숨긴 것 포함).
+ * 「할 일」 폴더는 「할 일」 화면과 같은 날짜·중요도순이고 손으로 정하는 순서가 없다 (2026-10-22). 숨긴 끝낸 할 일은 뒤에.
+ */
 function sortedMemos(memos: MemoMeta[], folder: string) {
+  if (folder === TODO_FOLDER) {
+    const own = memos.filter((m) => m.folder === folder)
+    return [...own.filter((m) => m.done !== true).sort(compareOpenTodos), ...own.filter((m) => m.done === true).sort(compareDoneTodos)]
+  }
   return applyOrder(
     memos.filter((m) => m.folder === folder),
     orderOf(folder).memos,
@@ -278,8 +285,8 @@ function sortedMemos(memos: MemoMeta[], folder: string) {
 }
 
 /**
- * 「할 일」 폴더 안의 끝낸 할 일은 숨긴다 — 폴더 메뉴의 「완료 목록 보기」(/todo/done)에서 본다. 다른 폴더에서 할 일로 둔
- * 메모는 내용이 있는 메모라 끝나도 그 폴더에 그대로 둔다 (2026-10-16 사용자 요청)
+ * 「할 일」 폴더 안의 끝낸 할 일은 숨긴다 — 폴더 메뉴의 「완료 목록 보기」(/todo/done)에서 본다.
+ * 할 일은 「할 일」 폴더에만 있다 (2026-10-22) — 폴더 밖 메모를 끌어 넣으면 할 일, 끌어 내면 일반 메모가 된다.
  */
 function isHidden(memo: MemoMeta) {
   return memo.folder === TODO_FOLDER && memo.done === true
@@ -299,16 +306,12 @@ function childFolders(folders: FolderNode[], parent: string): FolderNode[] {
 }
 
 /**
- * 메모 순서를 바꿔 저장한다 — 끌어 놓기와 메뉴의 위로·아래로가 같이 쓴다.
- * 보이는 메모끼리 바꾸고, 숨긴 것(끝낸 할 일)은 뒤에 붙인다 — 숨긴 줄과 자리를 바꿔 «눌러도 그대로» 가 되지 않게.
+ * 메모 순서를 바꿔 저장한다 — 끌어 놓기와 메뉴의 위로·아래로가 같이 쓴다. 「할 일」 폴더는 순서가 없어 여기로 오지 않는다.
  * 대기 중인 폴더 구조 변경이 있으면 먼저 반영한다 — 서버에 아직 없는 폴더의 순서를 쓰지 않게.
  */
 async function reorderMemos(folder: string, change: (keys: string[]) => string[]) {
   if (!(await queue.apply())) return
-  const all = sortedMemos(view.value?.memos ?? [], folder)
-  const shown = all.filter((m) => !isHidden(m)).map((m) => m.id)
-  const hidden = all.filter(isHidden).map((m) => m.id)
-  await setFolderOrder(folder, { memos: [...change(shown), ...hidden] })
+  await setFolderOrder(folder, { memos: change(sortedMemos(view.value?.memos ?? [], folder).map((m) => m.id)) })
 }
 
 /** 하위 폴더 순서 — 이름으로 적는다. 고정된 「할 일」 은 빼고 */
@@ -358,19 +361,21 @@ function slotClass(item: TreeItem) {
 /** 폴더 줄의 메뉴 — PC는 ⋯, 폰은 길게 누르기 */
 function folderMenu(item: TreeItem): SidebarMenuItem[][] {
   const path = String(item.path)
-  const todo: SidebarMenuItem[][] =
-    path === TODO_FOLDER
-      ? [[{ label: '완료 목록 보기', icon: 'i-material-symbols-task-alt', testId: 'sidebar-folder-done-list', onSelect: () => void navigateTo('/todo/done') }]]
-      : []
+  // 「할 일」 폴더는 앱이 정한 자리라 이름·자리를 바꾸거나 지우거나 하위 폴더를 만들지 않는다 (2026-10-22, 서버도 거절)
+  if (path === TODO_FOLDER) {
+    return [
+      [{ label: '완료 목록 보기', icon: 'i-material-symbols-task-alt', testId: 'sidebar-folder-done-list', onSelect: () => void navigateTo('/todo/done') }],
+      [{ label: '여기에 새 메모', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'sidebar-folder-create-memo', onSelect: () => void createInFolder(path) }],
+    ]
+  }
   return [
-    ...todo,
     [
       { label: '여기에 새 메모', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'sidebar-folder-create-memo', onSelect: () => void createInFolder(path) },
       { label: '하위 폴더 만들기', icon: 'i-material-symbols-create-new-folder-outline', testId: 'sidebar-folder-create-folder', onSelect: () => folders.startCreate(path) },
       { label: '이름 바꾸기', icon: 'i-material-symbols-edit-outline', testId: 'sidebar-folder-rename-folder', onSelect: () => folders.startRename(path) },
       { label: '다른 폴더로 옮기기', icon: 'i-material-symbols-drive-file-move-outline', testId: 'sidebar-folder-move-folder', onSelect: () => folders.startMove(path) },
     ],
-    ...(isPinned(path) ? [] : [orderMenu(item, 'sidebar-folder')]),
+    orderMenu(item, 'sidebar-folder'),
     [{ label: '폴더 지우기', icon: 'i-material-symbols-folder-delete-outline', color: 'error', testId: 'sidebar-folder-delete-folder', onSelect: () => void folders.remove(path) }],
   ]
 }
@@ -384,7 +389,8 @@ function rowMenu(item: TreeItem): SidebarMenuItem[][] {
       { label: '여기에 새 메모', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'sidebar-memo-create-memo', onSelect: () => void createInFolder(memo.folder) },
       { label: '다른 폴더로 옮기기', icon: 'i-material-symbols-drive-file-move-outline', disabled: removingMemo.value !== null, testId: 'sidebar-memo-move-memo', onSelect: () => (movingMemo.value = memo) },
     ],
-    orderMenu(item, 'sidebar-memo'),
+    // 「할 일」 폴더 안은 날짜·중요도순이라 위로·아래로가 없다
+    ...(memo.folder === TODO_FOLDER ? [] : [orderMenu(item, 'sidebar-memo')]),
     [{ label: '메모 삭제', icon: 'i-material-symbols-delete-outline', color: 'error', disabled: removingMemo.value !== null, testId: 'sidebar-memo-delete-memo', onSelect: () => void removeMemo(memo.id) }],
   ]
 }

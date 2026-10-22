@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 옮길 폴더 고르기 — 메모 이동과 폴더 이동(폰에서는 끌어 놓기 대신 이것)이 같이 쓴다 */
 import type { FolderNode } from '#shared/types/memo'
+import { TODO_FOLDER } from '#shared/utils/todo'
 
 const props = defineProps<{
   title: string
@@ -29,7 +30,8 @@ const target = ref(toOption(props.current))
 
 const options = computed(() =>
   [{ label: '최상위', value: ROOT }, ...flatten(tree.value?.folders ?? [])].filter(
-    (o) => !props.exclude || (o.value !== props.exclude && !o.value.startsWith(`${props.exclude}/`)),
+    // 폴더를 옮길 때는 「할 일」 안으로 넣지 않는다 (2026-10-22 — 서버도 거절)
+    (o) => !props.exclude || (o.value !== props.exclude && !o.value.startsWith(`${props.exclude}/`) && o.value !== TODO_FOLDER),
   ),
 )
 

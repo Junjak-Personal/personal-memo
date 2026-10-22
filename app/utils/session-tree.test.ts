@@ -3,7 +3,7 @@ import type { TreeResponse } from '#shared/types/memo'
 import { createSessionTree } from './session-tree'
 
 function tree(id: string): TreeResponse {
-  return { folders: [{ path: id, name: id, children: [] }], memos: [], orders: {}, todoOrder: [] }
+  return { folders: [{ path: id, name: id, children: [] }], memos: [], orders: {} }
 }
 
 function deferred() {

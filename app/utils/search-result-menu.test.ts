@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SearchHit } from '#shared/types/memo'
 import { currentSearchResults, searchResultMenu } from './search-result-menu'
 
-const hit = (id: string): SearchHit => ({ id, title: id, path: `${id}.md`, folder: '', created: null, updated: null, date: null, dateEnd: null, tags: [], done: null, public: false, unreadable: false, snippet: '검색에서 일치한 본문' })
+const hit = (id: string): SearchHit => ({ id, title: id, path: `${id}.md`, folder: '', created: null, updated: null, date: null, dateEnd: null, tags: [], done: null, priority: 'medium', public: false, unreadable: false, snippet: '검색에서 일치한 본문' })
 const state = { favorite: false, favoritePending: false, todoPending: false, removing: false, desktop: true }
 function setup(memo = hit('one'), patch: Partial<typeof state> = {}) {
   const actions = { favorite: vi.fn(), copy: vi.fn(), todo: vi.fn(), move: vi.fn(), trash: vi.fn() }

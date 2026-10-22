@@ -10,7 +10,7 @@
 ## Quick Summary
 - **Stack**: Nuxt 4.6 (SPA, `ssr: false`) + Nitro + TypeScript 6 + Nuxt UI 4 / Tailwind v4 · 폰 껍데기 Flutter
 - **Package manager**: pnpm 12.6
-- **Test framework**: Vitest 5 (565 tests / 53 files, 2026-10-21 로딩 높이 안정화 검증) · 브라우저 스모크 수동 확인
+- **Test framework**: Vitest 5 (580 tests / 53 files, 2026-10-23 main 할 일 변경·로딩 높이 안정화 통합 검증) · 브라우저 스모크 수동 확인
 - **State management**: Pinia 없음 — `useState` composable + 모듈 변수
 - **API layer**: 수동 (Nitro 파일 라우트 + `shared/types` 공용 타입), 생성기 없음
 - **CI/CD**: 없음 (배포는 3단계 예정 — pic-blog 의 Dockerfile·deploy.sh·GitHub Actions 복제, 설계문서 §13)

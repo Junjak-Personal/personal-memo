@@ -4,7 +4,7 @@ import type { Ref } from 'vue'
 import type { TreeResponse } from '#shared/types/memo'
 import { useMemoTree } from './useMemoTree'
 
-const tree: TreeResponse = { folders: [], memos: [], orders: {}, todoOrder: [] }
+const tree: TreeResponse = { folders: [], memos: [], orders: {} }
 
 describe('Nuxt 앱에 속한 목록 공유와 인증 감시', () => {
   const cleanups: Array<() => void> = []

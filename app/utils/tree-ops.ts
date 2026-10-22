@@ -6,6 +6,7 @@
  * 각 변경의 경로는 «그 변경을 만든 순간의 화면» 기준이다 — 앞 변경을 얹은 뒤에 맞는 경로다. 서버도 같은 순서로 실행한다.
  */
 import type { FolderNode, MemoMeta, TreeResponse } from '#shared/types/memo'
+import { doneInFolder } from '#shared/utils/todo'
 
 export type StructureOp =
   | { kind: 'moveMemo'; id: string; title: string; folder: string }
@@ -89,7 +90,12 @@ export function applyStructureOps(tree: TreeResponse | null, ops: readonly Struc
   const next: TreeResponse = { ...tree, folders: cloneFolders(tree.folders), memos: tree.memos.map((m): MemoMeta => ({ ...m })), orders: { ...tree.orders } }
   for (const op of ops) {
     if (op.kind === 'moveMemo') {
-      next.memos = next.memos.map((m) => (m.id === op.id ? { ...m, folder: op.folder, path: join(op.folder, nameOf(m.path)) } : m))
+      // 「할 일」 폴더로 들어가면 할 일, 나가면 일반 메모 — 서버(MemoStore.move)와 같은 규칙
+      next.memos = next.memos.map((m) => {
+        if (m.id !== op.id || m.folder === op.folder) return m
+        const done = doneInFolder(m.done, op.folder)
+        return { ...m, folder: op.folder, path: join(op.folder, nameOf(m.path)), done, priority: done === null ? 'medium' : m.priority }
+      })
     } else if (op.kind === 'moveFolder') {
       relocateFolder(next, op.path, join(op.parent, nameOf(op.path)), nameOf(op.path))
     } else {

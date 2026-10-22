@@ -476,21 +476,29 @@ describe('검색·캘린더', () => {
 })
 
 describe('할 일 (done)', () => {
-  it('할 일로 만들면 done: false 가 붙고, 일반 메모는 null', async () => {
+  it('할 일로 만들면 「할 일」 폴더에 done: false 로 생기고(폴더가 없으면 만든다), 일반 메모는 null', async () => {
     const todo = await store.create({ ...input('우유 사기', ''), done: false, folder: '' })
-    expect(todo.done).toBe(false)
-    expect(await readFile(memos('우유 사기.md'), 'utf8')).toContain('done: false\n')
+    expect(todo).toMatchObject({ done: false, folder: '할 일', priority: 'medium' })
+    const raw = await readFile(memos('할 일/우유 사기.md'), 'utf8')
+    expect(raw).toContain('done: false\n')
+    // 중은 기본이라 적지 않는다
+    expect(raw).not.toContain('priority')
     const memo = await store.create({ ...input('그냥 메모'), folder: '' })
     expect(memo.done).toBeNull()
     expect(await readFile(memos('그냥 메모.md'), 'utf8')).not.toContain('done')
   })
 
-  it('체크는 done 만 바꾼다 — 본문·updated·버전은 그대로', async () => {
+  it('「할 일」 폴더에 만들면 할 일이다 (템플릿으로 만들어도)', async () => {
+    await store.createFolder('', '할 일')
+    expect((await store.create({ ...input('그 폴더에'), folder: '할 일' })).done).toBe(false)
+  })
+
+  it('체크는 done 만 바꾼다 — 본문·updated·버전·자리는 그대로', async () => {
     const todo = await store.create({ ...input('보고서', '첫 줄\n\n둘째 줄'), done: false, folder: '' })
-    const before = await readFile(memos('보고서.md'), 'utf8')
+    const before = await readFile(memos('할 일/보고서.md'), 'utf8')
     const checked = await store.setDone(todo.id, true)
-    expect(checked).toMatchObject({ id: todo.id, done: true, updated: todo.updated })
-    const after = await readFile(memos('보고서.md'), 'utf8')
+    expect(checked).toMatchObject({ id: todo.id, done: true, updated: todo.updated, folder: '할 일' })
+    const after = await readFile(memos('할 일/보고서.md'), 'utf8')
     expect(after).toBe(before.replace('done: false', 'done: true'))
     expect((await store.get(todo.id)).version).toBe(todo.version)
   })
@@ -502,12 +510,42 @@ describe('할 일 (done)', () => {
     expect(saved).toMatchObject({ done: true, content: '고친 본문\n' })
   })
 
-  it('null 이면 할 일을 풀어 키를 지운다. 일반 메모를 할 일로 둘 수도 있다', async () => {
-    const memo = await store.create({ ...input('메모'), folder: '' })
-    expect((await store.setDone(memo.id, false)).done).toBe(false)
-    expect(await readFile(memos('메모.md'), 'utf8')).toContain('done: false')
-    expect((await store.setDone(memo.id, null)).done).toBeNull()
-    expect(await readFile(memos('메모.md'), 'utf8')).not.toContain('done')
+  it('할 일로 두면 「할 일」 폴더로 옮기고(이미지도 따라간다), 풀면 키를 지우고 최상위로 옮긴다', async () => {
+    await store.createFolder('', '업무')
+    const memo = await store.create({ ...input('메모'), folder: '업무' })
+    const { src } = await store.saveImage(memo.id, PNG)
+    const opened = await store.get(memo.id)
+    await store.update(memo.id, { ...input('메모', `![](${src})\n`), baseVersion: opened.version })
+
+    const todo = await store.setDone(memo.id, false)
+    expect(todo).toMatchObject({ done: false, folder: '할 일', path: '할 일/메모.md' })
+    expect(await readFile(memos('할 일/메모.md'), 'utf8')).toContain('done: false')
+    expect(await readdir(memos('할 일/assets'))).toHaveLength(1)
+    expect(await readdir(memos('업무'))).toEqual(['assets'])
+
+    await store.setPriority(memo.id, 'high')
+    const plain = await store.setDone(memo.id, null)
+    expect(plain).toMatchObject({ done: null, priority: 'medium', folder: '', path: '메모.md' })
+    const raw = await readFile(memos('메모.md'), 'utf8')
+    expect(raw).not.toContain('done')
+    expect(raw).not.toContain('priority')
+  })
+
+  it('옮기면 할 일 상태가 폴더를 따라간다 — 「할 일」 로 들어가면 할 일, 나가면 일반 메모', async () => {
+    await store.createFolder('', '업무')
+    await store.createFolder('', '할 일')
+    const memo = await store.create({ ...input('끌어 넣기'), folder: '업무' })
+    expect((await store.move(memo.id, '할 일')).done).toBe(false)
+    expect(await readFile(memos('할 일/끌어 넣기.md'), 'utf8')).toContain('done: false')
+
+    await store.setDone(memo.id, true)
+    await store.setPriority(memo.id, 'low')
+    const out = await store.move(memo.id, '업무')
+    expect(out).toMatchObject({ done: null, priority: 'medium', folder: '업무' })
+    expect(await readFile(memos('업무/끌어 넣기.md'), 'utf8')).not.toMatch(/done|priority/)
+    // 「할 일」 폴더 안의 하위 폴더(앱에선 못 만들고 밖에서 만든 것)는 할 일 폴더가 아니다
+    await mkdir(memos('할 일/보관'))
+    expect((await store.move(memo.id, '할 일/보관')).done).toBeNull()
   })
 
   it('밖에서 쓴 done: yes 는 메모로 보고, 수정 저장이 그 값을 건드리지 않는다', async () => {
@@ -536,6 +574,64 @@ describe('할 일 (done)', () => {
     const snapshot = await store.calendarSnapshot()
     expect(snapshot.memos.map((m) => m.id)).toEqual([open.id])
     expect(snapshot.total).toBe(2)
+  })
+})
+
+describe('「할 일」 폴더는 앱이 정한 자리', () => {
+  it('이름 바꾸기·옮기기·지우기·하위 폴더·안으로 폴더 넣기를 거절한다', async () => {
+    await store.createFolder('', '할 일')
+    await store.createFolder('', '업무')
+    await rejects(store.renameFolder('할 일', '할일'), 'bad_request')
+    await rejects(store.moveFolder('할 일', '업무'), 'bad_request')
+    await rejects(store.deleteFolder('할 일'), 'bad_request')
+    await rejects(store.createFolder('할 일', '보관'), 'bad_request')
+    await rejects(store.moveFolder('업무', '할 일'), 'bad_request')
+    // 다른 폴더가 그 경로가 되면 안의 일반 메모가 할 일 폴더에 놓인다
+    await store.createFolder('업무', '할 일')
+    await rejects(store.moveFolder('업무/할 일', ''), 'bad_request')
+    expect((await store.tree()).folders.map((f) => f.path)).toEqual(['업무', '할 일'])
+  })
+
+  it('이름을 「할 일」 로 바꾸는 것도 거절한다 (그 폴더가 없을 때도)', async () => {
+    await store.createFolder('', '업무')
+    await rejects(store.renameFolder('업무', '할 일'), 'bad_request')
+  })
+
+  it('순서를 정하지 않고, 예전에 적힌 순서 파일도 읽지 않는다', async () => {
+    const t = await store.create({ ...input('할 일 하나'), done: false, folder: '' })
+    await rejects(store.setOrder('할 일', { memos: [t.id] }), 'bad_request')
+    await writeFile(memos('할 일/.order.json'), JSON.stringify({ memos: [t.id] }))
+    expect((await store.tree()).orders).toEqual({})
+  })
+})
+
+describe('할 일 중요도 (priority)', () => {
+  it('만들 때 정하고, priority 줄만 바꾼다 — 버전은 그대로라 열린 편집기의 저장이 막히지 않는다', async () => {
+    const todo = await store.create({ ...input('급한 일'), done: false, priority: 'high', folder: '' })
+    expect(todo.priority).toBe('high')
+    expect(await readFile(memos('할 일/급한 일.md'), 'utf8')).toContain('priority: high\n')
+    expect((await store.setPriority(todo.id, 'low')).priority).toBe('low')
+    expect((await store.get(todo.id)).version).toBe(todo.version)
+    const saved = await store.update(todo.id, { ...input('급한 일', '고침'), baseVersion: todo.version })
+    expect(saved.priority).toBe('low')
+    // 중으로 돌리면 키를 지운다
+    await store.setPriority(todo.id, 'medium')
+    expect(await readFile(memos('할 일/급한 일.md'), 'utf8')).not.toContain('priority')
+  })
+
+  it('할 일이 아니면 거절한다. 일반 메모로 만들 때 준 중요도는 버린다', async () => {
+    const memo = await store.create({ ...input('메모'), priority: 'high', folder: '' })
+    expect(memo.priority).toBe('medium')
+    await rejects(store.setPriority(memo.id, 'high'), 'bad_request')
+  })
+
+  it('밖에서 쓴 모르는 값은 중으로 읽고 건드리지 않는다', async () => {
+    await mkdir(memos('할 일'))
+    await externalWrite('할 일/밖.md', '---\ntitle: 밖\ndone: false\npriority: urgent\n---\n\n본문\n')
+    const meta = (await store.tree()).memos[0]!
+    expect(meta.priority).toBe('medium')
+    await store.setDone(meta.id, true)
+    expect(await readFile(memos('할 일/밖.md'), 'utf8')).toContain('priority: urgent\n')
   })
 })
 
@@ -640,12 +736,11 @@ describe('순서 (.order.json)', () => {
     expect((await store.tree()).orders['']).toEqual({ folders: ['나', '가'], memos: [m.id] })
   })
 
-  it('할 일 화면 순서는 최상위 파일의 todos', async () => {
-    const t = await store.create({ ...input('할 일 하나'), folder: '', done: false })
-    await store.setTodoOrder([t.id])
-    const tree = await store.tree()
-    expect(tree.todoOrder).toEqual([t.id])
-    expect(tree.orders).toEqual({})
+  it('예전 할 일 화면 순서(최상위 파일의 todos)는 읽지 않고, 최상위 순서를 저장하면 빠진다', async () => {
+    await writeFile(memos('.order.json'), JSON.stringify({ todos: ['x'] }))
+    expect((await store.tree()).orders).toEqual({})
+    await store.setOrder('', { folders: ['가'] })
+    expect(JSON.parse(await readFile(memos('.order.json'), 'utf8'))).toEqual({ folders: ['가'] })
   })
 
   it('폴더 이름을 바꾸면 위 폴더 순서의 이름도 바뀐다 (자리 유지)', async () => {

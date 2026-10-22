@@ -6,10 +6,10 @@ import { useLastScreen } from './useLastScreen'
 
 function testTree(memos: Array<Partial<MemoMeta> & Pick<MemoMeta, 'id'>>): TreeResponse {
   return {
-    folders: [], orders: {}, todoOrder: [],
+    folders: [], orders: {},
     memos: memos.map((memo) => ({
       path: '', folder: '', title: '', created: null, updated: null, date: null, dateEnd: null,
-      tags: [], done: null, public: false, unreadable: false, ...memo,
+      tags: [], done: null, priority: 'medium', public: false, unreadable: false, ...memo,
     })),
   }
 }

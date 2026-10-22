@@ -10,12 +10,13 @@ import { MAX_ORDER_ITEMS } from '../../shared/utils/order'
 
 export const ORDER_FILE = '.order.json'
 
-export interface OrderFile extends FolderOrder {
-  /** 최상위 파일에만 — 「할 일」 화면의 순서 */
-  todos: string[]
-}
+/**
+ * 예전 최상위 파일에는 「할 일」 화면 순서(`todos`)도 있었다 — 할 일이 날짜·중요도순으로 바뀌어(2026-10-22) 읽지 않는다.
+ * 다음에 최상위 순서를 저장하면 빠진다.
+ */
+export type OrderFile = FolderOrder
 
-export const EMPTY_ORDER_FILE: OrderFile = { folders: [], memos: [], todos: [] }
+export const EMPTY_ORDER_FILE: OrderFile = { folders: [], memos: [] }
 
 /** 문자열만, 중복 없이, 상한까지 */
 export function cleanKeys(value: unknown): string[] {
@@ -37,14 +38,13 @@ export function parseOrderFile(raw: string): OrderFile {
   }
   if (typeof data !== 'object' || data === null || Array.isArray(data)) return { ...EMPTY_ORDER_FILE }
   const record = data as Record<string, unknown>
-  return { folders: cleanKeys(record.folders), memos: cleanKeys(record.memos), todos: cleanKeys(record.todos) }
+  return { folders: cleanKeys(record.folders), memos: cleanKeys(record.memos) }
 }
 
-/** 빈 목록은 적지 않는다 — 하위 폴더 파일에 `todos: []` 같은 군더더기를 남기지 않게 */
+/** 빈 목록은 적지 않는다 — `memos: []` 같은 군더더기를 남기지 않게 */
 export function serializeOrderFile(order: OrderFile) {
   const out: Partial<OrderFile> = {}
   if (order.folders.length) out.folders = order.folders
   if (order.memos.length) out.memos = order.memos
-  if (order.todos.length) out.todos = order.todos
   return `${JSON.stringify(out, null, 2)}\n`
 }

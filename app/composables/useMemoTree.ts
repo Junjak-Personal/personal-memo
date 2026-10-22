@@ -58,16 +58,5 @@ export function useMemoTree() {
     }
   }
 
-  /** 「할 일」 화면의 순서 */
-  async function setTodoOrder(ids: string[]) {
-    if (tree.value) tree.value = { ...tree.value, todoOrder: ids }
-    try {
-      await $fetch('/api/todos/order', { method: 'PUT', body: { ids } })
-    } catch (e) {
-      toast.add({ color: 'error', title: apiMessage(e, '순서를 저장하지 못했습니다') })
-      await refresh()
-    }
-  }
-
-  return { tree, error, ensure, settled, refresh, setFolderOrder, setTodoOrder }
+  return { tree, error, ensure, settled, refresh, setFolderOrder }
 }

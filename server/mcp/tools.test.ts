@@ -73,10 +73,10 @@ describe('MCP 도구', () => {
     const missing = await call('create_memo', { folder: '업무', title: '회의록', content: '## 안건\n' })
     expect(missing.isError).toBe(true)
     await call('create_folder', { name: '업무' })
-    const created = await call('create_memo', { folder: '업무', title: '회의록', content: '## 안건\n', date: '2026-10-20', tags: ['업무'], todo: true })
-    expect(created.data).toMatchObject({ title: '회의록', folder: '업무', date: '2026-10-20', tags: ['업무'], todo: 'open' })
+    const created = await call('create_memo', { folder: '업무', title: '회의록', content: '## 안건\n', date: '2026-10-20', tags: ['업무'] })
+    expect(created.data).toMatchObject({ title: '회의록', folder: '업무', date: '2026-10-20', tags: ['업무'], todo: null })
+    expect(created.data).not.toHaveProperty('priority')
     const file = await readFile(join(root, 'memos/업무/회의록.md'), 'utf8')
-    expect(file).toContain('done: false')
     expect(file).toContain('## 안건')
     expect(notify).toHaveBeenCalledTimes(1)
     expect(log).toHaveBeenCalledWith(expect.stringContaining('[mcp] create_memo'))
@@ -118,7 +118,27 @@ describe('MCP 도구', () => {
     // 끝낸 할 일은 일정에서 빠진다
     expect((await call('calendar', { from: '2026-10-01', to: '2026-10-31' })).data.scheduled).toEqual([])
     await call('set_todo', { id: a.id, state: 'none' })
-    expect((await call('read_memo', { id: a.id })).data.todo).toBeNull()
+    expect((await call('read_memo', { id: a.id })).data).toMatchObject({ todo: null, folder: '' })
+  })
+
+  it('할 일 순서는 날짜 빠른 순(날짜 없는 것은 맨 아래), 같은 날짜는 중요도순. 할 일은 「할 일」 폴더에 생긴다', async () => {
+    await call('create_folder', { name: '업무' })
+    const later = (await call('create_memo', { folder: '업무', title: '나중', date: '2026-11-02', todo: true })).data
+    expect(later).toMatchObject({ folder: '할 일', priority: 'medium' })
+    await call('create_memo', { title: '먼저-하', date: '2026-11-01', todo: true, priority: 'low' })
+    await call('create_memo', { title: '먼저-상', date: '2026-11-01', todo: true, priority: 'high' })
+    await call('create_memo', { title: '날짜 없음-상', todo: true, priority: 'high' })
+    await call('create_memo', { title: '날짜 없음-하', todo: true, priority: 'low' })
+    const titles = async () => (await call('list_todos', {})).data.open.map((t: { title: string }) => t.title)
+    expect(await titles()).toEqual(['먼저-상', '먼저-하', '나중', '날짜 없음-상', '날짜 없음-하'])
+
+    expect((await call('set_todo', { id: later.id, priority: 'high' })).data).toMatchObject({ todo: 'open', priority: 'high' })
+    expect((await call('set_todo', { id: later.id })).isError).toBe(true)
+    expect((await call('set_todo', { id: later.id, state: 'none', priority: 'high' })).isError).toBe(true)
+
+    // 「할 일」 폴더 밖으로 옮기면 일반 메모, 다시 넣으면 할 일
+    expect((await call('move_memo', { id: later.id, folder: '업무' })).data).toMatchObject({ todo: null, folder: '업무' })
+    expect((await call('move_memo', { id: later.id, folder: '할 일' })).data).toMatchObject({ todo: 'open', priority: 'medium' })
   })
 
   it('옮기기·휴지통 — 휴지통은 되살릴 수 있는 이동이다', async () => {

@@ -24,13 +24,22 @@ export interface MemoMeta {
   /**
    * 할 일 (frontmatter `done`, 2026-10-08). null = 할 일이 아닌 메모, false = 안 끝남, true = 끝남.
    * `done: true/false` 가 아닌 값(`done: yes` 등)은 null 로 읽고 파일의 값은 건드리지 않는다.
+   * 할 일은 「할 일」 폴더 바로 아래에만 있다 (2026-10-22) — shared/utils/todo.ts 의 doneInFolder.
    */
   done: boolean | null
+  /**
+   * 할 일의 중요도 (frontmatter `priority`, 2026-10-22). 키가 없거나 모르는 값이면 'medium'. 'medium' 은 파일에 적지 않는다.
+   * 할 일이 아닌 메모에서는 뜻이 없다 — 할 일을 풀면 키를 지운다.
+   */
+  priority: TodoPriority
   /** 외부 공개 (frontmatter `public: true`, 2026-10-16) — `/ext/{id}` 를 로그인 없이 읽기 전용으로 연다 */
   public: boolean
   /** frontmatter 를 읽지 못한 파일 — 앱에서 저장하지 않는다 */
   unreadable: boolean
 }
+
+/** 할 일의 중요도 — 상·중·하 */
+export type TodoPriority = 'high' | 'medium' | 'low'
 
 /** 외부 공개 화면이 받는 것 — 제목·본문·수정 시각만. 폴더·태그·날짜는 내보내지 않는다 */
 export interface PublicMemo {
@@ -60,8 +69,10 @@ export interface MemoInput {
  */
 export interface CreateMemoInput extends MemoInput {
   folder: string
-  /** false = 할 일로 만든다. 없으면 일반 메모 */
+  /** false = 할 일로 만든다(「할 일」 폴더에 생긴다). 없으면 일반 메모 — 단 「할 일」 폴더에 만들면 할 일 */
   done?: boolean
+  /** 할 일일 때만. 없으면 'medium' */
+  priority?: TodoPriority
 }
 
 export interface UpdateMemoInput extends MemoInput {
@@ -88,8 +99,6 @@ export interface TreeResponse {
   memos: MemoMeta[]
   /** 폴더 경로(최상위는 '') → 순서. 순서를 한 번도 바꾸지 않은 폴더는 없다 */
   orders: Record<string, FolderOrder>
-  /** 「할 일」 화면의 순서 — 메모 id. 최상위 `.order.json` 의 `todos` */
-  todoOrder: string[]
 }
 
 export interface TrashItem {

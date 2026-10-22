@@ -23,7 +23,7 @@ export interface IndexEntry {
   unreadable: boolean
 }
 
-const NO_FIELDS: MemoFields = { id: null, title: null, created: null, updated: null, date: null, dateEnd: null, tags: [], done: null, public: false }
+const NO_FIELDS: MemoFields = { id: null, title: null, created: null, updated: null, date: null, dateEnd: null, tags: [], done: null, priority: 'medium', public: false }
 
 /** `.md` 파일의 상대경로들. 점으로 시작하는 것(휴지통·임시 파일)·`assets`·심볼릭 링크는 건너뛴다 */
 export async function walkMarkdown(dir: string, prefix = ''): Promise<string[]> {
@@ -156,6 +156,7 @@ export class MemoIndex {
       dateEnd,
       tags: fields.tags,
       done: fields.done,
+      priority: fields.priority,
       public: fields.public,
       unreadable: entry.unreadable,
     }

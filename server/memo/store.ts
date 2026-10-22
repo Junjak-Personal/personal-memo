@@ -19,13 +19,14 @@ import type {
   PublicMemo,
   SearchHit,
   TrashItem,
+  TodoPriority,
   TreeResponse,
   UpdateMemoInput,
 } from '../../shared/types/memo'
 import { isRelativeSrc, normalizePath } from '../../shared/utils/asset-path'
 import { isDateString, kstDay, nowKst } from '../../shared/utils/memo-date'
 import { hasTag, parseSearchQuery } from '../../shared/utils/tags'
-import { isScheduled } from '../../shared/utils/todo'
+import { doneInFolder, isScheduled, TODO_FOLDER } from '../../shared/utils/todo'
 import { DAY_MS, TRASH_RETENTION_DAYS } from '../../shared/utils/trash'
 import { isUlid, ulid } from '../../shared/utils/ulid'
 import { extractMemoLinkIds } from '../../shared/utils/memo-links'
@@ -139,7 +140,7 @@ export class MemoStore {
       try {
         const now = nowKst()
         const rel = await uniqueMdPath(folder, fileBaseFromTitle(snapshot.title), this.relExists)
-        const raw = serializeMemo(null, { id: ulid(), title: snapshot.title, created: now, updated: now, date: null, dateEnd: null, tags: snapshot.tags, done: null, public: false }, snapshot.content)
+        const raw = serializeMemo(null, { id: ulid(), title: snapshot.title, created: now, updated: now, date: null, dateEnd: null, tags: snapshot.tags, done: doneInFolder(null, folder), priority: 'medium', public: false }, snapshot.content)
         await writeAtomic(await this.abs(rel), raw)
         published = true
         await this.index.refresh(rel)
@@ -158,11 +159,12 @@ export class MemoStore {
       const folders = await this.folderTree(this.root, '')
       const root = await this.readOrder('')
       const orders: Record<string, FolderOrder> = {}
-      for (const path of ['', ...folderPaths(folders)]) {
+      // 「할 일」 폴더는 날짜·중요도순이라 순서 파일을 읽지 않는다 (2026-10-22)
+      for (const path of ['', ...folderPaths(folders)].filter((p) => p !== TODO_FOLDER)) {
         const order = path ? await this.readOrder(path) : root
         if (order.folders.length || order.memos.length) orders[path] = { folders: order.folders, memos: order.memos }
       }
-      return { folders, memos, orders, todoOrder: root.todos }
+      return { folders, memos, orders }
     })
   }
 
@@ -320,15 +322,20 @@ export class MemoStore {
 
   // ── 쓰기 ────────────────────────────────────────────────────────────
 
+  /** 할 일로 만들면(`done` 이 있으면) 「할 일」 폴더에 생긴다. 「할 일」 폴더에 만들면 할 일이다 */
   create(input: CreateMemoInput): Promise<Memo> {
     return this.exclusive(async () => {
-      await this.requireFolder(input.folder)
+      const folder = input.done === undefined ? input.folder : TODO_FOLDER
+      if (folder === TODO_FOLDER) await mkdir(await this.abs(TODO_FOLDER), { recursive: true })
+      else await this.requireFolder(folder)
       await this.index.rescan()
       const now = nowKst()
-      const rel = await uniqueMdPath(input.folder, fileBaseFromTitle(input.title), this.relExists)
+      const done = doneInFolder(input.done ?? null, folder)
+      const priority = done === null ? 'medium' : (input.priority ?? 'medium')
+      const rel = await uniqueMdPath(folder, fileBaseFromTitle(input.title), this.relExists)
       const raw = serializeMemo(
         null,
-        { id: ulid(), title: input.title, created: now, updated: now, date: input.date, dateEnd: input.dateEnd, tags: input.tags ?? [], done: input.done ?? null, public: false },
+        { id: ulid(), title: input.title, created: now, updated: now, date: input.date, dateEnd: input.dateEnd, tags: input.tags ?? [], done, priority, public: false },
         input.content,
       )
       await writeAtomic(await this.abs(rel), raw)
@@ -377,8 +384,9 @@ export class MemoStore {
         date: input.date,
         dateEnd: input.dateEnd,
         tags: input.tags ?? parsed.fields.tags,
-        // 할 일 체크·외부 공개는 저장 입력에 없다 — 파일의 값을 그대로 둔다 (버전도 done·public 을 빼고 잰다)
+        // 할 일 체크·중요도·외부 공개는 저장 입력에 없다 — 파일의 값을 그대로 둔다 (버전도 이 줄들을 빼고 잰다)
         done: parsed.fields.done,
+        priority: parsed.fields.priority,
         public: parsed.fields.public,
       },
       input.content,
@@ -440,6 +448,7 @@ export class MemoStore {
   /**
    * 할 일 체크 — frontmatter 의 `done` 만 바꾼다 (null = 할 일 해제, 키 삭제). 본문·updated·제목은 그대로다.
    * 버전을 받지 않는다: 버전은 done 줄을 빼고 재므로 이 변경은 누구의 저장과도 부딪히지 않는다.
+   * 할 일과 「할 일」 폴더는 함께 간다 (2026-10-22) — 할 일로 두면 「할 일」 폴더로, 풀면 최상위로 옮긴다(중요도도 지운다).
    */
   setDone(id: string, done: boolean | null): Promise<MemoMeta> {
     return this.exclusive(async () => {
@@ -451,8 +460,33 @@ export class MemoStore {
       if (!parsed.ok) {
         throw new MemoError('unreadable', 'frontmatter 를 읽을 수 없어 바꾸지 않았습니다. 파일을 직접 고쳐 주세요')
       }
-      if (parsed.fields.done !== done) {
-        await writeAtomic(abs, serializeMemo(parsed.doc, { ...parsed.fields, done }, parsed.body))
+      const priority = done === null ? 'medium' : parsed.fields.priority
+      if (parsed.fields.done !== done || parsed.fields.priority !== priority) {
+        await writeAtomic(abs, serializeMemo(parsed.doc, { ...parsed.fields, done, priority }, parsed.body))
+        await this.index.refresh(rel)
+      }
+      const from = folderOf(rel)
+      const folder = done === null ? (from === TODO_FOLDER ? '' : from) : TODO_FOLDER
+      if (folder === from) return this.index.meta(this.index.active.get(rel)!)
+      if (folder === TODO_FOLDER) await mkdir(await this.abs(TODO_FOLDER), { recursive: true })
+      const target = await this.relocate(rel, folder)
+      return this.index.meta(this.index.active.get(target)!)
+    })
+  }
+
+  /** 할 일 중요도 — frontmatter 의 `priority` 만 바꾼다. setDone 처럼 버전을 받지 않는다. 할 일에만 정한다 */
+  setPriority(id: string, priority: TodoPriority): Promise<MemoMeta> {
+    return this.exclusive(async () => {
+      await this.index.rescan()
+      const rel = this.requirePath(id)
+      const abs = await this.abs(rel)
+      const parsed = parseMemo(await readFile(abs, 'utf8'))
+      if (!parsed.ok) {
+        throw new MemoError('unreadable', 'frontmatter 를 읽을 수 없어 바꾸지 않았습니다. 파일을 직접 고쳐 주세요')
+      }
+      if (parsed.fields.done === null) throw new MemoError('bad_request', '할 일만 중요도를 정할 수 있습니다')
+      if (parsed.fields.priority !== priority) {
+        await writeAtomic(abs, serializeMemo(parsed.doc, { ...parsed.fields, priority }, parsed.body))
         await this.index.refresh(rel)
       }
       return this.index.meta(this.index.active.get(rel)!)
@@ -489,37 +523,56 @@ export class MemoStore {
       await this.requireFolder(folder)
       await this.index.rescan()
       const rel = this.requirePath(id)
-      const from = folderOf(rel)
-      const entry = this.index.active.get(rel)!
-      if (from === folder) return this.index.meta(entry)
-
-      const ownAssets = joinRel(from, `${ASSETS_DIR}/`)
-      const images = [...referencedImages(from, entry.body)].filter((p) => p.startsWith(ownAssets) && !p.slice(ownAssets.length).includes('/'))
-      const others = this.referencedBy((e) => e !== entry)
-      if (images.length) await mkdir(await this.abs(joinRel(folder, ASSETS_DIR)), { recursive: true })
-      // 원본(`<이름>.orig.<ext>`)은 화면 이미지를 따라간다
-      const originals = images.length ? await this.originalsIn(joinRel(from, ASSETS_DIR)) : new Map<string, string>()
-      for (const src of images) {
-        const shared = others.has(src)
-        const original = originals.get(stemOf(src))
-        for (const file of original ? [src, original] : [src]) {
-          const srcAbs = await this.abs(file)
-          if (!(await exists(srcAbs))) continue
-          const dstAbs = await this.abs(joinRel(folder, `${ASSETS_DIR}/${file.slice(ownAssets.length)}`))
-          if (await exists(dstAbs)) continue
-          // 다른 메모도 쓰는 이미지는 옮기지 않고 복사한다
-          if (shared) await copyFile(srcAbs, dstAbs)
-          else await rename(srcAbs, dstAbs)
-        }
-      }
-
-      const base = rel.slice(from ? from.length + 1 : 0).replace(/\.md$/, '')
-      const target = await uniqueMdPath(folder, base, this.relExists)
-      await rename(await this.abs(rel), await this.abs(target))
-      await this.index.refresh(rel)
-      await this.index.refresh(target)
+      if (folderOf(rel) === folder) return this.index.meta(this.index.active.get(rel)!)
+      const target = await this.relocate(rel, folder)
+      // 「할 일」 폴더로 들어가면 할 일, 밖으로 나가면 일반 메모 (2026-10-22)
+      await this.syncTodo(target)
       return this.index.meta(this.index.active.get(target)!)
     })
+  }
+
+  /** 할 일 상태를 놓인 폴더에 맞춘다 — 일반 메모가 되면 중요도도 지운다. 읽지 못하는 파일은 그대로 둔다 */
+  private async syncTodo(rel: string) {
+    const abs = await this.abs(rel)
+    const parsed = parseMemo(await readFile(abs, 'utf8'))
+    if (!parsed.ok) return
+    const done = doneInFolder(parsed.fields.done, folderOf(rel))
+    const priority = done === null ? 'medium' : parsed.fields.priority
+    if (done === parsed.fields.done && priority === parsed.fields.priority) return
+    await writeAtomic(abs, serializeMemo(parsed.doc, { ...parsed.fields, done, priority }, parsed.body))
+    await this.index.refresh(rel)
+  }
+
+  /** 파일과 그 메모만 쓰는 이미지를 옮긴다. 옮긴 경로를 돌려준다. 호출자는 exclusive 를 잡고 rescan 해 둔다 */
+  private async relocate(rel: string, folder: string) {
+    const from = folderOf(rel)
+    const entry = this.index.active.get(rel)!
+    const ownAssets = joinRel(from, `${ASSETS_DIR}/`)
+    const images = [...referencedImages(from, entry.body)].filter((p) => p.startsWith(ownAssets) && !p.slice(ownAssets.length).includes('/'))
+    const others = this.referencedBy((e) => e !== entry)
+    if (images.length) await mkdir(await this.abs(joinRel(folder, ASSETS_DIR)), { recursive: true })
+    // 원본(`<이름>.orig.<ext>`)은 화면 이미지를 따라간다
+    const originals = images.length ? await this.originalsIn(joinRel(from, ASSETS_DIR)) : new Map<string, string>()
+    for (const src of images) {
+      const shared = others.has(src)
+      const original = originals.get(stemOf(src))
+      for (const file of original ? [src, original] : [src]) {
+        const srcAbs = await this.abs(file)
+        if (!(await exists(srcAbs))) continue
+        const dstAbs = await this.abs(joinRel(folder, `${ASSETS_DIR}/${file.slice(ownAssets.length)}`))
+        if (await exists(dstAbs)) continue
+        // 다른 메모도 쓰는 이미지는 옮기지 않고 복사한다
+        if (shared) await copyFile(srcAbs, dstAbs)
+        else await rename(srcAbs, dstAbs)
+      }
+    }
+
+    const base = rel.slice(from ? from.length + 1 : 0).replace(/\.md$/, '')
+    const target = await uniqueMdPath(folder, base, this.relExists)
+    await rename(await this.abs(rel), await this.abs(target))
+    await this.index.refresh(rel)
+    await this.index.refresh(target)
+    return target
   }
 
   /**
@@ -704,6 +757,7 @@ export class MemoStore {
   /** 폴더 안의 순서 — 하위 폴더 이름, 메모 id. 넘긴 쪽만 바꾼다 */
   setOrder(folder: string, patch: Partial<FolderOrder>): Promise<FolderOrder> {
     return this.exclusive(async () => {
+      if (folder === TODO_FOLDER) throw new MemoError('bad_request', `「${TODO_FOLDER}」 폴더는 날짜·중요도순이라 순서를 정하지 않습니다`)
       await this.requireFolder(folder)
       const order = await this.readOrder(folder)
       const next = { ...order, ...patch }
@@ -712,19 +766,11 @@ export class MemoStore {
     })
   }
 
-  /** 「할 일」 화면의 순서 — 최상위 순서 파일의 todos */
-  setTodoOrder(ids: string[]): Promise<string[]> {
-    return this.exclusive(async () => {
-      const order = await this.readOrder('')
-      await this.writeOrder('', { ...order, todos: ids })
-      return ids
-    })
-  }
-
   // ── 폴더 ────────────────────────────────────────────────────────────
 
   createFolder(parent: string, name: string): Promise<{ path: string }> {
     return this.exclusive(async () => {
+      if (parent === TODO_FOLDER) throw new MemoError('bad_request', `「${TODO_FOLDER}」 폴더 안에는 폴더를 만들 수 없습니다`)
       await this.requireFolder(parent)
       assertName(name)
       const path = joinRel(parent, name)
@@ -740,6 +786,7 @@ export class MemoStore {
       await this.requireFolder(path)
       assertName(name)
       const next = joinRel(folderOf(path), name)
+      assertNotTodoFolder(path, next)
       if (next === path) return { path }
       if (await this.relExists(next)) throw new MemoError('conflict', '같은 이름의 폴더가 이미 있습니다')
       await rename(await this.abs(path), await this.abs(next))
@@ -767,7 +814,9 @@ export class MemoStore {
       if (parent === path || parent.startsWith(`${path}/`)) {
         throw new MemoError('bad_request', '폴더를 자기 자신이나 하위 폴더 안으로 옮길 수 없습니다')
       }
+      if (parent === TODO_FOLDER) throw new MemoError('bad_request', `「${TODO_FOLDER}」 폴더 안에는 폴더를 넣을 수 없습니다`)
       const name = path.slice(path.lastIndexOf('/') + 1)
+      assertNotTodoFolder(path, joinRel(parent, name))
       const next = joinRel(parent, name)
       if (next === path) return { path }
       if (await this.relExists(next)) throw new MemoError('conflict', `「${parent || '최상위'}」 에 같은 이름의 폴더가 이미 있습니다`)
@@ -781,6 +830,7 @@ export class MemoStore {
   deleteFolder(path: string): Promise<void> {
     return this.exclusive(async () => {
       if (!path) throw new MemoError('bad_request', '최상위 폴더는 지울 수 없습니다')
+      if (path === TODO_FOLDER) throw new MemoError('bad_request', `「${TODO_FOLDER}」 폴더는 지울 수 없습니다`)
       await this.requireFolder(path)
       await this.index.rescan()
       const prefix = `${path}/`
@@ -849,6 +899,15 @@ export class MemoStore {
     if (!s?.isFile()) throw new MemoError('not_found', '이미지를 찾을 수 없습니다')
     return { abs, type: IMAGE_TYPES[ext], size: s.size }
   }
+}
+
+/**
+ * 「할 일」 폴더는 앱이 정한 자리다 (2026-10-22) — 할 일은 그 폴더 바로 아래에만 있으므로 이름·자리를 바꾸지 않고,
+ * 다른 폴더가 그 경로가 되지도 않는다(그러면 안의 일반 메모가 할 일 폴더에 놓인다).
+ */
+function assertNotTodoFolder(from: string, to: string) {
+  if (from === TODO_FOLDER) throw new MemoError('bad_request', `「${TODO_FOLDER}」 폴더는 이름을 바꾸거나 옮길 수 없습니다`)
+  if (to === TODO_FOLDER) throw new MemoError('bad_request', `「${TODO_FOLDER}」 는 앱이 쓰는 폴더 이름입니다`)
 }
 
 function folderPaths(nodes: FolderNode[]): string[] {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseMemo, serializeMemo, versionOf } from './file'
 
-const fields = { id: 'ID', title: '제목', created: null, updated: null, date: null, dateEnd: null, tags: [] as string[], done: null as boolean | null, public: false }
+const fields = { id: 'ID', title: '제목', created: null, updated: null, date: null, dateEnd: null, tags: [] as string[], done: null as boolean | null, priority: 'medium' as const, public: false }
 
 describe('frontmatter', () => {
   it('frontmatter 가 없으면 전체가 본문이다', () => {
@@ -125,6 +125,28 @@ describe('frontmatter', () => {
     const odd = parseMemo('---\ntitle: 제목\npublic: yes\n---\n\n본문\n')
     if (!odd.ok) throw new Error('읽지 못함')
     expect(serializeMemo(odd.doc, { ...fields, id: null, public: odd.fields.public }, '본문')).toContain('public: yes\n')
+  })
+
+  it('중요도: high·medium·low 만 읽고 나머지는 medium. medium 은 적지 않고, 모르는 값은 그대로 둔다', () => {
+    const parsed = parseMemo('---\ntitle: 제목\ndone: false\n---\n\n본문\n')
+    if (!parsed.ok) throw new Error('읽지 못함')
+    expect(parsed.fields.priority).toBe('medium')
+    const high = serializeMemo(parsed.doc, { ...fields, id: null, done: false, priority: 'high' }, '본문')
+    expect(high).toContain('priority: high\n')
+    const again = parseMemo(high)
+    if (!again.ok) throw new Error('읽지 못함')
+    expect(again.fields.priority).toBe('high')
+    expect(serializeMemo(again.doc, { ...fields, id: null, done: false, priority: 'medium' }, '본문')).not.toContain('priority')
+    const odd = parseMemo('---\ntitle: 제목\npriority: urgent\n---\n\n본문\n')
+    if (!odd.ok) throw new Error('읽지 못함')
+    expect(odd.fields.priority).toBe('medium')
+    expect(serializeMemo(odd.doc, { ...fields, id: null, priority: odd.fields.priority }, '본문')).toContain('priority: urgent\n')
+  })
+
+  it('버전은 priority 줄도 뺀다 — 중요도를 바꿔도 열린 편집기의 저장이 충돌 나지 않게', () => {
+    const base = '---\nid: X\ntitle: 제목\n---\n\n본문\n'
+    expect(versionOf('---\nid: X\ntitle: 제목\ndone: false\npriority: high\n---\n\n본문\n')).toBe(versionOf(base))
+    expect(versionOf(`${base}priority: high\n`)).not.toBe(versionOf(base))
   })
 
   it('버전은 public 줄도 뺀다 — done 과 같이 있어도 둘 다', () => {

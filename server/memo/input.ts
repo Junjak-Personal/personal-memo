@@ -5,6 +5,7 @@ import type { CreateMemoInput, FolderOrder, MemoInput, UpdateMemoInput } from '.
 import { isDateString } from '../../shared/utils/memo-date'
 import { MAX_ORDER_ITEMS } from '../../shared/utils/order'
 import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS } from '../../shared/utils/tags'
+import { isTodoPriority } from '../../shared/utils/todo'
 import { MemoError } from './errors'
 
 const MAX_TITLE = 200
@@ -71,7 +72,8 @@ export function parseCreateInput(raw: unknown): CreateMemoInput {
   if (typeof folder !== 'string') bad('folder: 문자열이어야 합니다')
   const done = body.done
   if (done !== undefined && typeof done !== 'boolean') bad('done: true 나 false 여야 합니다')
-  return { ...memoInput(body), folder, ...(done === undefined ? {} : { done }) }
+  const priority = body.priority === undefined ? undefined : parsePriorityInput(body)
+  return { ...memoInput(body), folder, ...(done === undefined ? {} : { done }), ...(priority ? { priority } : {}) }
 }
 
 /** 할 일 체크 — `{ done: true | false | null }` (null = 할 일 해제) */
@@ -79,6 +81,13 @@ export function parseDoneInput(raw: unknown) {
   const done = asBody(raw).done
   if (done !== null && typeof done !== 'boolean') bad('done: true, false, null 중 하나여야 합니다')
   return done
+}
+
+/** 할 일 중요도 — `{ priority: 'high' | 'medium' | 'low' }` */
+export function parsePriorityInput(raw: unknown) {
+  const value = asBody(raw).priority
+  if (!isTodoPriority(value)) bad('priority: high, medium, low 중 하나여야 합니다')
+  return value
 }
 
 export function parsePublicInput(raw: unknown) {
@@ -120,7 +129,3 @@ export function parseOrderInput(raw: unknown): { folder: string; patch: Partial<
   return { folder, patch }
 }
 
-/** `{ ids }` — 「할 일」 화면의 순서 */
-export function parseTodoOrderInput(raw: unknown) {
-  return orderKeys(asBody(raw), 'ids')
-}

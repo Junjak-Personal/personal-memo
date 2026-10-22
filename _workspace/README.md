@@ -11,6 +11,7 @@ Gitignored except this file. Everything here is disposable; delete freely.
 | `issues/2026-10-21-remaining/` | #3/#4 기존 미커밋 기준 해시/patch, #5→#6→#7 순차 구현·회귀·통합 API 근거 |
 | `e2e/2026-10-20-refactor/` | 책임 분리 기준/최종 검사 로그·기존 native 파일 해시·합성 데이터 UI 증거 |
 | `e2e/2026-10-20-startup-loading/` | 첫 실행 스플래시·tree 요청 공유 검증 로그/Chrome 증거, 기존 격리 dotenv 재사용 |
+| `e2e/2026-10-22-todo-priority/` | 할 일 날짜·중요도 정렬, 할 일 ⇔ 「할 일」 폴더 스모크 스크린샷 (격리 데이터) |
 | `spike/` | 0단계 스파이크 실행 기록 (S1 로그 등) |
 | `ui/` | 화면 확인 스크린샷 — `NN-<화면>-<폭>[-dark].png` |
 

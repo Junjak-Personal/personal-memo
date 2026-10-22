@@ -20,7 +20,7 @@ const history = useMemoHistory({
     toast.add({ title: '선택한 버전으로 복원했습니다', description: '복원 직전 내용도 수정 이력에 보관했습니다.' })
   },
 })
-const { open, loading, selecting, restoring, confirming, error, conflict, revisions, selected } = history
+const { open, loading, selecting, restoring, confirming, error, conflict, revisions, selected, selectedReady } = history
 const dateTime = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' })
 function label(value: string) {
   const date = new Date(value)
@@ -47,7 +47,6 @@ defineExpose({ show: history.show })
     @update:open="onOpen"
   >
     <template #body>
-      <p v-if="loading" role="status" class="py-8 text-center text-sm text-muted">수정 이력을 불러오는 중…</p>
       <UAlert
         v-if="error"
         color="error"
@@ -57,35 +56,36 @@ defineExpose({ show: history.show })
         class="mb-4"
         data-testid="memo-history-error"
       />
-      <div v-if="!loading && revisions.length" class="grid min-h-0 gap-4 sm:grid-cols-[12rem_minmax(0,1fr)]">
-        <nav aria-label="저장된 버전" class="flex max-h-36 flex-col gap-1 overflow-y-auto sm:max-h-[50dvh]">
-          <button
-            v-for="revision in revisions"
-            :key="revision.id"
-            type="button"
-            class="rounded-md border border-default px-3 py-2 text-left text-sm hover:bg-elevated"
-            :class="selected?.id === revision.id && 'bg-elevated ring-1 ring-primary'"
-            :aria-pressed="selected?.id === revision.id"
-            :disabled="restoring"
-            data-testid="memo-history-revision"
-            @click="history.select(revision.id)"
-          >
-            <span class="block">{{ label(revision.savedAt) }}</span>
-            <span class="block truncate text-xs text-muted">{{ revision.title || '제목 없음' }}</span>
-          </button>
-        </nav>
-        <div class="min-w-0">
-          <p v-if="selecting" role="status" class="py-8 text-center text-sm text-muted">버전을 불러오는 중…</p>
-          <article v-else-if="selected" class="max-h-[45dvh] overflow-auto rounded-md border border-default p-4 sm:max-h-[50dvh]" data-testid="memo-history-preview">
-            <h3 class="mb-2 text-lg font-semibold break-words">{{ selected.title || '제목 없음' }}</h3>
-            <p v-if="selected.date" class="mb-2 text-xs text-muted">{{ selected.date }}{{ selected.dateEnd ? ` ~ ${selected.dateEnd}` : '' }}</p>
-            <p v-if="selected.tags.length" class="mb-3 text-xs text-muted">{{ selected.tags.map(tag => `#${tag}`).join(' ') }}</p>
-            <p class="mb-2 text-xs text-dimmed">본문 원문</p>
-            <pre class="font-sans text-sm whitespace-pre-wrap break-words">{{ selected.content || '(빈 메모)' }}</pre>
-          </article>
+      <MemoLoadingRegion :loading="loading && !selecting" label="수정 이력을 불러오는 중…">
+        <div v-if="revisions.length" class="grid min-h-0 gap-4 sm:grid-cols-[12rem_minmax(0,1fr)]">
+          <nav aria-label="저장된 버전" class="flex max-h-36 flex-col gap-1 overflow-y-auto sm:max-h-[50dvh]">
+            <button
+              v-for="revision in revisions"
+              :key="revision.id"
+              type="button"
+              class="rounded-md border border-default px-3 py-2 text-left text-sm hover:bg-elevated"
+              :class="selected?.id === revision.id && 'bg-elevated ring-1 ring-primary'"
+              :aria-pressed="selected?.id === revision.id"
+              :disabled="restoring"
+              data-testid="memo-history-revision"
+              @click="history.select(revision.id)"
+            >
+              <span class="block">{{ label(revision.savedAt) }}</span>
+              <span class="block truncate text-xs text-muted">{{ revision.title || '제목 없음' }}</span>
+            </button>
+          </nav>
+          <MemoLoadingRegion :loading="selecting" label="버전을 불러오는 중…" class="min-w-0">
+            <article v-if="selected" class="max-h-[45dvh] overflow-auto rounded-md border border-default p-4 sm:max-h-[50dvh]" data-testid="memo-history-preview">
+              <h3 class="mb-2 text-lg font-semibold break-words">{{ selected.title || '제목 없음' }}</h3>
+              <p v-if="selected.date" class="mb-2 text-xs text-muted">{{ selected.date }}{{ selected.dateEnd ? ` ~ ${selected.dateEnd}` : '' }}</p>
+              <p v-if="selected.tags.length" class="mb-3 text-xs text-muted">{{ selected.tags.map(tag => `#${tag}`).join(' ') }}</p>
+              <p class="mb-2 text-xs text-dimmed">본문 원문</p>
+              <pre class="font-sans text-sm whitespace-pre-wrap break-words">{{ selected.content || '(빈 메모)' }}</pre>
+            </article>
+          </MemoLoadingRegion>
         </div>
-      </div>
-      <p v-else-if="!loading && !error" class="py-8 text-center text-sm text-muted" data-testid="memo-history-empty">아직 수정 이력이 없습니다. 내용을 수정해 저장하면 이전 버전이 여기에 보관됩니다.</p>
+        <p v-else-if="!loading && !error" class="py-8 text-center text-sm text-muted" data-testid="memo-history-empty">아직 수정 이력이 없습니다. 내용을 수정해 저장하면 이전 버전이 여기에 보관됩니다.</p>
+      </MemoLoadingRegion>
       <UAlert
         v-if="confirming"
         color="warning"
@@ -99,8 +99,8 @@ defineExpose({ show: history.show })
     <template #footer>
       <div class="flex w-full justify-end gap-2">
         <UButton color="neutral" variant="outline" :disabled="restoring" @click="confirming ? confirming = false : history.close()">{{ confirming ? '취소' : '닫기' }}</UButton>
-        <UButton v-if="confirming" :loading="restoring" data-testid="memo-history-confirm" @click="history.restore">이 버전으로 복원</UButton>
-        <UButton v-else :disabled="!selected || selecting || loading" data-testid="memo-history-restore" @click="confirming = true">이 버전으로 복원…</UButton>
+        <UButton v-if="confirming" :loading="restoring" :disabled="!selectedReady || selecting || loading" data-testid="memo-history-confirm" @click="history.restore">이 버전으로 복원</UButton>
+        <UButton v-else :disabled="!selectedReady || selecting || loading" data-testid="memo-history-restore" @click="confirming = true">이 버전으로 복원…</UButton>
       </div>
     </template>
   </UModal>

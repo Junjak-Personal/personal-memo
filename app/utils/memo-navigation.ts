@@ -101,6 +101,8 @@ export interface MemoQuickSearchState {
   results: SearchHit[]
   loading: boolean
   error: string | null
+  /** 현재 표시한 결과를 받은 검색어. null은 아직 검색 응답을 받은 적이 없음을 뜻한다. */
+  resultsQuery: string | null
 }
 
 /** 닫힌 창·이전 검색·이전 로그인에서 늦게 도착한 본문 발췌를 표시하지 않는다. */
@@ -113,32 +115,67 @@ export function createMemoQuickSearch(options: {
 }) {
   let sequence = 0
   let request: AbortController | null = null
+  let retained: SearchHit[] = []
+  let retainedScope: string | null = null
+  let resultsQuery: string | null = null
 
-  function reset() {
+  function invalidate() {
     sequence++
     request?.abort()
     request = null
-    options.setState({ results: [], loading: false, error: null })
+  }
+
+  function publish(loading: boolean, error: string | null = null) {
+    options.setState({ results: retained, loading, error, resultsQuery })
+  }
+
+  function reset() {
+    invalidate()
+    retained = []
+    retainedScope = null
+    resultsQuery = null
+    publish(false)
+  }
+
+  /** 조합 입력·debounce 취소는 응답만 무효화하고 같은 화면의 표시 결과는 보존한다. */
+  function cancel() {
+    invalidate()
+    if (retainedScope !== options.scope() || !options.active()) reset()
+    else publish(false)
+  }
+
+  function prepare(query: string) {
+    invalidate()
+    const scope = options.scope()
+    if (!query.trim() || !scope || !options.active()) { reset(); return null }
+    if (scope !== retainedScope) {
+      retained = []
+      resultsQuery = null
+    }
+    retainedScope = scope
+    publish(true)
+    return { scope, sequence }
   }
 
   async function search(query: string) {
-    reset()
-    const scope = options.scope()
-    if (!query.trim() || !scope || !options.active()) return
-    const current = sequence
+    const prepared = prepare(query)
+    if (!prepared) return
     const controller = new AbortController()
     request = controller
-    const valid = () => current === sequence && scope === options.scope() && options.active()
-    options.setState({ results: [], loading: true, error: null })
+    const valid = () => prepared.sequence === sequence && prepared.scope === options.scope() && options.active()
     try {
       const results = await options.fetch(query.trim().slice(0, 200), controller.signal)
-      if (valid()) options.setState({ results: results.filter((memo) => !memo.unreadable), loading: false, error: null })
+      if (valid()) {
+        retained = results.filter(memo => !memo.unreadable)
+        resultsQuery = query.trim()
+        publish(false)
+      }
     } catch (error) {
-      if (valid()) options.setState({ results: [], loading: false, error: options.message(error) })
+      if (valid()) publish(false, options.message(error))
     } finally {
       if (request === controller) request = null
     }
   }
 
-  return { search, reset }
+  return { search, prepare, cancel, reset }
 }

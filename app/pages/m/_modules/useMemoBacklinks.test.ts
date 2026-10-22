@@ -42,6 +42,23 @@ describe('백링크 조회 수명', () => {
     expect(h.rows.value).toEqual([row])
     expect(h.loading.value).toBe(false)
   })
+  it('같은 문서의 새로고침은 기존 참조를 유지하고 실패해도 지우지 않는다', async () => {
+    const h = useMemoBacklinks(() => id.value)
+    mounted()
+    await settle()
+    const next = deferred<MemoMeta[]>()
+    fetch.mockReturnValueOnce(next.promise)
+    const pending = h.refresh()
+    expect(h.loading.value).toBe(true)
+    expect(h.rows.value).toEqual([row])
+    next.resolve([{ ...row, id: 'updated' }])
+    await pending
+    expect(h.rows.value[0]?.id).toBe('updated')
+    fetch.mockRejectedValueOnce(new Error('offline'))
+    await h.refresh()
+    expect(h.rows.value[0]?.id).toBe('updated')
+    expect(h.error.value).not.toBe('')
+  })
   it('문서 변경 전의 늦은 참조 제목을 표시하지 않는다', async () => {
     const old = deferred<MemoMeta[]>()
     fetch.mockReturnValueOnce(old.promise).mockResolvedValueOnce([{ ...row, id: 'new-source' }])

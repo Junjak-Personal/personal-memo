@@ -117,7 +117,7 @@ describe('빠른 검색 입력·응답', () => {
   it('이전 검색 응답·오류와 닫은 창의 본문은 표시하지 않는다', async () => {
     let scope = 'one'
     let active = true
-    let state: MemoQuickSearchState = { results: [], loading: false, error: null }
+    let state: MemoQuickSearchState = { results: [], loading: false, error: null, resultsQuery: null }
     const old = deferred<SearchHit[]>()
     const newer = deferred<SearchHit[]>()
     const fetch = vi.fn().mockReturnValueOnce(old.promise).mockReturnValueOnce(newer.promise)
@@ -139,6 +139,56 @@ describe('빠른 검색 입력·응답', () => {
     search.reset()
     late.resolve([{ id: 'private' }] as SearchHit[])
     await third
-    expect(state).toEqual({ results: [], loading: false, error: null })
+    expect(state).toEqual({ results: [], loading: false, error: null, resultsQuery: null })
   })
+})
+
+it('재검색을 시작하거나 실패해도 같은 로그인에서 이미 받은 결과를 유지한다', async () => {
+  let state: MemoQuickSearchState = { results: [], loading: false, error: null, resultsQuery: null }
+  const next = deferred<SearchHit[]>()
+  const rows = [{ id: 'kept', unreadable: false }] as SearchHit[]
+  const fetch = vi.fn().mockResolvedValueOnce(rows).mockReturnValueOnce(next.promise)
+  const search = createMemoQuickSearch({ scope: () => 'one', active: () => true, fetch, setState: value => { state = value }, message: () => '실패' })
+  await search.search('first')
+  const pending = search.search('second')
+  expect(state.loading).toBe(true)
+  expect(state.results).toEqual(rows)
+  next.reject(new Error('offline'))
+  await pending
+  expect(state.results).toEqual(rows)
+  expect(state.error).toBe('실패')
+})
+
+it('debounce와 조합 입력 취소는 기존 목록만 유지하고 대기 응답은 무효화한다', async () => {
+  let state: MemoQuickSearchState = { results: [], loading: false, error: null, resultsQuery: null }
+  const late = deferred<SearchHit[]>()
+  const fetch = vi.fn().mockResolvedValueOnce([{ id: 'kept', unreadable: false }]).mockReturnValueOnce(late.promise)
+  const search = createMemoQuickSearch({ scope: () => 'one', active: () => true, fetch, setState: value => { state = value }, message: () => '실패' })
+  await search.search('first')
+  search.prepare('debounced')
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(state).toMatchObject({ loading: true, resultsQuery: 'first', results: [{ id: 'kept' }] })
+  const pending = search.search('pending')
+  search.cancel()
+  expect(state).toMatchObject({ loading: false, resultsQuery: 'first', results: [{ id: 'kept' }] })
+  late.resolve([{ id: 'late' }] as SearchHit[])
+  await pending
+  expect(state.results[0]?.id).toBe('kept')
+})
+
+it('정상 빈 결과와 아직 응답이 없는 최초 검색을 구분하고 다른 로그인은 이전 결과를 지운다', async () => {
+  let state: MemoQuickSearchState = { results: [], loading: false, error: null, resultsQuery: null }
+  let scope = 'one'
+  const fetch = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 'private', unreadable: false }])
+  const search = createMemoQuickSearch({ scope: () => scope, active: () => true, fetch, setState: value => { state = value }, message: () => '실패' })
+  search.prepare('first')
+  expect(state.resultsQuery).toBeNull()
+  await search.search('none')
+  expect(state).toMatchObject({ results: [], resultsQuery: 'none', loading: false })
+  await search.search('private')
+  scope = 'two'
+  search.prepare('new login')
+  expect(state).toEqual({ results: [], resultsQuery: null, loading: true, error: null })
+  search.reset()
+  expect(state).toEqual({ results: [], resultsQuery: null, loading: false, error: null })
 })

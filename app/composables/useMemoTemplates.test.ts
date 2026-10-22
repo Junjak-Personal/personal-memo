@@ -53,12 +53,49 @@ describe('내 템플릿 모달의 조회·변경·인증 수명', () => {
     const old = deferred<MemoTemplate>()
     fetch.mockReturnValueOnce(old.promise).mockResolvedValueOnce(detail('two'))
     const selecting = state.select('one')
-    expect(state.selected.value).toBeNull()
-    expect(state.name.value).toBe('')
+    expect(state.selected.value?.id).toBe('one')
+    expect(state.name.value).toBe('양식 one')
+    expect(state.selectedReady.value).toBe(false)
     await state.select('two')
     old.resolve(detail('one'))
     await selecting
     expect(state.selected.value?.id).toBe('two')
+  })
+
+  it('선택 대기 중 이전 원문은 남기되 생성·이름 변경·삭제는 이전 항목에 보내지 않는다', async () => {
+    const state = manager()
+    await state.show()
+    const pending = deferred<MemoTemplate>()
+    fetch.mockReturnValueOnce(pending.promise)
+    const selecting = state.select('two')
+    expect(state.selected.value?.id).toBe('one')
+    expect(state.name.value).toBe('양식 one')
+    const count = fetch.mock.calls.length
+    state.name.value = '대기 중 변경'
+    state.confirming.value = true
+    await state.rename()
+    await state.remove()
+    expect(await state.create('')).toBeNull()
+    expect(fetch).toHaveBeenCalledTimes(count)
+    pending.resolve(detail('two'))
+    await selecting
+    expect(state.selected.value?.id).toBe('two')
+  })
+
+  it('같은 세션의 목록 재조회 중 결과와 미리보기는 유지하고 새 응답만 반영한다', async () => {
+    const state = manager()
+    await state.show()
+    const pending = deferred<MemoTemplateSummary[]>()
+    fetch.mockReturnValueOnce(pending.promise)
+    const refreshing = state.show()
+    expect(state.templates.value).toEqual(list)
+    expect(state.selected.value?.id).toBe('one')
+    expect(state.loading.value).toBe(true)
+    expect(await state.create('')).toBeNull()
+    pending.resolve(list)
+    await refreshing
+    expect(state.loading.value).toBe(false)
+    expect(state.selected.value?.id).toBe('one')
   })
 
   it('목록 실패·빈 목록을 표시하고 명시적인 다시 열기로 재조회한다', async () => {
@@ -73,14 +110,22 @@ describe('내 템플릿 모달의 조회·변경·인증 수명', () => {
     expect(state.selected.value).toBeNull()
   })
 
-  it('선택 실패 뒤 이름·원문을 지우고 다시 선택할 수 있다', async () => {
+  it('선택 실패 뒤 기존 미리보기는 유지하되 변경을 막고 다시 선택할 수 있다', async () => {
     const state = manager()
     await state.show()
     fetch.mockRejectedValueOnce(new Error('offline'))
     await state.select('two')
-    expect(state.selected.value).toBeNull()
-    expect(state.name.value).toBe('')
+    expect(state.selected.value?.id).toBe('one')
+    expect(state.name.value).toBe('양식 one')
+    expect(state.selectedReady.value).toBe(false)
     expect(state.error.value).toContain('템플릿을 불러오지 못했습니다')
+    const count = fetch.mock.calls.length
+    state.name.value = '이전 항목 변경'
+    state.confirming.value = true
+    await state.rename()
+    await state.remove()
+    expect(await state.create('')).toBeNull()
+    expect(fetch).toHaveBeenCalledTimes(count)
     await state.select('two')
     expect(state.selected.value?.id).toBe('two')
   })
@@ -194,12 +239,12 @@ describe('내 템플릿 모달의 조회·변경·인증 수명', () => {
   })
 
   it('현재 메모 저장 뒤 영구 ID와 새 버전으로 템플릿을 만든다', async () => {
-    const state = saver()
-    id = 'p:업무/메모.md'
+    const source = ref('p:업무/메모.md')
+    const state = useSaveMemoTemplate({ memoId: () => source.value, version: () => version, title: () => '원본 제목', flush })
     state.show()
     expect(state.name.value).toBe('원본 제목')
     const permanent = '01ARZ3NDEKTSV4RRFFQ69G5FAV'
-    flush.mockImplementationOnce(async () => { id = permanent; version = 'saved-version'; return true })
+    flush.mockImplementationOnce(async () => { source.value = permanent; version = 'saved-version'; return true })
     expect(await state.save()).toBe(true)
     expect(fetch).toHaveBeenCalledWith('/api/templates', { method: 'POST', body: { memoId: permanent, name: '원본 제목', baseVersion: 'saved-version' } })
     expect(state.open.value).toBe(false)
@@ -259,6 +304,22 @@ describe('내 템플릿 모달의 조회·변경·인증 수명', () => {
     expect(await state.save()).toBe(false)
     expect(fetch).not.toHaveBeenCalled()
     expect(state.error.value).toContain('열린 메모가 바뀌었습니다')
+  })
+
+
+  it('저장 모달의 원본이 바뀌면 이름을 즉시 지우고 대기 응답을 버린다', async () => {
+    const source = ref('original')
+    const state = useSaveMemoTemplate({ memoId: () => source.value, version: () => version, title: () => '원본 제목', flush })
+    state.show()
+    const pending = deferred<unknown>()
+    fetch.mockReturnValueOnce(pending.promise)
+    const saving = state.save()
+    await Promise.resolve()
+    source.value = 'another'
+    expect(state.open.value).toBe(false)
+    expect(state.name.value).toBe('')
+    pending.resolve(detail('saved'))
+    expect(await saving).toBe(false)
   })
 
   it('이름 변경 중 계정이 바뀌면 이전 계정 응답으로 목록을 채우지 않는다', async () => {

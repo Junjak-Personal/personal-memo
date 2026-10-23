@@ -9,7 +9,7 @@
  * 폰은 메뉴로 옮기고 「위로」「아래로」 로 순서를 바꾼다. 순서는 폴더마다 `.order.json` (설계문서 §3.6).
  */
 import type { DropdownMenuItem, TreeItem } from '@nuxt/ui'
-import type { VNode } from 'vue'
+import type { ComponentPublicInstance, VNode } from 'vue'
 import { isNavigationFailure, NavigationFailureType, type RouteLocationNormalized } from 'vue-router'
 import type { FolderNode, MemoMeta, SearchHit } from '#shared/types/memo'
 import { todayKst } from '#shared/utils/memo-date'
@@ -114,6 +114,8 @@ const moreActive = computed(() => moreMenu.some((item) => item.to && route.path.
 const coarsePointer = window.matchMedia('(pointer: coarse)').matches
 // 길게 누른 손가락을 뗄 때 생기는 click 으로 메모가 열리거나 폴더가 접히지 않게 한다.
 let pressedMenuRow: string | null = null
+/** 목록 스크롤 위치 — 폰에서는 닫을 때 목록이 통째로 사라졌다가 열 때 맨 위부터 다시 그려진다. 열 때 되돌린다 */
+let sidebarScrollTop = 0
 
 /*
  * 기본 autoClose는 Nuxt의 route 갱신을 보고 닫는다. 메모 페이지는 재사용되어 새 문서를 받기 전에
@@ -195,6 +197,20 @@ onBeforeUnmount(() => {
   sidebarOpen.value = false
   for (const remove of removeMenuHooks) remove()
 })
+
+/**
+ * 검색 줄이 그려질 때(폰은 목록을 열 때마다) 그 위의 스크롤 칸(body)에 붙어 위치를 적고, 마지막 위치로 되돌린다.
+ * 펼친 폴더가 늦게 그려져 칸이 아직 짧으면 한 프레임 뒤에 한 번 더 맞춘다. PC 는 목록이 계속 있어서 한 번만 붙는다.
+ */
+function rememberScroll(el: Element | ComponentPublicInstance | null) {
+  const body = el instanceof HTMLElement ? el.closest<HTMLElement>('[data-slot="body"]') : null
+  if (!body || body.dataset.scrollMemory) return
+  body.dataset.scrollMemory = 'on'
+  const target = sidebarScrollTop
+  body.scrollTop = target
+  if (body.scrollTop !== target) requestAnimationFrame(() => (body.scrollTop = target))
+  body.addEventListener('scroll', () => (sidebarScrollTop = body.scrollTop), { passive: true })
+}
 
 function onVisibility() {
   if (document.visibilityState === 'hidden') void queue.apply()
@@ -602,7 +618,7 @@ async function logout() {
       </div>
     </template>
 
-    <form class="flex gap-1" @submit.prevent="applySearch">
+    <form :ref="rememberScroll" class="flex gap-1" @submit.prevent="applySearch">
       <UInput
         v-model="searchInput"
         icon="i-material-symbols-search"

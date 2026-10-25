@@ -1,5 +1,10 @@
 <script setup lang="ts">
-const { creating, createMemo } = useCreateMemo()
+const { creating, creationItems } = useCreateMemo()
+const templatesDialog = useTemplateRef<{ show: (folder?: string) => Promise<void> }>('templatesDialog')
+
+async function showTemplates(folder: string) {
+  await templatesDialog.value?.show(folder)
+}
 </script>
 
 <template>
@@ -15,9 +20,15 @@ const { creating, createMemo } = useCreateMemo()
         <span class="hidden lg:inline">왼쪽 목록에서 메모를 고르거나 새로 만드세요</span>
         <span class="lg:hidden">≡ 를 눌러 목록을 열거나 새로 만드세요</span>
       </p>
-      <UButton icon="i-material-symbols-add" :loading="creating" data-testid="home-new-button" @click="createMemo()">
-        새 메모
-      </UButton>
+      <UDropdownMenu :items="creationItems('', showTemplates)">
+        <UButton icon="i-material-symbols-add" :loading="creating" data-testid="home-new-button">
+          새 메모
+        </UButton>
+        <template #item-label="{ item }">
+          <span :data-testid="item.testId">{{ item.label }}</span>
+        </template>
+      </UDropdownMenu>
     </div>
+    <MemoTemplatesDialog ref="templatesDialog" />
   </div>
 </template>

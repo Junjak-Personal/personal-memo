@@ -271,50 +271,48 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div>
-    <Teleport to="#app-header-actions" defer>
+  <div class="contents">
+    <UButton
+      v-if="!active && !disabled"
+      icon="i-material-symbols-drag-indicator"
+      color="neutral"
+      variant="ghost"
+      class="size-11 justify-center lg:hidden"
+      aria-label="블록 이동"
+      data-testid="memo-block-move-start"
+      @click="enter"
+    />
+    <template v-if="active">
       <UButton
-        v-if="!active && !disabled"
-        icon="i-material-symbols-drag-indicator"
+        icon="i-material-symbols-undo"
         color="neutral"
         variant="ghost"
-        class="size-11 justify-center lg:hidden"
-        aria-label="블록 이동"
-        data-testid="memo-block-move-start"
-        @click="enter"
+        class="size-11 justify-center"
+        aria-label="실행 취소"
+        :disabled="!canUndo || !!drag"
+        data-testid="memo-block-move-undo"
+        @click="undo"
       />
-      <template v-if="active">
-        <UButton
-          icon="i-material-symbols-undo"
-          color="neutral"
-          variant="ghost"
-          class="size-11 justify-center"
-          aria-label="실행 취소"
-          :disabled="!canUndo || !!drag"
-          data-testid="memo-block-move-undo"
-          @click="undo"
-        />
-        <UButton
-          icon="i-material-symbols-redo"
-          color="neutral"
-          variant="ghost"
-          class="size-11 justify-center"
-          aria-label="다시 실행"
-          :disabled="!canRedo || !!drag"
-          data-testid="memo-block-move-redo"
-          @click="redo"
-        />
-        <UButton
-          icon="i-material-symbols-check"
-          color="neutral"
-          variant="ghost"
-          class="size-11 justify-center"
-          aria-label="블록 이동 완료"
-          data-testid="memo-block-move-done"
-          @click="finish"
-        />
-      </template>
-    </Teleport>
+      <UButton
+        icon="i-material-symbols-redo"
+        color="neutral"
+        variant="ghost"
+        class="size-11 justify-center"
+        aria-label="다시 실행"
+        :disabled="!canRedo || !!drag"
+        data-testid="memo-block-move-redo"
+        @click="redo"
+      />
+      <UButton
+        icon="i-material-symbols-check"
+        color="neutral"
+        variant="ghost"
+        class="size-11 justify-center"
+        aria-label="블록 이동 완료"
+        data-testid="memo-block-move-done"
+        @click="finish"
+      />
+    </template>
     <!-- 본문 래퍼 안에서 함께 스크롤한다. overflow: clip은 별도 스크롤 컨테이너를 만들지 않는다. -->
     <Teleport v-if="active && overlayTarget && !sidebarOpen" :to="overlayTarget">
       <div

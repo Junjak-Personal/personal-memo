@@ -16,9 +16,9 @@ const folders = computed(() => [{ label: '최상위', value: '/' }, ...flatten(q
 function flatten(nodes: FolderNode[]): { label: string; value: string }[] {
   return nodes.flatMap(node => [{ label: node.path, value: node.path }, ...flatten(node.children)])
 }
-async function show() {
+async function show(initialFolder = '') {
   if (locked.value) return
-  folder.value = '/'
+  folder.value = initialFolder || '/'
   void ensure()
   await templates.show()
 }
@@ -55,7 +55,7 @@ defineExpose({ show })
   <UModal :open="open" title="내 템플릿" description="반복해서 쓰는 메모를 보관하고 새 메모로 만듭니다." :dismissible="!locked" :close="!locked" :ui="{ content: 'sm:max-w-4xl', body: 'min-h-0' }" @update:open="onOpen">
     <template #body>
       <UAlert v-if="error" :title="error" color="error" variant="subtle" class="mb-4" data-testid="memo-templates-error" />
-      <UButton v-if="error && !created" color="neutral" variant="outline" class="mb-4 min-h-11" :disabled="locked" @click="show">목록 다시 불러오기</UButton>
+      <UButton v-if="error && !created" color="neutral" variant="outline" class="mb-4 min-h-11" :disabled="locked" data-testid="memo-templates-retry" @click="templates.show">목록 다시 불러오기</UButton>
       <MemoLoadingRegion :loading="loading && !selecting" label="템플릿 목록을 불러오는 중…">
         <div v-if="templates.templates.value.length" class="grid min-h-0 gap-4 sm:grid-cols-[12rem_minmax(0,1fr)]">
           <nav aria-label="저장된 템플릿" class="flex max-h-36 flex-col gap-1 overflow-y-auto sm:max-h-[50dvh]">

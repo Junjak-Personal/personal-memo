@@ -40,7 +40,7 @@ const message = computed(() => {
   <component
     :is="failed ? 'button' : 'div'"
     :type="failed ? 'button' : undefined"
-    class="flex shrink-0 items-center justify-end gap-1 rounded-md text-xs lg:w-24"
+    class="flex size-11 shrink-0 items-center justify-center gap-1 rounded-md text-xs lg:h-8 lg:w-24 lg:justify-end"
     :class="[view.class, failed && 'cursor-pointer border border-error/50 px-1.5 py-0.5 hover:bg-error/10']"
     :title="message"
     :aria-label="message"

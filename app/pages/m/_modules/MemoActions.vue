@@ -18,6 +18,7 @@ const props = defineProps<{
   flush: () => Promise<boolean>
   title: () => string
   folder: string
+  hideMenu?: boolean
 }>()
 
 const toast = useToast()
@@ -90,23 +91,25 @@ async function remove() {
 </script>
 
 <template>
-  <UTooltip v-if="isPublic" text="공개 링크 복사">
+  <UTooltip v-if="isPublic && !hideMenu" text="공개 링크 복사">
     <UButton
       icon="i-material-symbols-public"
       color="primary"
       variant="outline"
-      size="sm"
+      class="size-11 shrink-0 justify-center lg:h-8 lg:w-auto"
       aria-label="외부 공개 중 — 공개 링크 복사"
       data-testid="memo-public-badge"
       @click="share.copyLink(props.memoId())"
     >
-      <span class="hidden sm:inline">공개 중</span>
+      <span class="hidden lg:inline">공개 중</span>
     </UButton>
   </UTooltip>
 
-  <UDropdownMenu :items="items" :content="{ align: 'end' }">
+  <slot />
+
+  <UDropdownMenu v-if="!hideMenu" :items="items" :content="{ align: 'end' }">
     <UTooltip text="메모 메뉴">
-      <UButton icon="i-material-symbols-more-horiz" color="neutral" variant="ghost" aria-label="메모 메뉴" data-testid="memo-actions-button" />
+      <UButton icon="i-material-symbols-more-horiz" color="neutral" variant="ghost" class="size-11 shrink-0 justify-center lg:size-8" aria-label="메모 메뉴" data-testid="memo-actions-button" />
     </UTooltip>
   </UDropdownMenu>
 

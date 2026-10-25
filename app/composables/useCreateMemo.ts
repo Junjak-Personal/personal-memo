@@ -1,9 +1,11 @@
+import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Memo } from '#shared/types/memo'
 
-/** 빈 메모를 만들고 그 화면으로 간다. 사이드바와 빈 화면이 같이 쓴다 */
+/** 사이드바와 빈 화면이 생성 선택 메뉴와 빈 메모 생성을 공유한다. */
 export function useCreateMemo() {
   const toast = useToast()
   const { refresh } = useMemoTree()
+  const queue = useStructureQueue()
   const creating = ref(false)
 
   async function createMemo(folder = '') {
@@ -23,5 +25,22 @@ export function useCreateMemo() {
     }
   }
 
-  return { creating, createMemo }
+  function creationItems(folder: string, showTemplates: (folder: string) => Promise<void>) {
+    return [
+      {
+        label: '새 메모로 생성', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'memo-create-blank',
+        onSelect: () => void createInFolder(folder),
+      },
+      {
+        label: '템플릿에서 생성', icon: 'i-material-symbols-note-stack-outline', disabled: creating.value, testId: 'memo-create-template',
+        onSelect: () => void showTemplates(folder),
+      },
+    ] satisfies DropdownMenuItem[]
+  }
+
+  async function createInFolder(folder: string) {
+    if (await queue.apply()) await createMemo(folder)
+  }
+
+  return { creating, createMemo, creationItems }
 }

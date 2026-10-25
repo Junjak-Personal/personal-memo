@@ -62,6 +62,7 @@ onBeforeUnmount(() => { props.editor.off('transaction', sync); window.removeEven
         icon="i-material-symbols-format-list-bulleted"
         color="neutral"
         variant="ghost"
+        class="size-11 shrink-0 justify-center lg:size-8"
         aria-label="목차·접기"
         :disabled="disabled || !entries.length"
         data-testid="memo-outline-button"

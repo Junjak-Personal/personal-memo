@@ -28,7 +28,7 @@ const toast = useToast()
 
 const { tree, error: treeError, ensure, refresh, setFolderOrder } = useMemoTree()
 const { moveToTrash, notifyMoved } = useMemoTrashActions()
-const { creating, createMemo } = useCreateMemo()
+const { creating, creationItems } = useCreateMemo()
 const queue = useStructureQueue()
 const folders = useFolderActions({ onRelocated: relocate })
 const dnd = useTreeDragDrop({ onRelocated: relocate, onReorder, pinned: (key) => key === TODO_FOLDER })
@@ -36,7 +36,7 @@ const todo = useTodo()
 const activeMemo = useActiveMemo()
 const navigation = useMemoNavigation()
 const quickSwitch = useTemplateRef<{ show: () => void }>('quickSwitch')
-const templatesDialog = useTemplateRef<{ show: () => Promise<void> }>('templatesDialog')
+const templatesDialog = useTemplateRef<{ show: (folder?: string) => Promise<void> }>('templatesDialog')
 
 const mobileMenu = useMobileMenuNavigation()
 const sidebarOpen = mobileMenu.open
@@ -381,12 +381,12 @@ function folderMenu(item: TreeItem): SidebarMenuItem[][] {
   if (path === TODO_FOLDER) {
     return [
       [{ label: '완료 목록 보기', icon: 'i-material-symbols-task-alt', testId: 'sidebar-folder-done-list', onSelect: () => void navigateTo('/todo/done') }],
-      [{ label: '여기에 새 메모', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'sidebar-folder-create-memo', onSelect: () => void createInFolder(path) }],
+      [{ label: '여기에 새 메모', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'sidebar-folder-create-memo', children: creationItems(path, showTemplates) }],
     ]
   }
   return [
     [
-      { label: '여기에 새 메모', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'sidebar-folder-create-memo', onSelect: () => void createInFolder(path) },
+      { label: '여기에 새 메모', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'sidebar-folder-create-memo', children: creationItems(path, showTemplates) },
       { label: '하위 폴더 만들기', icon: 'i-material-symbols-create-new-folder-outline', testId: 'sidebar-folder-create-folder', onSelect: () => folders.startCreate(path) },
       { label: '이름 바꾸기', icon: 'i-material-symbols-edit-outline', testId: 'sidebar-folder-rename-folder', onSelect: () => folders.startRename(path) },
       { label: '다른 폴더로 옮기기', icon: 'i-material-symbols-drive-file-move-outline', testId: 'sidebar-folder-move-folder', onSelect: () => folders.startMove(path) },
@@ -402,7 +402,7 @@ function rowMenu(item: TreeItem): SidebarMenuItem[][] {
   if (!memo) return []
   return [
     [
-      { label: '여기에 새 메모', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'sidebar-memo-create-memo', onSelect: () => void createInFolder(memo.folder) },
+      { label: '여기에 새 메모', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'sidebar-memo-create-memo', children: creationItems(memo.folder, showTemplates) },
       { label: '다른 폴더로 옮기기', icon: 'i-material-symbols-drive-file-move-outline', disabled: removingMemo.value !== null, testId: 'sidebar-memo-move-memo', onSelect: () => (movingMemo.value = memo) },
     ],
     // 「할 일」 폴더 안은 날짜·중요도순이라 위로·아래로가 없다
@@ -439,8 +439,8 @@ async function copyMemoAddress(id: string) {
   }
 }
 
-async function createInFolder(folder: string) {
-  if (await queue.apply()) await createMemo(folder)
+async function showTemplates(folder = '') {
+  await templatesDialog.value?.show(folder)
 }
 
 function moveMemo(folder: string) {
@@ -602,18 +602,22 @@ async function logout() {
               @click="folders.startCreate('')"
             />
           </UTooltip>
-          <UTooltip text="새 메모">
-            <UButton
-              icon="i-material-symbols-add"
-              color="neutral"
-              variant="ghost"
-              class="size-11 justify-center lg:size-8"
-              :loading="creating"
-              aria-label="새 메모"
-              data-testid="sidebar-new-button"
-              @click="createMemo(currentFolder)"
-            />
-          </UTooltip>
+          <UDropdownMenu :items="creationItems(currentFolder, showTemplates)" :content="{ align: 'end' }">
+            <UTooltip text="새 메모">
+              <UButton
+                icon="i-material-symbols-add"
+                color="neutral"
+                variant="ghost"
+                class="size-11 justify-center lg:size-8"
+                :loading="creating"
+                aria-label="새 메모"
+                data-testid="sidebar-new-button"
+              />
+            </UTooltip>
+            <template #item-label="{ item }">
+              <span :data-testid="item.testId">{{ item.label }}</span>
+            </template>
+          </UDropdownMenu>
         </div>
       </div>
     </template>

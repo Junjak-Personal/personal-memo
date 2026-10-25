@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { compareDoneTodos, compareOpenTodos, doneInFolder, isScheduled } from './todo'
 
 describe('isScheduled — 캘린더에 일정으로 보이는가', () => {
-  it('날짜가 있고 끝나지 않은 것만', () => {
-    expect(isScheduled({ date: '2026-10-15', done: null })).toBe(true)
+  it('날짜가 있는 미완료 할 일만, 일반 메모는 날짜가 있어도 제외한다', () => {
+    expect(isScheduled({ date: '2026-10-15', done: null })).toBe(false)
     expect(isScheduled({ date: '2026-10-15', done: false })).toBe(true)
     expect(isScheduled({ date: '2026-10-15', done: true })).toBe(false)
     expect(isScheduled({ date: null, done: false })).toBe(false)

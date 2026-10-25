@@ -251,7 +251,7 @@ export class MemoStore {
         const meta = this.index.meta(entry)
         const day = meta.created ? kstDay(meta.created) : null
         if (day && day >= from && day <= to) created.push(meta)
-        // 끝난 할 일은 일정이 아니다 — 「이날 만든 메모」에는 남는다
+        // 일반 메모와 끝난 할 일은 일정이 아니다 — 「이날 만든 메모」에는 남는다
         if (isScheduled(meta) && meta.date <= to && (meta.dateEnd ?? meta.date) >= from) scheduled.push(meta)
       }
       return { created, scheduled }
@@ -259,7 +259,7 @@ export class MemoStore {
   }
 
   /**
-   * 구글 캘린더 대조용 (§8.3) — 메모 파일 수(휴지통 포함)와, id 가 있고 일정으로 보이는(날짜 있음 + 끝나지 않음) 활성 메모.
+   * 구글 캘린더 대조용 (§8.3) — 메모 파일 수(휴지통 포함)와, id·날짜가 있는 미완료 할 일.
    * total 이 0 이면 대조가 «데이터 폴더가 빠졌다»고 보고 삭제를 미룬다. 휴지통을 세는 이유 — 하나뿐인 메모를
    * 휴지통에 넣었을 때 그 일정까지 막히지 않게 (폴더가 정말 빠졌다면 휴지통도 비어 있다).
    * `p:` 경로 id 는 빠진다. 파일 이름이 바뀌면 id 도 바뀌어 일정이 끊기므로, 앱에서 한 번 저장해 id 가 붙은 뒤부터 잇는다.

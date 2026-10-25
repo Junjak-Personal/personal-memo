@@ -418,9 +418,9 @@ describe('검색·캘린더', () => {
   })
 
   it('기간과 겹치는 일정과 기간 안에 만든 메모를 준다', async () => {
-    await store.create({ ...input('하루', '', { date: '2026-10-10' }), folder: '' })
-    await store.create({ ...input('걸침', '', { date: '2026-09-28', dateEnd: '2026-10-02' }), folder: '' })
-    await store.create({ ...input('밖', '', { date: '2026-11-05' }), folder: '' })
+    await store.create({ ...input('하루', '', { date: '2026-10-10' }), done: false, folder: '' })
+    await store.create({ ...input('걸침', '', { date: '2026-09-28', dateEnd: '2026-10-02' }), done: false, folder: '' })
+    await store.create({ ...input('밖', '', { date: '2026-11-05' }), done: false, folder: '' })
     const { scheduled, created } = await store.calendar('2026-10-01', '2026-10-31')
     expect(scheduled.map((m) => m.title).sort()).toEqual(['걸침', '하루'])
     // created 는 오늘(KST) — 테스트가 도는 날에 따라 기간 밖일 수 있으므로 넓은 기간으로 따로 본다
@@ -429,20 +429,20 @@ describe('검색·캘린더', () => {
     expect(wide.created).toHaveLength(3)
   })
 
-  it('캘린더 대조용 목록 — id 가 있고 날짜가 있는 활성 메모만, total 은 휴지통까지 센 파일 수', async () => {
-    const dated = await store.create({ ...input('날짜', '', { date: '2026-10-10' }), folder: '' })
+  it('캘린더 대조용 목록 — id 와 날짜가 있는 미완료 할 일만, total 은 휴지통까지 센 파일 수', async () => {
+    const dated = await store.create({ ...input('날짜', '', { date: '2026-10-10' }), done: false, folder: '' })
     await store.create({ ...input('날짜 없음'), folder: '' })
-    const trashed = await store.create({ ...input('휴지통', '', { date: '2026-10-11' }), folder: '' })
+    const trashed = await store.create({ ...input('휴지통', '', { date: '2026-10-11' }), done: false, folder: '' })
     await store.remove(trashed.id)
     // id 없이 밖에서 만든 파일 — 경로 id(p:)라 아직 잇지 않는다
-    await externalWrite('밖.md', '---\ntitle: 밖\ndate: 2026-10-12\n---\n\n본문\n')
+    await externalWrite('할 일/밖.md', '---\ntitle: 밖\ndate: 2026-10-12\ndone: false\n---\n\n본문\n')
     const { total, memos } = await store.calendarSnapshot()
     expect(total).toBe(4)
     expect(memos.map((m) => m.id)).toEqual([dated.id])
   })
 
   it('하나뿐인 메모를 휴지통에 넣어도 total 은 0 이 아니다 — 대조가 그 일정을 지울 수 있게', async () => {
-    const only = await store.create({ ...input('하나', '', { date: '2026-10-10' }), folder: '' })
+    const only = await store.create({ ...input('하나', '', { date: '2026-10-10' }), done: false, folder: '' })
     await store.remove(only.id)
     expect(await store.calendarSnapshot()).toEqual({ total: 1, memos: [] })
   })
@@ -564,16 +564,18 @@ describe('할 일 (done)', () => {
     await rejects(store.setDone('01JZZZZZZZZZZZZZZZZZZZZZZZ', true), 'not_found')
   })
 
-  it('끝난 할 일은 캘린더 일정·구글 대조에서 빠지고, 「이날 만든 메모」에는 남는다', async () => {
+  it('날짜 있는 일반 메모와 끝난 할 일은 일정·구글 대조에서 빠지고, 「이날 만든 메모」에는 남는다', async () => {
     const open = await store.create({ ...input('안 끝남', '', { date: '2026-10-10' }), done: false, folder: '' })
     const finished = await store.create({ ...input('끝남', '', { date: '2026-10-11' }), done: false, folder: '' })
+    const journal = await store.create({ ...input('일지', '기록', { date: '2026-10-12' }), folder: '' })
     await store.setDone(finished.id, true)
     const { scheduled } = await store.calendar('2026-10-01', '2026-10-31')
     expect(scheduled.map((m) => m.title)).toEqual(['안 끝남'])
-    expect((await store.calendar('2000-01-01', '2100-12-31')).created).toHaveLength(2)
+    expect((await store.calendar('2000-01-01', '2100-12-31')).created).toHaveLength(3)
     const snapshot = await store.calendarSnapshot()
     expect(snapshot.memos.map((m) => m.id)).toEqual([open.id])
-    expect(snapshot.total).toBe(2)
+    expect(snapshot.total).toBe(3)
+    expect(await store.get(journal.id)).toMatchObject({ date: '2026-10-12', done: null, content: '기록\n' })
   })
 })
 

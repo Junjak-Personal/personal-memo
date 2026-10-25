@@ -13,6 +13,7 @@ import type { RouteLocationNormalized } from 'vue-router'
 import type { Memo } from '#shared/types/memo'
 import { toDisplaySrc, toOriginalSrc, toStoredSrc } from '#shared/utils/asset-path'
 import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS, sameTags, TAG_DELIMITER } from '#shared/utils/tags'
+import { isScheduled } from '#shared/utils/todo'
 import { emojiItems } from '~/utils/editor-emoji'
 import { memoExtensions } from '~/utils/editor-extensions'
 import { MemoOutlineExtension } from '~/utils/memo-outline'
@@ -536,7 +537,7 @@ function showTableBubble({ editor, view, state }: MenuContext) {
             test-id="memo-todo-priority"
             @pick="todo.setPriority(autosave.currentId(), $event)"
           />
-          <MemoCalendarSyncBadge :memo-id="autosave.currentId()" :has-date="!!date" />
+          <MemoCalendarSyncBadge :memo-id="autosave.currentId()" :has-date="isScheduled({ date, done: todoDone })" />
           <span class="text-xs text-dimmed">{{ currentFolder || '최상위' }}</span>
         </div>
         <!-- 태그 — 공백·쉼표·Enter 로 끊는다. 한글 조합 중의 입력은 TagsInput 이 기다려 준다 -->

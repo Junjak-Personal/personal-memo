@@ -43,7 +43,7 @@ class FakeCalendar implements CalendarApi {
 }
 
 function meta(id: string, date: string | null, title = `메모 ${id}`, dateEnd: string | null = null): MemoMeta {
-  return { id, path: `${title}.md`, folder: '', title, created: null, updated: null, date, dateEnd, tags: [], done: null, priority: 'medium', public: false, unreadable: false }
+  return { id, path: `할 일/${title}.md`, folder: '할 일', title, created: null, updated: null, date, dateEnd, tags: [], done: false, priority: 'medium', public: false, unreadable: false }
 }
 
 let api: FakeCalendar
@@ -65,6 +65,29 @@ afterEach(() => {
 })
 
 describe('CalendarSync', () => {
+  it('날짜 있는 일반 메모는 구글 일정으로 만들지 않고, 본문·날짜 변경 알림도 대조하지 않는다', async () => {
+    const journal = { ...meta('J', '2026-10-20'), done: null, folder: '개인/일지' }
+    memos = [journal, { ...meta('T', '2026-10-20'), done: false }]
+    await sync.run()
+    expect([...api.events.values()].map(event => event.summary)).toEqual(['메모 T'])
+
+    api.calls = []
+    vi.useFakeTimers()
+    sync.notify({ ...journal, date: '2026-10-21' })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(api.calls).toEqual([])
+  })
+
+  it('기존 일반 메모 일정은 정리하고 미완료 할 일과 직접 만든 구글 일정은 보존한다', async () => {
+    memos = [{ ...meta('J', '2026-10-20'), done: null }, { ...meta('T', '2026-10-20'), done: false }]
+    api.events.set('old-journal', { id: 'old-journal', summary: '일지', start: { date: '2026-10-20' }, end: { date: '2026-10-21' }, extendedProperties: { private: { memoId: 'J' } } })
+    api.events.set('manual', { id: 'manual', summary: '직접 만든 일정', start: { date: '2026-10-20' }, end: { date: '2026-10-21' } })
+    await sync.run()
+    expect(api.events.has('old-journal')).toBe(false)
+    expect(api.events.has('manual')).toBe(true)
+    expect([...api.events.values()].some(event => event.extendedProperties?.private?.memoId === 'T')).toBe(true)
+  })
+
   it('대조 결과를 반영하고 상태를 남긴다', async () => {
     memos = [meta('A', '2026-10-20'), meta('B', null)]
     await sync.run()
@@ -149,9 +172,9 @@ describe('CalendarSync', () => {
       expect([...api.events.values()][0]).toMatchObject({ summary: '새 제목', start: { date: '2026-10-22' } })
     })
 
-    it('할 일을 끝내면 제목·날짜가 그대로여도 대조해 일정을 지우고, 다시 풀면 다시 만든다', async () => {
-      const finished = { ...meta('A', '2026-10-20'), done: true }
-      // 대조도 끝난 할 일을 일정으로 보지 않는다 — 스냅숏이 넘겨도 빠진다
+    it.each([true, null])('할 일 상태가 %s면 제목·날짜가 그대로여도 일정을 지우고, 다시 미완료로 두면 만든다', async done => {
+      const finished = { ...meta('A', '2026-10-20'), done }
+      // 일반 메모와 끝난 할 일은 스냅숏이 넘겨도 일정에서 빠진다.
       memos = [finished]
       sync.notify(finished)
       await vi.advanceTimersByTimeAsync(500)

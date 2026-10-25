@@ -34,7 +34,7 @@ const INSTRUCTIONS = `개인 마크다운 메모 앱이다. 메모는 폴더 안
 - 고치기 전에 read_memo 로 읽고 그때 받은 version 을 update_memo 에 넘긴다. 그 사이 바뀌었으면 거절되니 다시 읽고 고친다.
 - 본문은 CommonMark + GFM 마크다운(목록은 "- ", 체크리스트 "- [ ]", 표). 제목은 본문에 다시 쓰지 않는다.
 - 다른 메모를 가리킬 때는 [제목](/m/<id>) 로 쓴다. 앱 주소(https://…/m/<id>)를 통째로 넣으면 외부 링크로 열리고 그 메모의 「참조하는 메모」에도 잡히지 않는다.
-- 날짜가 있는 메모와 안 끝난 할 일은 사용자의 구글 캘린더에 종일 일정으로 보인다.
+- 날짜가 있는 미완료 할 일만 사용자의 구글 캘린더에 종일 일정으로 보인다. 일반 메모는 날짜를 지정해도 일정에 포함하지 않는다.
 - 할 일은 「${TODO_FOLDER}」 폴더에만 있다. 할 일로 두면 그 폴더로 옮겨지고, 풀면 최상위로 옮겨진다. 그 폴더로 옮기면 할 일, 밖으로 옮기면 일반 메모가 된다.
 - 이미지는 create_image_upload 로 받은 링크에 셸(curl)로 올리고, 돌아온 markdown 을 본문에 넣는다. 셸이 없으면 이미지를 붙일 수 없다.
 - 지우기는 휴지통으로만(30일 안에 되살릴 수 있다). 영구 삭제 도구는 없다.
@@ -151,7 +151,7 @@ export function buildMcpServer(deps: McpDeps) {
     'calendar',
     {
       title: '캘린더',
-      description: '기간(둘 다 포함, YYYY-MM-DD) 안에 일정이 걸친 메모(scheduled)와 그 기간에 만든 메모(created). 끝낸 할 일은 일정에서 빠진다.',
+      description: '기간(둘 다 포함, YYYY-MM-DD) 안에 일정이 걸친 미완료 할 일(scheduled)과 그 기간에 만든 메모(created). 일반 메모와 끝낸 할 일은 일정에서 빠진다.',
       inputSchema: { from: dateString, to: dateString },
       annotations: { readOnlyHint: true },
     },
@@ -168,7 +168,7 @@ export function buildMcpServer(deps: McpDeps) {
     'create_memo',
     {
       title: '메모 만들기',
-      description: `새 메모. 폴더는 이미 있어야 한다(없으면 create_folder). todo 면 할 일로 「${TODO_FOLDER}」 폴더에 만든다(folder 는 무시). 날짜가 있으면 구글 캘린더에도 보인다.`,
+      description: `새 메모. 폴더는 이미 있어야 한다(없으면 create_folder). todo 면 할 일로 「${TODO_FOLDER}」 폴더에 만든다(folder 는 무시). 날짜가 있는 미완료 할 일만 구글 캘린더에도 보인다.`,
       inputSchema: {
         folder: z.string().optional().describe('비우면 최상위'),
         title: z.string().min(1),

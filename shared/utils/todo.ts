@@ -19,9 +19,9 @@ export function isTodoPriority(value: unknown): value is TodoPriority {
   return typeof value === 'string' && (TODO_PRIORITIES as readonly string[]).includes(value)
 }
 
-/** 캘린더에 일정으로 보이는가 — 앱 캘린더, 구글 대조, 저장 직후 알림이 이 한 규칙을 쓴다 */
+/** 날짜가 있는 미완료 할 일만 일정이다. 일반 메모의 날짜는 기록용으로 보존한다. */
 export function isScheduled<T extends Pick<MemoMeta, 'date' | 'done'>>(memo: T): memo is T & { date: string } {
-  return memo.date !== null && memo.done !== true
+  return memo.date !== null && memo.done === false
 }
 
 /** 이 폴더에 놓인 메모의 할 일 상태 — 「할 일」 폴더면 할 일(끝냈으면 그대로), 아니면 일반 메모 */

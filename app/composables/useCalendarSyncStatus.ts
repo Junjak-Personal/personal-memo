@@ -41,11 +41,11 @@ export function useCalendarSyncStatus() {
     }
   }
 
-  /** 이 메모가 캘린더에 반영되지 못했으면 그 이유. 대조 자체가 실패했으면 날짜 있는 메모 모두 해당한다 */
-  function failureOf(memoId: string, hasDate: boolean) {
+  /** 메모별 실패(이전 일정 삭제 실패 포함)는 유지하고, 전역 오류는 현재 일정 대상에만 보인다. */
+  function failureOf(memoId: string, scheduled: boolean) {
     const s = status.value
     if (s?.state !== 'on') return null
-    return s.failures[memoId] ?? (hasDate && s.error ? s.error : null)
+    return s.failures[memoId] ?? (scheduled && s.error ? s.error : null)
   }
 
   return { status, running, refresh, recheckSoon, runNow, failureOf }

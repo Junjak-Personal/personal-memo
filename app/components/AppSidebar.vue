@@ -14,7 +14,7 @@ import { isNavigationFailure, NavigationFailureType, type RouteLocationNormalize
 import type { FolderNode, MemoMeta, SearchHit } from '#shared/types/memo'
 import { todayKst } from '#shared/utils/memo-date'
 import { applyOrder, byCreatedDesc, byName, EMPTY_ORDER, moveKey, stepKey } from '#shared/utils/order'
-import { compareDoneTodos, compareOpenTodos, TODO_FOLDER } from '#shared/utils/todo'
+import { compareDoneTodos, compareOpenTodos, isScheduled, TODO_FOLDER } from '#shared/utils/todo'
 import { currentSearchResults, searchResultMenu } from '~/utils/search-result-menu'
 import type { Dragged, OrderSlot, RowTarget } from '~/composables/useTreeDragDrop'
 
@@ -67,9 +67,9 @@ const selected = computed(() => findItem(items.value, currentId.value))
 const openTodos = computed(() => view.value?.memos.filter((m) => m.done === false).length ?? 0)
 /** 오늘(KST) — 앱을 켜 둔 채 날이 바뀌면 다시 앱으로 돌아올 때 고친다 (onVisibility) */
 const today = ref(todayKst())
-/** 오늘에 걸친 일정이 있나 — 구글 캘린더에 보이는 것과 같은 기준(끝낸 할 일 제외, 설계문서 §8.3) */
+/** 오늘에 걸친 일정이 있나 — 앱·구글 캘린더와 같은 미완료 할 일 기준(설계문서 §8.3) */
 const hasTodayEvent = computed(
-  () => view.value?.memos.some((m) => m.date && m.date <= today.value && (m.dateEnd ?? m.date) >= today.value && m.done !== true) ?? false,
+  () => view.value?.memos.some((m) => isScheduled(m) && m.date <= today.value && (m.dateEnd ?? m.date) >= today.value) ?? false,
 )
 
 interface FooterLink {

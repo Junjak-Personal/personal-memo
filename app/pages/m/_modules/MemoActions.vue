@@ -50,7 +50,7 @@ const items = computed<DropdownMenuItem[][]>(() => [
   isPublic.value
     ? [
         { label: '공개 링크 복사', icon: 'i-material-symbols-link', onSelect: () => void share.copyLink(props.memoId()) },
-        { label: '외부 공개 끄기', icon: 'i-material-symbols-public-off', onSelect: () => void share.setPublic(props.memoId(), false) },
+        { label: share.isInherited(props.memoId()) ? '폴더에서 공개 중' : '외부 공개 끄기', icon: 'i-material-symbols-public-off', disabled: share.isInherited(props.memoId()), onSelect: () => void share.setPublic(props.memoId(), false) },
       ]
     : [{ label: '외부 공개', icon: 'i-material-symbols-public', onSelect: () => void share.setPublic(props.memoId(), true) }],
   [{ label: '폴더 이동', icon: 'i-material-symbols-drive-file-move-outline', onSelect: () => (moveOpen.value = true) }],

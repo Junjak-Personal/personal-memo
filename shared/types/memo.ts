@@ -34,6 +34,11 @@ export interface MemoMeta {
   priority: TodoPriority
   /** 외부 공개 (frontmatter `public: true`, 2026-10-16) — `/ext/{id}` 를 로그인 없이 읽기 전용으로 연다 */
   public: boolean
+  /** 공개 폴더에서 상속한 상태. 개별 frontmatter 공개 여부와 구분한다. */
+  publicInherited?: boolean
+  publicDirect?: boolean
+  /** 공개 화면에 쓰는 식별자. 경로 기반 내부 ID는 외부에 내보내지 않는다. */
+  publicId?: string
   /** frontmatter 를 읽지 못한 파일 — 앱에서 저장하지 않는다 */
   unreadable: boolean
 }
@@ -46,6 +51,21 @@ export interface PublicMemo {
   title: string
   content: string
   updated: string | null
+}
+
+export type PublicMemoSummary = Pick<MemoMeta, 'id' | 'title'>
+
+/** 공개 탐색에 필요한 이름·공개 식별자만. 비공개 조상 경로·메타는 포함하지 않는다. */
+export interface PublicFolderNode {
+  id: string
+  name: string
+  children: PublicFolderNode[]
+  memos: PublicMemoSummary[]
+}
+
+export interface PublicTreeResponse {
+  folders: PublicFolderNode[]
+  memos: PublicMemoSummary[]
 }
 
 export interface Memo extends MemoMeta {
@@ -83,6 +103,10 @@ export interface FolderNode {
   path: string
   name: string
   children: FolderNode[]
+  public?: boolean
+  publicInherited?: boolean
+  publicDirect?: boolean
+  publicId?: string
 }
 
 /**

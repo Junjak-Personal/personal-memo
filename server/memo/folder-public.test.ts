@@ -1,0 +1,184 @@
+import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { FOLDER_PUBLIC_FILE } from './folder-public'
+import { MemoStore } from './store'
+
+let root: string
+let store: MemoStore
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
+const input = (title: string, folder: string, content = '공개 본문') => ({ title, folder, content, date: null, dateEnd: null })
+
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), 'memo-folder-public-'))
+  store = new MemoStore(root)
+  await store.init()
+})
+afterEach(async () => { await rm(root, { recursive: true, force: true }) })
+
+describe('폴더 공개 상속과 익명 탐색', () => {
+  it('폴더 공개는 원문을 고치지 않고 하위·새 메모·새 폴더로 상속한다', async () => {
+    await store.createFolder('', '공개')
+    await store.createFolder('공개', '하위')
+    const first = await store.create(input('첫 글', '공개/하위'))
+    const raw = await readFile(join(root, first.path), 'utf8')
+    const folder = await store.setFolderPublic('공개', true)
+    expect(folder).toMatchObject({ public: true, publicDirect: true, publicInherited: false })
+    expect(await readFile(join(root, first.path), 'utf8')).toBe(raw)
+    expect(await store.get(first.id)).toMatchObject({ public: true, publicInherited: true, publicDirect: false, publicId: first.id })
+    await store.createFolder('공개', '새 폴더')
+    const later = await store.create(input('새 글', '공개/새 폴더'))
+    expect(await store.publicMemo(later.id)).toMatchObject({ title: '새 글' })
+    expect((await store.publicFolder(folder.publicId!)).children).toHaveLength(2)
+    expect((await store.tree()).folders[0]!.children.every(child => child.public && child.publicInherited)).toBe(true)
+  })
+
+  it('개별 공개와 공개 폴더만 보이고 비공개 조상 이름·경로·메타는 나오지 않는다', async () => {
+    await store.createFolder('', '절대 비밀 조상')
+    await store.createFolder('절대 비밀 조상', '공유 노트')
+    await store.createFolder('', '개인 기록')
+    const open = await store.create(input('보여줄 문서', '절대 비밀 조상/공유 노트'))
+    const single = await store.create({ ...input('개별 공개', '개인 기록'), tags: ['비밀 태그'] })
+    await store.create(input('비밀 문서', '개인 기록'))
+    await store.setPublic(single.id, true)
+    const folder = await store.setFolderPublic('절대 비밀 조상/공유 노트', true)
+    expect(await store.publicTree()).toEqual({ folders: [{ id: folder.publicId, name: '공유 노트', children: [], memos: [{ id: open.id, title: open.title }] }], memos: [{ id: single.id, title: single.title }] })
+    const raw = JSON.stringify(await store.publicTree())
+    for (const secret of ['절대 비밀 조상', '개인 기록', '비밀 문서', '비밀 태그', 'path', 'created', 'updated']) expect(raw).not.toContain(secret)
+    await expect(store.publicFolder('절대 비밀 조상/공유 노트')).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('공개 해제는 상속 권한만 회수하고 독립 공개 메모·하위 폴더는 유지한다', async () => {
+    await store.createFolder('', '상위')
+    await store.createFolder('상위', '별도 공개')
+    const inherited = await store.create(input('상속', '상위'))
+    const own = await store.create(input('개별', '상위'))
+    const nested = await store.create(input('자식', '상위/별도 공개'))
+    await store.setPublic(own.id, true)
+    const child = await store.setFolderPublic('상위/별도 공개', true)
+    const parent = await store.setFolderPublic('상위', true)
+    await expect(store.setPublic(inherited.id, false)).rejects.toMatchObject({ code: 'bad_request' })
+    await expect(store.setFolderPublic('상위/별도 공개', false)).rejects.toMatchObject({ code: 'bad_request' })
+    await store.setFolderPublic('상위', false)
+    await expect(store.publicMemo(inherited.id)).rejects.toMatchObject({ code: 'not_found' })
+    await expect(store.publicFolder(parent.publicId!)).rejects.toMatchObject({ code: 'not_found' })
+    expect(await store.publicMemo(own.id)).toMatchObject({ title: own.title })
+    expect(await store.publicMemo(nested.id)).toMatchObject({ title: nested.title })
+    expect((await store.publicTree()).folders[0]).toMatchObject({ id: child.publicId, name: '별도 공개' })
+  })
+
+  it('메모 이동 시 목적 폴더 공개를 따르고 폴더 이름 변경 후 공개 링크를 유지한다', async () => {
+    await store.createFolder('', '공개')
+    await store.createFolder('', '개인')
+    const folder = await store.setFolderPublic('공개', true)
+    const memo = await store.create(input('옮길 글', '개인'))
+    await expect(store.publicMemo(memo.id)).rejects.toMatchObject({ code: 'not_found' })
+    expect(await store.move(memo.id, '공개')).toMatchObject({ public: true, publicInherited: true })
+    await store.renameFolder('공개', '바뀐 이름')
+    expect(await store.publicFolder(folder.publicId!)).toMatchObject({ name: '바뀐 이름' })
+    expect(await store.move(memo.id, '개인')).toMatchObject({ public: false })
+    await expect(store.publicMemo(memo.id)).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('상속받던 폴더를 비공개 위치로 옮기면 공개를 해제하고 빈 공개 폴더 삭제도 즉시 반영한다', async () => {
+    await store.createFolder('', '공유')
+    await store.createFolder('공유', '옮길 폴더')
+    await store.createFolder('', '개인')
+    const memo = await store.create(input('옮길 문서', '공유/옮길 폴더'))
+    const folder = await store.setFolderPublic('공유', true)
+    await store.moveFolder('공유/옮길 폴더', '개인')
+    await expect(store.publicMemo(memo.id)).rejects.toMatchObject({ code: 'not_found' })
+    expect((await store.publicFolder(folder.publicId!)).children).toEqual([])
+    await store.deleteFolder('공유')
+    await expect(store.publicFolder(folder.publicId!)).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('최상위 경로 ID 파일은 이름이 비슷한 공개 폴더가 있어도 공개 참조로 승격하지 않는다', async () => {
+    await store.createFolder('', '문서.m')
+    await store.setFolderPublic('문서.m', true)
+    await writeFile(join(root, '문서.md'), '---\npublic: true\n---\n\n최상위 외부 파일\n')
+    expect((await store.publicTree()).memos).toEqual([])
+  })
+
+  it('ID 없는 외부 메모도 안전한 참조로 열며 공개 조회로 파일을 쓰지 않는다', async () => {
+    await store.createFolder('', '숨긴 경로')
+    await store.createFolder('숨긴 경로', '공유')
+    await store.createFolder('숨긴 경로/공유', '아이디어')
+    const raw = '# 외부에서 작성\n\naliases: 보존\n'
+    const file = join(root, '숨긴 경로/공유/아이디어/외부.md')
+    await writeFile(file, raw)
+    await store.setFolderPublic('숨긴 경로/공유', true)
+    const tree = await store.publicTree()
+    const child = tree.folders[0]!.children[0]!
+    const memo = child.memos[0]!
+    expect(child.id).toMatch(/^f-[a-f0-9]{64}$/)
+    expect(memo.id).toMatch(/^m-[a-f0-9]{64}$/)
+    expect(JSON.stringify(tree)).not.toContain('숨긴 경로')
+    expect((await store.publicMemo(memo.id)).content).toBe(raw)
+    expect(await readFile(file, 'utf8')).toBe(raw)
+    const owner = (await store.tree()).memos[0]!
+    expect(owner).toMatchObject({ publicInherited: true, publicId: memo.id })
+    await expect(store.publicMemo(owner.id)).rejects.toMatchObject({ code: 'not_found' })
+    // 비공개 조상이 이름을 바꿔도 공개 참조에는 그 이름이 들어가지 않는다.
+    await store.renameFolder('숨긴 경로', '다른 숨긴 경로')
+    expect((await store.publicTree()).folders[0]!.children[0]!.memos[0]!.id).toBe(memo.id)
+    expect((await store.publicTree()).folders[0]!.children[0]!.id).toBe(child.id)
+    await store.setFolderPublic('다른 숨긴 경로/공유', false)
+    await expect(store.publicMemo(memo.id)).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('상속 이미지도 본문에서 참조한 파일만 허용하고 공개 해제 즉시 회수한다', async () => {
+    await store.createFolder('', '사진')
+    const memo = await store.create(input('사진 글', '사진'))
+    const shown = await store.saveImage(memo.id, PNG, PNG)
+    const hidden = await store.saveImage(memo.id, PNG)
+    const current = await store.get(memo.id)
+    await store.update(memo.id, { ...input(memo.title, '사진', `![예시](${shown.src})`), baseVersion: current.version })
+    await store.setFolderPublic('사진', true)
+    expect((await store.publicImage(memo.id, shown.src)).type).toBe('image/png')
+    await expect(store.publicImage(memo.id, hidden.src)).rejects.toMatchObject({ code: 'not_found' })
+    await expect(store.publicImage(memo.id, shown.src.replace('.png', '.orig.png'))).rejects.toMatchObject({ code: 'not_found' })
+    await store.setFolderPublic('사진', false)
+    await expect(store.publicImage(memo.id, shown.src)).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('휴지통 항목은 공개 트리와 직접 조회에서 제외하고 복원 시 현재 권한을 다시 적용한다', async () => {
+    await store.createFolder('', '공유')
+    const memo = await store.create(input('되돌릴 글', '공유'))
+    await store.setFolderPublic('공유', true)
+    const removed = await store.remove(memo.id)
+    expect((await store.publicTree()).folders[0]!.memos).toEqual([])
+    await expect(store.publicMemo(memo.id)).rejects.toMatchObject({ code: 'not_found' })
+    await store.setFolderPublic('공유', false)
+    expect(await store.restore(removed.trashPath)).toMatchObject({ public: false })
+  })
+
+  it('전체 보관함·숨김·예약·밖으로 나가는 경로와 심볼릭 링크 폴더를 공개하지 않는다', async () => {
+    for (const path of ['', '../밖', '.trash', 'assets']) await expect(store.setFolderPublic(path, true)).rejects.toMatchObject({ code: 'bad_request' })
+    await store.createFolder('', '원래')
+    await symlink(join(root, '원래'), join(root, '별칭'))
+    await expect(store.setFolderPublic('별칭', true)).rejects.toMatchObject({ code: 'bad_request' })
+    expect(await store.publicTree()).toEqual({ folders: [], memos: [] })
+  })
+
+  it('손상·과대·심볼릭 링크·중복 메타는 공개 권한으로 사용하지 않는다', async () => {
+    await store.createFolder('', '하나')
+    await store.createFolder('', '둘')
+    const memo = await store.create(input('숨길 글', '하나'))
+    await store.setFolderPublic('하나', true)
+    await copyFile(join(root, '하나', FOLDER_PUBLIC_FILE), join(root, '둘', FOLDER_PUBLIC_FILE))
+    expect(await store.publicTree()).toEqual({ folders: [], memos: [] })
+    await expect(store.publicMemo(memo.id)).rejects.toMatchObject({ code: 'not_found' })
+    await writeFile(join(root, '둘', FOLDER_PUBLIC_FILE), '{broken')
+    expect((await store.publicTree()).folders.map(row => row.name)).toEqual(['하나'])
+    await writeFile(join(root, '하나', FOLDER_PUBLIC_FILE), ' '.repeat(4097))
+    expect(await store.publicTree()).toEqual({ folders: [], memos: [] })
+    await rm(join(root, '하나', FOLDER_PUBLIC_FILE))
+    await symlink(join(root, '둘', FOLDER_PUBLIC_FILE), join(root, '하나', FOLDER_PUBLIC_FILE))
+    expect(await store.publicTree()).toEqual({ folders: [], memos: [] })
+    await rm(join(root, '하나', FOLDER_PUBLIC_FILE))
+    await mkdir(join(root, '하나', FOLDER_PUBLIC_FILE))
+    expect(await store.publicTree()).toEqual({ folders: [], memos: [] })
+  })
+})

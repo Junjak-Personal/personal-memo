@@ -54,3 +54,7 @@ export default defineMemoHandler(async (event, store) => store.update(memoIdPara
 ## 목차·링크·템플릿 (2026-10-21)
 - 목차/접기는 API·저장 형식을 추가하지 않는다. ID 링크는 `shared/utils/memo-links.ts`, 백링크 타입은 `shared/types/memo-links.ts`; 인증된 GET `/api/memos/:id/backlinks`와 POST `link-target`를 추가한다. p: 승격은 navigation→store 잠금 순서로 ID 이전을 직렬화한다.
 - `shared/types/memo-templates.ts`, GET/POST `/api/templates`, GET/PATCH/DELETE `/:id`, POST `/:id/memos`. POST 저장·생성은201. `baseVersion`은 기존32hex. `MemoStore`의 배타 큐에서 `.templates`와 이미지 복사를 처리한다. SSOT §3.3.2~4.
+
+## 폴더 공개 (2026-11-04 로컬 구현)
+
+인증된 `PUT /api/folders/public {path,public}`가 폴더 `.public.json`을 바꾼다. 익명 `GET /api/ext/tree`, `GET /api/ext/folders/:id`는 공개 이름/제목/참조만 반환한다. 유효 `public`은 개별 frontmatter 또는 공개 조상에서 계산하며, `publicInherited`/`publicDirect`/`publicId`는 소유자 UI용 선택 필드다. 원문과 이미지의 공개 권한을 같이 재조회한다. 비공개 경로·편집 메타는 공개 DTO에 포함하지 않는다. SSOT §11.2.

@@ -1,0 +1,21 @@
+[package]
+name = "memo-desktop"
+version = "0.1.0"
+description = "Memo desktop shell"
+authors = ["JunjaK"]
+edition = "2021"
+rust-version = "1.90"
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.5", features = [] }
+open = "=5.3.2"
+tauri-plugin-dialog = "=2.8.4"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+# 별도 식별자로 묶는 개발 서버 시험용. 운영 빌드에는 켜지 않는다.
+local-test = []

@@ -1,0 +1,17 @@
+{
+  "name": "memo-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@12.6.0",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "dev": "tauri dev --config tauri.local.conf.json",
+    "build": "tauri build --bundles app",
+    "check": "cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml --all-features",
+    "build:local": "tauri build --config tauri.local.conf.json --features local-test --bundles app"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.0"
+  }
+}

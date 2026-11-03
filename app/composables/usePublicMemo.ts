@@ -14,8 +14,13 @@ export function usePublicMemo() {
     return tree.value?.memos.find((m) => m.id === id)?.public ?? false
   }
 
+  function isInherited(id: string) {
+    return tree.value?.memos.find((m) => m.id === id)?.publicInherited ?? false
+  }
+
   function publicUrl(id: string) {
-    return `${window.location.origin}/ext/${encodeURIComponent(id)}`
+    const publicId = tree.value?.memos.find((m) => m.id === id)?.publicId ?? id
+    return `${window.location.origin}/ext/${encodeURIComponent(publicId)}`
   }
 
   async function copyLink(id: string) {
@@ -29,12 +34,16 @@ export function usePublicMemo() {
 
   async function setPublic(id: string, value: boolean) {
     if (pending.value.includes(id)) return
+    if (!value && isInherited(id)) {
+      toast.add({ title: '폴더에서 공개 중입니다', description: '상위 폴더의 공개 설정에서 해제하세요.' })
+      return
+    }
     pending.value = [...pending.value, id]
     try {
       const meta = await $fetch<MemoMeta>(`/api/memos/${encodeURIComponent(id)}/public`, { method: 'PATCH', body: { public: value } })
       const memos = tree.value?.memos
       const index = memos?.findIndex((m) => m.id === id) ?? -1
-      if (memos && index !== -1) memos[index] = { ...memos[index]!, public: meta.public }
+      if (memos && index !== -1) memos[index] = { ...memos[index]!, public: meta.public, publicInherited: meta.publicInherited, publicDirect: meta.publicDirect, publicId: meta.publicId }
       // 클립보드는 누른 그 순간에만 쓸 수 있다(서버 응답 뒤엔 사파리가 막는다) — 알림의 버튼으로 복사한다
       if (meta.public) {
         toast.add({
@@ -52,5 +61,5 @@ export function usePublicMemo() {
     }
   }
 
-  return { pending, isPublic, publicUrl, copyLink, setPublic }
+  return { pending, isPublic, isInherited, publicUrl, copyLink, setPublic }
 }

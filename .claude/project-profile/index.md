@@ -89,3 +89,5 @@ Lifecycle: active/{planning,processing}/ · complete/ · reference/ · deprecate
 - [2026-10-19 모바일 메뉴 전환·마지막 화면 복원](../../_docs/complete/implementation/2026-10-19-navigation-restore.md): VERIFY_PASS, 27파일 264개·타입검사·빌드 통과, iPhone QA 5항목 pending.
 
 - [Tauri 데스크톱 MVP #10](../../_docs/active/processing/2026-11-02-tauri-desktop.md): 웹601·Rust3·bootstrap4·타입/빌드 통과. macOS 로컬 구현·패키징. 11/4 사용자 승인으로 정식 앱 설치·실행 및 로그아웃 재실행 핵심 QA 통과. 추가 native 경계 QA는 미검증. main 반영 진행.
+
+- [폴더 공개와 공개 링크 탐색](../../_docs/complete/implementation/2026-11-04-folder-public-navigation.md): 폴더 공개 상속·공개 전용 LNB·폴더 페이지. 612개/타입/빌드·합성 데스크톱 흐름 통과, 모바일/저장 실패 QA2개 pending. `feat/folder-public-navigation` 구현, 사용자 승인으로 main 반영·배포 진행.

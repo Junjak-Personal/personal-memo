@@ -37,6 +37,7 @@ const activeMemo = useActiveMemo()
 const navigation = useMemoNavigation()
 const quickSwitch = useTemplateRef<{ show: () => void }>('quickSwitch')
 const templatesDialog = useTemplateRef<{ show: (folder?: string) => Promise<void> }>('templatesDialog')
+const folderPublicDialog = useTemplateRef<{ show: (path: string, value: boolean) => Promise<void> }>('folderPublicDialog')
 
 const mobileMenu = useMobileMenuNavigation()
 const sidebarOpen = mobileMenu.open
@@ -260,6 +261,10 @@ function toItems(folders: FolderNode[], memos: MemoMeta[], parent: string): Tree
     label: folder.name,
     value: `folder:${folder.path}`,
     path: folder.path,
+    public: folder.public,
+    publicInherited: folder.publicInherited,
+    publicDirect: folder.publicDirect,
+    publicId: folder.publicId,
     first: movable[0] === folder,
     last: movable.at(-1) === folder,
     icon: folder.path === TODO_FOLDER ? 'i-material-symbols-folder-check-outline' : 'i-material-symbols-folder-outline',
@@ -382,6 +387,7 @@ function folderMenu(item: TreeItem): SidebarMenuItem[][] {
     return [
       [{ label: '완료 목록 보기', icon: 'i-material-symbols-task-alt', testId: 'sidebar-folder-done-list', onSelect: () => void navigateTo('/todo/done') }],
       [{ label: '여기에 새 메모', icon: 'i-material-symbols-note-add-outline', disabled: creating.value, testId: 'sidebar-folder-create-memo', children: creationItems(path, showTemplates) }],
+      folderPublicMenu(item),
     ]
   }
   return [
@@ -392,8 +398,36 @@ function folderMenu(item: TreeItem): SidebarMenuItem[][] {
       { label: '다른 폴더로 옮기기', icon: 'i-material-symbols-drive-file-move-outline', testId: 'sidebar-folder-move-folder', onSelect: () => folders.startMove(path) },
     ],
     orderMenu(item, 'sidebar-folder'),
+    folderPublicMenu(item),
     [{ label: '폴더 지우기', icon: 'i-material-symbols-folder-delete-outline', color: 'error', testId: 'sidebar-folder-delete-folder', onSelect: () => void folders.remove(path) }],
   ]
+}
+
+function folderPublicMenu(item: TreeItem): SidebarMenuItem[] {
+  const path = String(item.path)
+  const change: SidebarMenuItem = item.publicInherited
+    ? { label: '상위 폴더에서 공개 중', icon: 'i-material-symbols-folder-shared-outline', disabled: true, testId: 'sidebar-folder-public-inherited' }
+    : {
+        label: item.public ? '폴더 외부 공개 끄기' : '폴더 외부 공개',
+        icon: item.public ? 'i-material-symbols-public-off' : 'i-material-symbols-public',
+        testId: 'sidebar-folder-public-toggle',
+        onSelect: () => void folderPublicDialog.value?.show(path, !item.public),
+      }
+  if (!item.public || !item.publicId) return [change]
+  return [
+    { label: '폴더 공개 링크 복사', icon: 'i-material-symbols-link', disabled: queue.ops.value.length > 0, testId: 'sidebar-folder-public-copy', onSelect: () => void copyFolderPublicLink(String(item.publicId)) },
+    change,
+  ]
+}
+
+async function copyFolderPublicLink(id: string) {
+  const url = `${window.location.origin}/ext/folder/${encodeURIComponent(id)}`
+  try {
+    await navigator.clipboard.writeText(url)
+    toast.add({ title: '폴더 공개 링크를 복사했습니다' })
+  } catch {
+    toast.add({ color: 'error', title: '복사하지 못했습니다', description: url })
+  }
 }
 
 function rowMenu(item: TreeItem): SidebarMenuItem[][] {
@@ -759,7 +793,7 @@ async function logout() {
               <UIcon v-else :name="String(item.icon)" class="size-5 shrink-0" />
               <span class="truncate" :class="item.done === true && 'text-muted line-through'">{{ item.label }}</span>
               <!-- 외부 공개 중인 메모 — 무엇이 열려 있는지 트리에서 바로 보이게 -->
-              <UIcon v-if="item.public" name="i-material-symbols-public" class="size-4 shrink-0 text-primary" aria-label="외부 공개 중" data-testid="sidebar-memo-public" />
+              <UIcon v-if="item.public" name="i-material-symbols-public" class="size-4 shrink-0 text-primary" :aria-label="item.publicInherited ? '상위 폴더에서 공개 중' : '외부 공개 중'" :data-testid="item.kind === 'folder' ? 'sidebar-folder-public' : 'sidebar-memo-public'" />
               <span class="ms-auto flex shrink-0 items-center">
                 <UDropdownMenu :items="rowMenu(item)" :content="{ align: 'start' }">
                   <UButton
@@ -878,6 +912,7 @@ async function logout() {
 
   <MemoQuickSwitch ref="quickSwitch" />
   <MemoTemplatesDialog ref="templatesDialog" />
+  <FolderPublicDialog ref="folderPublicDialog" />
 
   <FolderPickDialog
     v-model:open="folders.moveOpen.value"

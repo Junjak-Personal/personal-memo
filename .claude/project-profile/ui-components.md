@@ -48,3 +48,7 @@
 - `MemoOutline` 헤더 팝오버: 단계별 목차·이동·접기, 모바일44px 컨트롤. 블록 모드는 펼친 후 비활성화.
 - `MemoLinkSuggestions`: `[[` caret 팝오버·기존 메모 선택/명시 생성·폴더 구분·키보드/IME. `MemoBacklinks`는 editor 밖 문서 하단 목록이다. 공개 `ExtMemo`는 내부 href 제거와 이벤트 경계를 적용한다.
 - `MemoActions`→`MemoSaveTemplateDialog`; Sidebar 더보기→`MemoTemplatesDialog`. 관리창 원문은 escaped pre이며 이름 변경·삭제 확인·root 포함 폴더 선택·새 메모 생성/생성 후 이동 오류를 처리한다. 실제 PC/iPhone 화면은 별도 미검증이다.
+
+## 폴더 공개·공개 탐색 (2026-11-04 로컬 구현)
+
+AppSidebar 폴더 메뉴→FolderPublicDialog에서 하위·향후 항목 공개를 확인한다. 상위 공개를 상속하는 항목의 개별 해제는 비활성화하며 링크 복사는 허용한다. 공개 ExtLayout은 `/api/ext/tree`만 사용하고 ExtFolder/ExtMemo를 LNB와 함께 표시한다. 비공개 조상은 그리지 않는다. 모바일 목록·저장 실패 흐름은 완료 기록의 QA2개 pending이다.

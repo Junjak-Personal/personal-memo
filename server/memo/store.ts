@@ -17,6 +17,8 @@ import type {
   Memo,
   MemoMeta,
   PublicMemo,
+  PublicFolderNode,
+  PublicTreeResponse,
   SearchHit,
   TrashItem,
   TodoPriority,
@@ -52,6 +54,7 @@ import type { MemoRevision, MemoRevisionSummary } from '../../shared/types/memo-
 import { withStableMemoId } from './links'
 import { MemoTemplates } from './templates'
 import type { MemoTemplate, MemoTemplateSummary } from '../../shared/types/memo-templates'
+import { FOLDER_PUBLIC_FILE } from './folder-public'
 
 const SNIPPET_RADIUS = 40
 
@@ -174,7 +177,7 @@ export class MemoStore {
     for (const e of entries) {
       if (!e.isDirectory() || e.name.startsWith('.') || e.name === ASSETS_DIR) continue
       const path = joinRel(prefix, e.name)
-      nodes.push({ path, name: e.name, children: await this.folderTree(join(dir, e.name), path) })
+      nodes.push({ path, name: e.name, children: await this.folderTree(join(dir, e.name), path), ...this.index.publication.fields(path) })
     }
     return nodes.sort((a, b) => a.name.localeCompare(b.name, 'ko'))
   }
@@ -276,6 +279,77 @@ export class MemoStore {
 
   // ── 외부 공개 (§11.2) — 로그인 없이 부른다 ─────────────────────────────
 
+  /** 공개 항목만 조회한다. 비공개 조상의 이름·경로와 편집용 메타는 반환하지 않는다. */
+  publicTree(): Promise<PublicTreeResponse> {
+    return this.exclusive(async () => {
+      await this.index.rescan()
+      return this.publicTreeSnapshot()
+    })
+  }
+
+  publicFolder(id: string): Promise<PublicFolderNode> {
+    return this.exclusive(async () => {
+      if (!isUlid(id) && !/^f-[a-f0-9]{64}$/.test(id)) throw new MemoError('not_found', '공개된 폴더가 없습니다')
+      await this.index.rescan()
+      const pending = [...this.publicTreeSnapshot().folders]
+      for (const folder of pending) {
+        if (folder.id === id) return folder
+        pending.push(...folder.children)
+      }
+      throw new MemoError('not_found', '공개된 폴더가 없습니다')
+    })
+  }
+
+  private publicTreeSnapshot(): PublicTreeResponse {
+    const folders: PublicFolderNode[] = []
+    const nodes = new Map<string, PublicFolderNode>()
+    const memos: PublicTreeResponse['memos'] = []
+    for (const state of this.index.publication.folders.values()) {
+      if (state.public) nodes.set(state.path, { id: state.id, name: state.name, children: [], memos: [] })
+    }
+    for (const [path, node] of nodes) {
+      const parent = nodes.get(folderOf(path))
+      if (parent) parent.children.push(node)
+      else folders.push(node)
+    }
+    for (const entry of this.index.active.values()) {
+      const meta = this.index.meta(entry)
+      if (!meta.public || entry.unreadable) continue
+      const id = this.index.publicIdOf(entry)
+      if (id.startsWith('p:')) continue
+      const row = { id, title: meta.title }
+      const folder = nodes.get(meta.folder)
+      if (folder) folder.memos.push(row)
+      else memos.push(row)
+    }
+    const sort = (rows: PublicFolderNode[]) => {
+      rows.sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+      for (const row of rows) {
+        row.memos.sort((a, b) => a.title.localeCompare(b.title, 'ko'))
+        sort(row.children)
+      }
+    }
+    sort(folders)
+    memos.sort((a, b) => a.title.localeCompare(b.title, 'ko'))
+    return { folders, memos }
+  }
+
+  /** 명시적으로 고른 폴더의 메타만 쓴다. 하위 메모 frontmatter는 덮어쓰지 않는다. */
+  setFolderPublic(path: string, value: boolean): Promise<FolderNode> {
+    return this.exclusive(async () => {
+      if (!path) throw new MemoError('bad_request', '전체 메모 보관함은 공개할 수 없습니다')
+      await this.requireFolder(path)
+      await this.index.rescan()
+      const state = this.index.publication.folders.get(path)
+      if (!state) throw new MemoError('bad_request', '이 폴더는 공개할 수 없습니다')
+      if (!value && state.inherited) throw new MemoError('bad_request', '상위 폴더가 공개 중입니다. 상위 폴더의 공개를 먼저 해제하세요')
+      const id = isUlid(state.id) ? state.id : ulid()
+      await writeAtomic(await this.abs(joinRel(path, FOLDER_PUBLIC_FILE)), `${JSON.stringify({ id, public: value }, null, 2)}\n`)
+      await this.index.rescan()
+      return { path, name: state.name, children: await this.folderTree(await this.abs(path), path), ...this.index.publication.fields(path) }
+    })
+  }
+
   /** 공개된 메모의 제목·본문. 없는 메모와 공개하지 않은 메모는 똑같이 «없음» — 비공개 메모가 있는지도 알리지 않는다 */
   publicMemo(id: string): Promise<PublicMemo> {
     return this.exclusive(async () => {
@@ -309,14 +383,14 @@ export class MemoStore {
     })
   }
 
-  /** 경로 id(`p:`)는 공개 주소로 쓰지 않는다 — setPublic 이 막지만, 밖에서 `public: true` 를 적은 id 없는 파일도 여기서 막힌다 */
+  /** 공개 주소는 영구 ID 또는 공개 폴더 범위의 불투명 ID만 받는다. 편집용 경로 ID(`p:`)는 받지 않는다. */
   private async publicEntry(id: string) {
     // 로그인 없이 오는 요청이다 — id 꼴이 아니면 전체 재스캔까지 가지 않는다
-    if (!isUlid(id)) throw new MemoError('not_found', '공개된 메모가 없습니다')
+    if (!isUlid(id) && !/^m-[a-f0-9]{64}$/.test(id)) throw new MemoError('not_found', '공개된 메모가 없습니다')
     await this.index.rescan()
-    const rel = this.index.pathOf(id)
+    const rel = isUlid(id) ? this.index.pathOf(id) : [...this.index.active.values()].find((entry) => this.index.publicIdOf(entry) === id)?.path
     const entry = rel ? this.index.active.get(rel) : undefined
-    if (!entry || entry.unreadable || !entry.fields.public) throw new MemoError('not_found', '공개된 메모가 없습니다')
+    if (!entry || entry.unreadable || !this.index.meta(entry).public) throw new MemoError('not_found', '공개된 메모가 없습니다')
     return entry
   }
 
@@ -496,12 +570,13 @@ export class MemoStore {
   /**
    * 외부 공개 켜기·끄기 (§11.2) — frontmatter 의 `public` 만 바꾼다. setDone 처럼 버전을 받지 않는다(버전은 public 줄을 빼고 잰다).
    * 공개 주소가 메모 id(`/ext/{id}`)라서, id 가 없는 파일(경로 id `p:`)은 주소에 폴더·파일 이름이 드러나므로 켜지 않는다 —
-   * 앱에서 한 번 저장하면 id 가 붙는다. 끄기는 언제나 된다.
+   * 앱에서 한 번 저장하면 id 가 붙는다. 상위 폴더에서 공개 중이면 그 폴더에서 먼저 공개를 해제한다.
    */
   setPublic(id: string, value: boolean): Promise<MemoMeta> {
     return this.exclusive(async () => {
       await this.index.rescan()
       const rel = this.requirePath(id)
+      if (!value && this.index.publication.folders.get(folderOf(rel))?.public) throw new MemoError('bad_request', '폴더에서 공개 중인 메모입니다. 폴더의 공개를 먼저 해제하세요')
       if (value && id.startsWith('p:')) throw new MemoError('bad_request', '앱에서 한 번 저장한 메모만 공개할 수 있습니다')
       const abs = await this.abs(rel)
       const raw = await readFile(abs, 'utf8')

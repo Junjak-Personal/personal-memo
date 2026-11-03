@@ -12,6 +12,7 @@ import { isDateString } from '../../shared/utils/memo-date'
 import { isUlid } from '../../shared/utils/ulid'
 import { type MemoFields, parseMemo } from './file'
 import { ASSETS_DIR, TRASH_DIR, folderOf } from './paths'
+import { FolderPublicIndex } from './folder-public'
 
 export interface IndexEntry {
   /** `memos/` 기준 경로. 휴지통 항목은 `.trash/` 를 뗀 «원래» 경로 */
@@ -59,10 +60,12 @@ export class MemoIndex {
   /** 휴지통. key = `.trash` 기준 상대경로 */
   readonly trash = new Map<string, IndexEntry>()
   private readonly idToPath = new Map<string, string>()
+  readonly publication: FolderPublicIndex
 
-  constructor(private readonly root: string) {}
+  constructor(private readonly root: string) { this.publication = new FolderPublicIndex(root) }
 
   async rescan() {
+    await this.publication.rescan()
     await this.sync(this.root, this.active)
     await this.sync(join(this.root, TRASH_DIR), this.trash)
     this.rebuildIds()
@@ -140,11 +143,16 @@ export class MemoIndex {
     return this.idToPath.get(id) ?? null
   }
 
+  publicIdOf(entry: IndexEntry) { return this.publication.memoId(entry.path, this.idOf(entry)) }
+
   meta(entry: IndexEntry): MemoMeta {
     const { fields } = entry
     const fileTitle = entry.path.slice(entry.path.lastIndexOf('/') + 1).replace(/\.md$/, '')
     const date = fields.date && isDateString(fields.date) ? fields.date : null
     const dateEnd = date && fields.dateEnd && isDateString(fields.dateEnd) && fields.dateEnd > date ? fields.dateEnd : null
+    const inherited = this.active.get(entry.path) === entry && this.publication.folders.get(folderOf(entry.path))?.public === true
+    const id = this.idOf(entry)
+    const isPublic = fields.public || inherited
     return {
       id: this.idOf(entry),
       path: entry.path,
@@ -157,7 +165,8 @@ export class MemoIndex {
       tags: fields.tags,
       done: fields.done,
       priority: fields.priority,
-      public: fields.public,
+      public: isPublic,
+      ...(inherited ? { publicInherited: true, publicDirect: fields.public, publicId: this.publication.memoId(entry.path, id) } : {}),
       unreadable: entry.unreadable,
     }
   }

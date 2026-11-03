@@ -30,6 +30,7 @@ Status tokens: `✅` scanned-from-code · `⏭️` Skipped (not applicable) · `
 | [state-management.md](./state-management.md) | MEDIUM | ✅ | useState composable, 대기열, watch 기피 |
 | [testing.md](./testing.md) | HIGH | ✅ | Vitest 패턴, 픽스처 주의, agentic adapter |
 | [ui-components.md](./ui-components.md) | MEDIUM | ✅ | Nuxt UI, 아이콘, 토큰, 버튼 규칙 |
+| [desktop.md](./desktop.md) | HIGH | ✅ | Tauri 실행·빌드·정식 앱 설치·세션 QA |
 | [deployment.md](./deployment.md) | MEDIUM | ✅ | Docker·deploy.sh·GitHub Actions(n100)·Cloudflare 터널 |
 
 ## Key Conventions for Agents
@@ -86,3 +87,5 @@ Lifecycle: active/{planning,processing}/ · complete/ · reference/ · deprecate
 - [2026-10-19~20 블록 이동 모달 제거·왼쪽 +/손잡이·아이콘 통일](../../_docs/complete/implementation/2026-10-19-mobile-block-move-refinement.md): 자동 VERIFY_PASS, 31파일 304개·타입검사·빌드 통과. Mac 잠금 해제 후 개발 화면·블록 추가·popup/sidebar 확인. 실기기 drag QA 등 3항목 pending. 10/20 사용자 승인으로 기존 Actions 배포 진행.
 - [2026-10-19 모바일 블록 이동·PC hover 손잡이](../../_docs/complete/implementation/2026-10-19-mobile-block-move.md): VERIFY_PASS, 31파일 297개·타입검사·빌드 통과, 400px 개발 스모크·UI 보정. 실기기 QA 4항목 pending.
 - [2026-10-19 모바일 메뉴 전환·마지막 화면 복원](../../_docs/complete/implementation/2026-10-19-navigation-restore.md): VERIFY_PASS, 27파일 264개·타입검사·빌드 통과, iPhone QA 5항목 pending.
+
+- [Tauri 데스크톱 MVP #10](../../_docs/active/processing/2026-11-02-tauri-desktop.md): 웹601·Rust3·bootstrap4·타입/빌드 통과. macOS 로컬 구현·패키징. 11/4 사용자 승인으로 정식 앱 설치·실행 및 로그아웃 재실행 핵심 QA 통과. 추가 native 경계 QA는 미검증. main 반영 진행.

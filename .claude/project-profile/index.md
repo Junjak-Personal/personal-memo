@@ -49,6 +49,8 @@ Status tokens: `✅` scanned-from-code · `⏭️` Skipped (not applicable) · `
 
 ## Document buckets
 
+- [공개 체험용 stage 환경](../../_docs/complete/implementation/2026-11-04-stage-demo.md): localhost:4701, 운영과 분리된 컨테이너·데이터·세션. 폴더5/메모15·공개 로그인·실제 편집/저장·재시드 확인, Website 연결. README·MIT·stage 시드 CI 포함. 추가 QA2개 pending.
+
 Lifecycle: active/{planning,processing}/ · complete/ · reference/ · deprecated/   (standard)
 
 | Collection | Holds | Curated by agent? |

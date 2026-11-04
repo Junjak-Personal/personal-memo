@@ -55,6 +55,9 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      - name: Stage demo seed tests
+        run: node --test scripts/stage-demo/seed.test.mjs
+
       # 빌드는 이미지 안에서 다시 하지만, 실패를 운영 머신까지 끌고 가지 않으려고 먼저 본다.
       - name: Build
         run: pnpm build

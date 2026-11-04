@@ -20,6 +20,16 @@
 - `.env.prd` 에 `E2E_PASSWORD`·`NUXT_GOOGLE_SERVICE_ACCOUNT_FILE` 이 있으면 deploy.sh 가 멈춘다 (개발 전용).
 - 이미지: `node:24-slim` 2단계. 런타임은 `.output` 만 — 엔트리포인트가 볼륨을 node(uid 1000)로 chown 후 setpriv 로 내려간다.
 
+## 공개 체험용 stage (2026-11-04)
+
+- 주소: `https://memo-test.jun-devlog.win` → Cloudflare Tunnel → `127.0.0.1:4701`.
+- 컨테이너 `personal-memo-stage`, 이미지 태그 `personal-memo:stage`, 컨테이너 내부 포트 4700.
+- 데이터 `/home/junja/apps/personal-memo-stage/data` → `/app/data`. 운영 데이터와 별도.
+- 공개 체험 비밀번호는 README에 안내한다. 세션 키·쿠키 이름은 운영과 별도이며 캘린더 키는 전부 비운다.
+- `scripts/deploy-stage.sh`가 현재 운영 이미지의 SHA를 checkout과 대조한 뒤 동일 이미지 ID를 복제한다. 운영 컨테이너를 수정하지 않으며 stage는 수동 갱신이다.
+- `scripts/stage-demo/seed.mjs`는 stage origin·세션 쿠키를 확인한 뒤 기존 API로 빠진 견본만 추가한다. 기존 내용 수정·삭제·주기적 초기화 없음.
+- [실행 근거 및 추가 QA](../../_docs/complete/implementation/2026-11-04-stage-demo.md).
+
 ## 백업
 - `ops/` (nivoca be/ops 구조): 박스 `memo-backup.sh` + systemd timer(04:30 KST, 14일), 맥 `memo-offsite-pull.sh` + launchd(06:40 KST, 60일).
   설치는 오너 — 순서는 `ops/README.md`. 이미지(`assets/`)는 백업하지 않는다.

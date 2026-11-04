@@ -6,6 +6,10 @@
 - 에디터: `UEditor` + `UEditorToolbar`(상단·말풍선·이미지·표) + 슬래시 메뉴·끌기 손잡이 — `app/pages/m/_modules/editor/items.ts`
 - 🔴 페이지 최상위는 감싸개 div 하나 — UDashboardPanel 은 단일 루트가 아니라 화면 전환이 멈춘다. 주석도 div 안에 둔다
 
+## 본문 컬럼·트리 갱신 (2026-11-05)
+- `memoColumnsKit()`을 공통 확장에 등록한다. 툴바 「열 배치」와 슬래시 메뉴에서 2·3·4열을 선택하며, 축소·해제는 내용을 순서대로 보존한다. 저장은 `data-memo-columns`·`data-memo-column` HTML, 639px 이하에서는 세로 배치다.
+- 사이드바의 「트리 새로고침」은 대기 중 변경을 반영한 뒤 기존 `refresh()`를 호출한다. 펼침·선택·스크롤·입력을 유지하며 실패 시 기존 트리를 남긴다.
+
 ## Icons
 - Library: material-symbols 우선 (`i-material-symbols-*`), 그다음 lucide
 - Usage: `icon="i-material-symbols-add"` / `<UIcon name="..." />`

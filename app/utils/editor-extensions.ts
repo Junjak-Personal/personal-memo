@@ -6,6 +6,7 @@ import Underline from '@tiptap/extension-underline'
 import { CodeBlockShiki } from 'tiptap-extension-code-block-shiki'
 import { MemoEmoji } from './editor-emoji'
 import { memoTableKit } from './editor-table'
+import { memoColumnsKit } from './editor-columns'
 import { MemoReference } from './memo-reference'
 import type { MemoReferenceOptions } from './memo-reference'
 
@@ -87,6 +88,7 @@ export function memoExtensions(image: Pick<MemoImageOptions, 'toDisplay' | 'toSt
       a11y: { checkboxLabel: (node, checked) => `${checked ? '완료' : '할 일'}: ${node.textContent || '빈 항목'}` },
     }),
     memoTableKit(),
+    memoColumnsKit(),
     CodeBlockShiki.configure({
       defaultTheme: 'material-theme',
       themes: { light: 'material-theme-lighter', dark: 'material-theme-palenight' },

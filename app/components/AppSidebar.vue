@@ -46,6 +46,7 @@ const searchInput = ref('')
 const appliedQuery = ref('')
 const results = ref<SearchHit[] | null>(null)
 const searching = ref(false)
+const refreshingTree = ref(false)
 let searchSequence = 0
 const movingMemo = ref<Pick<MemoMeta, 'id' | 'title' | 'folder'> | null>(null)
 const removingMemo = ref<string | null>(null)
@@ -117,6 +118,7 @@ const coarsePointer = window.matchMedia('(pointer: coarse)').matches
 let pressedMenuRow: string | null = null
 /** 목록 스크롤 위치 — 폰에서는 닫을 때 목록이 통째로 사라졌다가 열 때 맨 위부터 다시 그려진다. 열 때 되돌린다 */
 let sidebarScrollTop = 0
+let sidebarScrollBody: HTMLElement | null = null
 
 /*
  * 기본 autoClose는 Nuxt의 route 갱신을 보고 닫는다. 메모 페이지는 재사용되어 새 문서를 받기 전에
@@ -205,12 +207,32 @@ onBeforeUnmount(() => {
  */
 function rememberScroll(el: Element | ComponentPublicInstance | null) {
   const body = el instanceof HTMLElement ? el.closest<HTMLElement>('[data-slot="body"]') : null
+  sidebarScrollBody = body
   if (!body || body.dataset.scrollMemory) return
   body.dataset.scrollMemory = 'on'
   const target = sidebarScrollTop
   body.scrollTop = target
   if (body.scrollTop !== target) requestAnimationFrame(() => (body.scrollTop = target))
   body.addEventListener('scroll', () => (sidebarScrollTop = body.scrollTop), { passive: true })
+}
+
+/** 외부 도구가 바꾼 폴더·메모를 다시 받는다. 편집기·검색 입력·펼침 상태는 그대로 둔다. */
+async function refreshTree() {
+  if (refreshingTree.value) return
+  refreshingTree.value = true
+  const body = sidebarScrollBody
+  const scrollTop = body?.scrollTop ?? sidebarScrollTop
+  try {
+    if (!(await queue.apply())) return
+    await refresh()
+    await nextTick()
+    if (body?.isConnected) body.scrollTop = scrollTop
+    if (treeError.value) toast.add({ color: 'error', title: treeError.value })
+  } catch (error) {
+    toast.add({ color: 'error', title: apiMessage(error, '목록을 새로고침하지 못했습니다') })
+  } finally {
+    refreshingTree.value = false
+  }
 }
 
 function onVisibility() {
@@ -625,6 +647,18 @@ async function logout() {
           memo
         </NuxtLink>
         <div class="flex items-center">
+          <UTooltip text="트리 새로고침">
+            <UButton
+              icon="i-material-symbols-refresh"
+              color="neutral"
+              variant="ghost"
+              class="size-11 justify-center lg:size-8"
+              :loading="refreshingTree"
+              aria-label="트리 새로고침"
+              data-testid="sidebar-tree-refresh"
+              @click="refreshTree"
+            />
+          </UTooltip>
           <UTooltip text="새 폴더">
             <UButton
               icon="i-material-symbols-create-new-folder-outline"
@@ -741,10 +775,10 @@ async function logout() {
     <template v-else>
       <div v-if="treeError" class="space-y-2 px-1">
         <p class="text-sm text-error">{{ treeError }}</p>
-        <UButton color="neutral" variant="outline" size="sm" @click="refresh">다시 시도</UButton>
+        <UButton color="neutral" variant="outline" size="sm" :loading="refreshingTree" data-testid="sidebar-tree-retry" @click="refreshTree">다시 시도</UButton>
       </div>
       <UTree
-        v-if="!treeError"
+        v-if="view"
         v-model:expanded="expanded"
         :items="items"
         :model-value="selected"

@@ -50,7 +50,7 @@
 
 ## 목차·링크·내 템플릿 (2026-10-21)
 - `MemoOutline` 헤더 팝오버: 단계별 목차·이동·접기, 모바일44px 컨트롤. 블록 모드는 펼친 후 비활성화.
-- `MemoLinkSuggestions`: `[[` caret 팝오버·기존 메모 선택/명시 생성·폴더 구분·키보드/IME. `MemoBacklinks`는 editor 밖 문서 하단 목록이다. 공개 `ExtMemo`는 내부 href 제거와 이벤트 경계를 적용한다.
+- `MemoLinkSuggestions`: `[[` caret 팝오버·기존 메모 선택/명시 생성·폴더 구분·키보드/IME. `MemoBacklinks`는 editor 밖 문서 하단 목록이다. 공개 `ExtMemo`는 공개 tree에서 허용한 내부 링크만 `/ext`로 연결하고 나머지는 href 제거·이벤트 경계로 차단한다. 일반 링크는 읽기 전용에서도 openOnClick을 켠다.
 - `MemoActions`→`MemoSaveTemplateDialog`; Sidebar 더보기→`MemoTemplatesDialog`. 관리창 원문은 escaped pre이며 이름 변경·삭제 확인·root 포함 폴더 선택·새 메모 생성/생성 후 이동 오류를 처리한다. 실제 PC/iPhone 화면은 별도 미검증이다.
 
 ## 폴더 공개·공개 탐색 (2026-11-04 로컬 구현)

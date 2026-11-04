@@ -7,6 +7,7 @@ import type { DropdownMenuItem, EditorCustomHandlers, EditorSuggestionMenuItem, 
 import { mapEditorItems } from '@nuxt/ui/utils/editor'
 import type {} from '@tiptap/extension-table'
 import type { Editor, JSONContent } from '@tiptap/vue-3'
+import type {} from '~/utils/editor-columns'
 
 /** 「바꾸기」 대상 — 슬래시 메뉴·말풍선 툴바·끌기 손잡이가 같은 목록을 쓴다 */
 const BLOCK_TYPES = [
@@ -24,6 +25,13 @@ const BLOCK_TYPES = [
 
 const CONVERTIBLE = ['paragraph', 'heading', 'bulletList', 'orderedList', 'taskList', 'blockquote', 'codeBlock', 'listItem', 'taskItem']
 
+/** 같은 열 선택을 상단 툴바와 `/` 메뉴에서 사용한다. */
+const COLUMN_TYPES = [
+  { kind: 'columns2', label: '2열', icon: 'i-material-symbols-view-column-outline', keywords: ['columns', 'column', 'cols', '2col', '2열'], 'data-testid': 'memo-columns-select-2' },
+  { kind: 'columns3', label: '3열', icon: 'i-material-symbols-view-column-outline', keywords: ['columns', 'column', 'cols', '3col', '3열'], 'data-testid': 'memo-columns-select-3' },
+  { kind: 'columns4', label: '4열', icon: 'i-material-symbols-view-column-outline', keywords: ['columns', 'column', 'cols', '4col', '4열'], 'data-testid': 'memo-columns-select-4' },
+] as const
+
 const NODE_LABELS: Record<string, string> = {
   paragraph: '본문',
   heading: '제목',
@@ -36,7 +44,18 @@ const NODE_LABELS: Record<string, string> = {
   codeBlock: '코드 블록',
   image: '이미지',
   table: '표',
+  memoColumns: '열 배치',
+  memoColumn: '열',
   horizontalRule: '구분선',
+}
+
+function columnHandler(count: 2 | 3 | 4) {
+  return {
+    canExecute: (editor: Editor) => editor.can().setMemoColumns(count),
+    execute: (editor: Editor) => editor.chain().focus().setMemoColumns(count),
+    isActive: (editor: Editor) => editor.isActive('memoColumns', { count }),
+    isDisabled: undefined,
+  }
 }
 
 /** 이미지 올리기·표 넣기 — 템플릿과 같은 사용자 정의 명령 */
@@ -53,12 +72,21 @@ export const customHandlers = {
     isActive: (editor: Editor) => editor.isActive('table'),
     isDisabled: undefined,
   },
+  columns2: columnHandler(2),
+  columns3: columnHandler(3),
+  columns4: columnHandler(4),
+  columnsUnset: {
+    canExecute: (editor: Editor) => editor.can().unsetMemoColumns(),
+    execute: (editor: Editor) => editor.chain().focus().unsetMemoColumns(),
+    isActive: () => false,
+    isDisabled: undefined,
+  },
 } satisfies EditorCustomHandlers
 
 type Handlers = typeof customHandlers
 
 /** 위 줄에 늘 떠 있는 툴바 */
-export const toolbarItems: EditorToolbarItem<Handlers>[][] = [
+export const toolbarItems: (EditorToolbarItem<Handlers> & { 'data-testid'?: string })[][] = [
   [
     { kind: 'heading', level: 1, icon: 'i-material-symbols-format-h1', tooltip: { text: '제목 1' } },
     { kind: 'heading', level: 2, icon: 'i-material-symbols-format-h2', tooltip: { text: '제목 2' } },
@@ -69,6 +97,18 @@ export const toolbarItems: EditorToolbarItem<Handlers>[][] = [
     { kind: 'mark', mark: 'underline', icon: 'i-material-symbols-format-underlined', tooltip: { text: '밑줄' } },
   ],
   [{ kind: 'imageUpload', icon: 'i-material-symbols-image-outline', tooltip: { text: '이미지' } }],
+  [
+    {
+      icon: 'i-material-symbols-view-column-outline',
+      tooltip: { text: '열 배치' },
+      'data-testid': 'memo-columns-menu-open',
+      content: { align: 'start' },
+      items: [
+        COLUMN_TYPES.map(({ keywords: _, ...item }) => item),
+        [{ kind: 'columnsUnset', label: '열 해제', icon: 'i-material-symbols-view-agenda-outline', 'data-testid': 'memo-columns-unset' }],
+      ],
+    },
+  ],
   [
     { kind: 'undo', icon: 'i-material-symbols-undo', tooltip: { text: '실행 취소' } },
     { kind: 'redo', icon: 'i-material-symbols-redo', tooltip: { text: '다시 실행' } },
@@ -110,6 +150,7 @@ export const suggestionItems = [
     { kind: 'emoji', label: '이모지', icon: 'i-material-symbols-add-reaction-outline', keywords: ['emoji'] },
     { kind: 'imageUpload', label: '이미지', icon: 'i-material-symbols-image-outline', keywords: ['image', 'img', '사진'] },
     { kind: 'table', label: '표', icon: 'i-material-symbols-table-outline', keywords: ['table'] },
+    ...COLUMN_TYPES,
     { kind: 'horizontalRule', label: '구분선', icon: 'i-material-symbols-horizontal-rule', keywords: ['hr', 'line', '선'] },
   ],
 ] satisfies EditorSuggestionMenuItem<Handlers>[][]

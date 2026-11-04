@@ -299,6 +299,68 @@ run.addEventListener('click', async () => {
       assert(!content.includes('<table') && !content.includes('memo-table-corner'), '보기용 레이아웃이 GFM 저장 형식에 섞임')
     } finally { editor.destroy() }
   })
+  for (const columns of [2, 3, 4] as const) {
+    await check(`${columns}열: 삽입·저장·재조회 3회·읽기 전용에서 내용과 이미지 경로 유지`, async () => {
+      const html = `<div data-memo-columns="${columns}">${Array.from({ length: columns }, (_, index) => `<div data-memo-column><h2>열 ${index + 1}</h2><p><strong>굵은 글씨</strong>와 <u>밑줄</u></p>${index === 0 ? '<p><img src="assets/example.png" alt="견본 사진"></p><ul><li><p>목록 항목</p></li></ul><pre><code class="language-js">const value = 1\n\nconsole.log(value)</code></pre><table><tr><th>항목</th><th>내용</th></tr><tr><td>예시</td><td>표 본문</td></tr></table>' : '<p>다른 열의 본문</p>'}</div>`).join('')}</div>`
+      const first = makeEditor(html)
+      let stored: string
+      try {
+        same(first.view.dom.querySelector('[data-memo-columns]')?.children.length, columns, '최초 열 수')
+        stored = first.getMarkdown()
+        assert(stored.includes('assets/example.png') && !stored.includes('/__synthetic-image/'), '이미지 저장 경로가 화면 주소로 바뀜')
+      } finally { first.destroy() }
+      let memo = await api('create', { content: stored })
+      for (let pass = 0; pass < 3; pass++) {
+        memo = await api('get', { id: memo.id })
+        const editor = makeEditor(memo.content)
+        try {
+          const group = editor.view.dom.querySelector('[data-memo-columns]')
+          same(group?.getAttribute('data-memo-columns'), String(columns), '다시 읽은 열 수')
+          same(group?.children.length, columns, '열 자식 수')
+          assert(group?.textContent?.includes('console.log(value)') && group.textContent.includes('표 본문'), '코드 블록·표 내용 손실')
+          assert(group?.querySelector('strong') && group.querySelector('u') && group.querySelector('ul'), '서식·목록 손실')
+          const normalized = editor.getMarkdown()
+          assert(canonicalMarkdown(normalized) === canonicalMarkdown(memo.content), '다시 열기에서 형식 손실 경고가 생김')
+          editor.commands.insertContentAt(editor.state.doc.content.size, { type: 'paragraph', content: [{ type: 'text', text: `열 밖 수정 ${pass}` }] })
+          const content = editor.getMarkdown()
+          assert(!content.includes('/__synthetic-image/'), '반복 저장 중 이미지 경로 오염')
+          memo = await api('update', { id: memo.id, baseVersion: memo.version, content })
+        } finally { editor.destroy() }
+      }
+      const readonly = makeEditor(memo.content, { readonly: true })
+      try {
+        assert(!readonly.isEditable, '읽기 전용 컬럼이 편집 가능함')
+        same(readonly.view.dom.querySelector('[data-memo-columns]')?.children.length, columns, '읽기 전용 열 수')
+      } finally { readonly.destroy() }
+    })
+  }
+  await check('열 수 변경·축소·해제·실행 취소에서 모든 본문을 보존한다', () => {
+    const editor = makeEditor('<div data-memo-columns="4"><div data-memo-column><p>첫째</p></div><div data-memo-column><p>둘째</p></div><div data-memo-column><p>셋째</p></div><div data-memo-column><p>넷째</p></div></div>')
+    try {
+      const original = editor.state.doc.textContent
+      editor.commands.setTextSelection(3)
+      assert(editor.commands.setMemoColumns(2), '4→2열 변경 실패')
+      same(editor.state.doc.textContent, original, '축소 시 내용 순서')
+      same(editor.view.dom.querySelector('[data-memo-columns]')?.children.length, 2, '축소된 열 수')
+      assert(editor.commands.setMemoColumns(3), '2→3열 변경 실패')
+      same(editor.state.doc.textContent, original, '확대 시 내용 순서')
+      assert(editor.commands.unsetMemoColumns(), '열 해제 실패')
+      assert(!editor.view.dom.querySelector('[data-memo-columns]'), '해제 후 열이 남음')
+      same(editor.state.doc.textContent, original, '해제 시 내용 순서')
+      assert(editor.commands.undo(), '열 해제 실행 취소 실패')
+      same(editor.view.dom.querySelector('[data-memo-columns]')?.children.length, 3, '실행 취소 후 열 수')
+    } finally { editor.destroy() }
+  })
+  await check('일반 문단을 열로 감싸고 해제해도 기존 문단이 남는다', () => {
+    const editor = makeEditor('기존 문단')
+    try {
+      editor.commands.setTextSelection(2)
+      assert(editor.commands.setMemoColumns(2), '문단을 2열로 바꾸지 못함')
+      same(editor.state.doc.textContent, '기존 문단', '삽입 전 내용 보존')
+      assert(editor.commands.unsetMemoColumns(), '열 해제 실패')
+      assert(editor.getMarkdown().includes('기존 문단'), '해제 후 기존 문단 손실')
+    } finally { editor.destroy() }
+  })
   status.dataset.state = failed ? 'failed' : 'passed'
   status.textContent = failed ? `FAIL · ${count}개 중 ${failed}개 실패` : `PASS · ${count}개 회귀 검사 통과`
   run.disabled = false

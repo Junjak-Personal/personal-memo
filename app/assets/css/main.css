@@ -96,3 +96,26 @@
   text-underline-offset: 0.15em;
   cursor: pointer;
 }
+
+/* 편집·공개 화면이 같은 레이아웃을 쓴다. 저장되는 것은 열 구조뿐이다. */
+.tiptap [data-memo-columns] {
+  display: grid;
+  gap: 1.25rem;
+  align-items: start;
+  margin-block: 1.5rem;
+}
+.tiptap [data-memo-columns="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tiptap [data-memo-columns="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tiptap [data-memo-columns="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tiptap [data-memo-column] { min-width: 0; }
+.tiptap [data-memo-column] > :first-child { margin-block-start: 0; }
+.tiptap [data-memo-column] > :last-child { margin-block-end: 0; }
+.tiptap[contenteditable="true"] [data-memo-column] {
+  min-height: 3rem;
+  padding: .5rem;
+  border: 1px dashed var(--ui-border);
+  border-radius: .375rem;
+}
+@media (max-width: 639px) {
+  .tiptap [data-memo-columns] { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+}

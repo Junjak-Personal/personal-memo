@@ -17,6 +17,7 @@ import type {
   Memo,
   MemoMeta,
   PublicMemo,
+  PublicMemoSummary,
   PublicFolderNode,
   PublicTreeResponse,
   SearchHit,
@@ -196,11 +197,16 @@ export class MemoStore {
       await this.index.rescan()
       const target = this.index.active.get(this.requirePath(id))!
       if (target.unreadable) throw new MemoError('unreadable', '읽을 수 없는 메모의 연결은 열 수 없습니다')
-      return [...this.index.active.values()]
-        .filter(entry => !entry.unreadable && entry !== target && extractMemoLinkIds(entry.body).has(id))
-        .map(entry => this.index.meta(entry))
-        .sort((a, b) => (b.updated ?? '').localeCompare(a.updated ?? '') || a.title.localeCompare(b.title, 'ko') || a.path.localeCompare(b.path, 'ko'))
+      return this.backlinksOf(target)
     })
+  }
+
+  private backlinksOf(target: IndexEntry) {
+    const id = this.index.idOf(target)
+    return [...this.index.active.values()]
+      .filter(entry => !entry.unreadable && entry !== target && extractMemoLinkIds(entry.body).has(id))
+      .map(entry => this.index.meta(entry))
+      .sort((a, b) => (b.updated ?? '').localeCompare(a.updated ?? '') || a.title.localeCompare(b.title, 'ko') || a.path.localeCompare(b.path, 'ko'))
   }
 
   /** 사용자가 선택한 외부 파일에만 안정 ID를 준다. 제목·경로·본문·수정 시각을 바꾸지 않는다. */
@@ -356,6 +362,17 @@ export class MemoStore {
       const entry = await this.publicEntry(id)
       const meta = this.index.meta(entry)
       return { title: meta.title, content: entry.body, updated: meta.updated }
+    })
+  }
+
+  /** 대상과 참조 메모 모두 현재 공개된 경우만 공개 식별자·제목을 내보낸다. */
+  publicBacklinks(id: string): Promise<PublicMemoSummary[]> {
+    return this.exclusive(async () => {
+      const target = await this.publicEntry(id)
+      return this.backlinksOf(target).flatMap(memo => {
+        const publicId = memo.publicId ?? memo.id
+        return memo.public && !publicId.startsWith('p:') ? [{ id: publicId, title: memo.title }] : []
+      })
     })
   }
 

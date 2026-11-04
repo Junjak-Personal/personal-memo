@@ -10,6 +10,15 @@ export interface MemoReferenceOptions {
   interactive: boolean
   title: (id: string, fallback: string) => string
   onOpen: (id: string) => void
+  /** 공개 tree에서 확인한 대상만 공개 주소를 준다. null은 기존 비활성 공개 렌더링이다. */
+  publicHref: ((id: string) => string | null) | null
+}
+
+function referenceHref(options: MemoReferenceOptions, id: string): string | null {
+  if (!memoLinkId(`/m/${id}`)) return null
+  if (options.interactive) return memoLinkHref(id)
+  const href = options.publicHref?.(id)
+  return href === `/ext/${encodeURIComponent(id)}` ? href : null
 }
 
 function escapedLabel(label: string) {
@@ -67,7 +76,7 @@ function nodeLabel(node: ProseMirrorNode | JSONContent) {
   return typeof node.attrs?.label === 'string' ? node.attrs.label : '제목 없음'
 }
 
-/** 공개 화면은 기본 설정으로 비활성 텍스트만 그린다. 최신 비공개 제목도 조회하지 않는다. */
+/** 공개는 명시적으로 확인한 공개 대상만 연결한다. 최신 비공개 제목은 조회하지 않는다. */
 export const MemoReference = Node.create<MemoReferenceOptions>({
   name: 'memoReference',
   inline: true,
@@ -76,7 +85,7 @@ export const MemoReference = Node.create<MemoReferenceOptions>({
   selectable: true,
   draggable: false,
   addOptions() {
-    return { interactive: false, title: (_id, fallback) => fallback, onOpen: () => {} }
+    return { interactive: false, title: (_id, fallback) => fallback, onOpen: () => {}, publicHref: null }
   },
   addAttributes() {
     return {
@@ -105,8 +114,9 @@ export const MemoReference = Node.create<MemoReferenceOptions>({
   renderHTML({ node }) {
     const label = nodeLabel(node)
     const id = typeof node.attrs.id === 'string' ? node.attrs.id : ''
-    if (!this.options.interactive || !memoLinkId(`/m/${id}`)) return ['span', { class: 'memo-reference-text' }, label]
-    return ['a', { href: memoLinkHref(id), class: 'memo-reference', 'data-memo-reference': id, ...(typeof node.attrs.linkTitle === 'string' ? { title: node.attrs.linkTitle } : {}) }, label]
+    const href = referenceHref(this.options, id)
+    if (!href) return ['span', { class: 'memo-reference-text' }, label]
+    return ['a', { href, class: 'memo-reference', ...(this.options.interactive ? { 'data-memo-reference': id } : {}), ...(typeof node.attrs.linkTitle === 'string' ? { title: node.attrs.linkTitle } : {}) }, label]
   },
   renderText({ node }) { return nodeLabel(node) },
   markdownTokenizer: {
@@ -139,17 +149,28 @@ export const MemoReference = Node.create<MemoReferenceOptions>({
   addNodeView() {
     return ({ node: initial }) => {
       let current = initial
-      const element = document.createElement(this.options.interactive ? 'a' : 'span')
+      const element = document.createElement(this.options.interactive || this.options.publicHref ? 'a' : 'span')
       element.contentEditable = 'false'
       element.draggable = false
-      element.className = this.options.interactive ? 'memo-reference' : 'memo-reference-text'
       const render = () => {
         const id = typeof current.attrs.id === 'string' ? current.attrs.id : ''
         const label = nodeLabel(current)
         element.textContent = this.options.interactive ? this.options.title(id, label) : label
-        if (element instanceof HTMLAnchorElement && memoLinkId(`/m/${id}`)) {
-          element.setAttribute('href', memoLinkHref(id))
-          element.setAttribute('aria-label', `${element.textContent} 메모 열기`)
+        const href = referenceHref(this.options, id)
+        element.className = href ? 'memo-reference' : 'memo-reference-text'
+        if (element instanceof HTMLAnchorElement) {
+          if (href) {
+            element.setAttribute('href', href)
+            element.setAttribute('aria-label', `${element.textContent} 메모 열기`)
+            element.removeAttribute('aria-disabled')
+            if (typeof current.attrs.linkTitle === 'string') element.setAttribute('title', current.attrs.linkTitle)
+            else element.removeAttribute('title')
+          } else {
+            element.removeAttribute('href')
+            element.removeAttribute('aria-label')
+            element.removeAttribute('title')
+            element.setAttribute('aria-disabled', 'true')
+          }
         }
       }
       // tree 제목 변경은 문서 transaction 밖의 사건이다. 화면 글자만 갱신해 자동저장을 만들지 않는다.

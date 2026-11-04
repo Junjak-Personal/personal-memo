@@ -4,14 +4,16 @@
  * 본문은 편집기와 같은 확장(memoExtensions)으로 그린다. 이미지는 본문 속 경로를 그대로 공개 이미지 주소로 보낸다 —
  * 서버가 그 메모가 참조하는 이미지만 내준다(store.publicImage).
  */
-import type { PublicMemo, PublicMemoSummary } from '#shared/types/memo'
+import type { PublicMemo, PublicMemoSummary, PublicTreeResponse } from '#shared/types/memo'
 import { isRelativeSrc } from '#shared/utils/asset-path'
 import { memoExtensions } from '~/utils/editor-extensions'
-import { disablePublicMemoLinks, preventPublicMemoLink } from '~/utils/public-memo-links'
+import { disablePublicMemoLinks, preventPublicMemoLink, publicMemoHref } from '~/utils/public-memo-links'
 
 const props = defineProps<{ memoId: string }>()
 const publicRoot = useTemplateRef<HTMLElement>('publicRoot')
 let linkObserver: MutationObserver | null = null
+const { data: publicTree } = useNuxtData<PublicTreeResponse>('ext-navigation')
+const resolvePublicHref = (id: string) => publicMemoHref(publicTree.value, id)
 
 const { data: memo, error, status, refresh } = useAsyncData(
   `ext-${props.memoId}`,
@@ -28,20 +30,26 @@ const imageBase = `/api/ext/${encodeURIComponent(props.memoId)}/image?src=`
 const extensions = memoExtensions({
   toDisplay: (src: string) => (isRelativeSrc(src) ? imageBase + encodeURIComponent(src) : src),
   toStored: (src: string) => src,
-})
+}, [], { publicHref: resolvePublicHref })
 
 const updatedLabel = computed(() =>
   memo.value?.updated ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', timeZone: 'Asia/Seoul' }).format(new Date(memo.value.updated)) : null,
 )
 
+function syncPublicLinks() {
+  if (publicRoot.value) disablePublicMemoLinks(publicRoot.value, resolvePublicHref)
+}
+
 onMounted(() => {
   const root = publicRoot.value
   if (!root) return
-  disablePublicMemoLinks(root)
-  linkObserver = new MutationObserver(() => disablePublicMemoLinks(root))
+  syncPublicLinks()
+  linkObserver = new MutationObserver(syncPublicLinks)
   linkObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['href'] })
 })
 onBeforeUnmount(() => linkObserver?.disconnect())
+// 공개 목록의 지연 조회·새로고침은 본문 편집과 별개이므로 DOM의 링크만 갱신한다.
+watch(publicTree, syncPublicLinks, { flush: 'post' })
 
 useHead({
   title: () => memo.value?.title || '메모',
@@ -53,7 +61,7 @@ useHead({
 </script>
 
 <template>
-  <main ref="publicRoot" class="min-h-full bg-default" @click.capture="preventPublicMemoLink" @keydown.capture="preventPublicMemoLink">
+  <main ref="publicRoot" class="min-h-full bg-default" @click.capture="preventPublicMemoLink($event, resolvePublicHref)" @keydown.capture="preventPublicMemoLink($event, resolvePublicHref)">
     <div v-if="status === 'pending'" class="mx-auto w-full max-w-4xl space-y-6 px-4 py-10 sm:px-14" role="status" aria-label="공개 메모를 불러오는 중" data-testid="ext-loading">
       <USkeleton class="h-9 w-2/3" />
       <USkeleton v-for="index in 4" :key="index" class="h-5 w-full" />
@@ -74,7 +82,7 @@ useHead({
       <UEditor
         :model-value="memo.content"
         content-type="markdown"
-        :starter-kit="{ underline: false, codeBlock: false }"
+        :starter-kit="{ underline: false, codeBlock: false, link: { openOnClick: true } }"
         :image="false"
         :mention="false"
         :extensions="extensions"

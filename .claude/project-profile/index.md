@@ -76,6 +76,7 @@ Lifecycle: active/{planning,processing}/ · complete/ · reference/ · deprecate
 - 2026-10-16: AI 연결(MCP + OAuth 인증 서버, `/mcp`, `/ai`, `server/oauth/`, `server/mcp/`) — 설계문서 §11.1
 
 ## 최근 구현 기록
+- [공개 텍스트 링크](../../_docs/reference/public-note-links.md): 공개 목록의 허용 대상만 /ext로 연결, 일반 링크 클릭 복원. 원문 유지·649개/타입/빌드·독립7개 통과, 실제 브라우저 QA2개 pending.
 - [본문 컬럼과 트리 새로고침](../../_docs/complete/implementation/2026-11-05-editor-columns-tree-refresh.md): 2·3·4열 삽입/변경/해제, 모바일 세로 배치, 상태를 보존하는 트리 갱신. 631개·타입/빌드·브라우저21개 통과. 실기기 터치·네트워크 실패 QA 미검증. 작업 브랜치 `6ef939a` 커밋·푸시 후 사용자 승인으로 공개 UI PR #13과 운영 통합 배포 진행(637개·타입/빌드·브라우저21개 통과).
 - [로딩 높이 변화 정리](../../_docs/complete/implementation/2026-10-21-stable-loading.md): 빠른 열기·검색·이력/템플릿·참조 목록의 공간 추가 없는 로딩 표시와 같은 scope 결과 보존. VERIFY_PASS·565개/타입/빌드, 실제 Mac/iPhone QA5개 pending. 이전 메뉴 보존, 배포·push·설치 없음.
 - [목차·접기→내부 링크→템플릿](../../_docs/complete/implementation/2026-10-21-outline-links-templates.md): #5/#6/#7 순차 구현. VERIFY_PASS·540개/타입/빌드·격리 HTTP17개 PASS. #3/#4 미커밋 구현 보존, 실제 PC/iPhone QA5개 pending. 커밋·배포·설치 없음.

@@ -9,6 +9,7 @@ import { EditorState, TextSelection } from '@tiptap/pm/state'
 import type { Transaction } from '@tiptap/pm/state'
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
+import { publicMemoHref } from './public-memo-links'
 import {
   MemoReference,
   currentMemoReferenceContext,
@@ -99,6 +100,51 @@ describe('표준 Markdown 메모 참조 노드', () => {
     expect(privateSpec).toEqual(['a', { href, class: 'memo-reference', 'data-memo-reference': A }, '설명'])
   })
 
+  it('공개 대상만 공개 주소로 연결하고 저장된 label·title과 Markdown 원문을 유지한다', () => {
+    const lookup = vi.fn(() => '비공개 최신 제목')
+    const extension = MemoReference.configure({ publicHref: (id: string) => id === A ? `/ext/${A}` : null, title: lookup })
+    const publicSchema = getSchema([StarterKit, extension])
+    const serializer = DOMSerializer.fromSchema(publicSchema).nodes.memoReference!
+    expect(serializer(publicSchema.node('memoReference', { id: A, label: '경력 기술서', linkTitle: '상세 설명' })))
+      .toEqual(['a', { href: `/ext/${A}`, class: 'memo-reference', title: '상세 설명' }, '경력 기술서'])
+    expect(serializer(publicSchema.node('memoReference', { id: B, label: '원문 설명' })))
+      .toEqual(['span', { class: 'memo-reference-text' }, '원문 설명'])
+    expect(lookup).not.toHaveBeenCalled()
+    const md = new MarkdownManager({ extensions: [StarterKit, extension] })
+    const source = `[경력 기술서](${href} "상세 설명")`
+    expect(md.serialize(md.parse(source))).toBe(source)
+  })
+
+  it('공개 callback이 편집·외부·스크립트 주소를 반환해도 공개 참조에 넣지 않는다', () => {
+    for (const address of [href, `https://evil.example/ext/${A}`, 'javascript:alert(1)', `/ext/${B}`]) {
+      const publicSchema = getSchema([StarterKit, MemoReference.configure({ publicHref: () => address })])
+      const result = DOMSerializer.fromSchema(publicSchema).nodes.memoReference!(publicSchema.node('memoReference', { id: A, label: '원문' }))
+      expect(result).toEqual(['span', { class: 'memo-reference-text' }, '원문'])
+    }
+  })
+
+  it('이력서 형태의 텍스트 링크는 공개 대상 세 개만 연결하고 외부 링크도 보존한다', () => {
+    const C = '01K7ZY4YF8GSF5H4JEH2R2DW4E'
+    const tree = { memos: [{ id: A, title: '경력 기술서' }, { id: B, title: '사이드 프로젝트' }], folders: [{
+      id: 'public-folder', name: '포트폴리오', children: [], memos: [{ id: C, title: '실무 프로젝트' }],
+    }] }
+    const extension = MemoReference.configure({ publicHref: id => publicMemoHref(tree, id) })
+    const md = new MarkdownManager({ extensions: [StarterKit, extension] })
+    const source = `상세 내용은 [경력 기술서](/m/${A})에서 확인합니다.\n\n- [사이드 프로젝트](/m/${B})\n- [실무 프로젝트](/m/${C})\n- [블로그](https://example.com)`
+    const parsed = md.parse(source) as JSONContent
+    const publicSchema = getSchema([StarterKit, extension])
+    const serializer = DOMSerializer.fromSchema(publicSchema)
+    const links = references(parsed).map(node => serializer.nodes.memoReference!(publicSchema.nodeFromJSON(node)))
+    expect(links).toEqual([
+      ['a', { href: `/ext/${A}`, class: 'memo-reference' }, '경력 기술서'],
+      ['a', { href: `/ext/${B}`, class: 'memo-reference' }, '사이드 프로젝트'],
+      ['a', { href: `/ext/${C}`, class: 'memo-reference' }, '실무 프로젝트'],
+    ])
+    expect(md.serialize(parsed)).toBe(source)
+    const external = serializer.marks.link!(publicSchema.mark('link', { href: 'https://example.com' }), true)
+    expect(external).toEqual(expect.arrayContaining(['a', expect.objectContaining({ href: 'https://example.com' })]))
+  })
+
   it('옵션 title과 중첩 label을 가진 표준 내부 링크도 공개 화면에서 비활성화한다', () => {
     const md = manager()
     const publicSchema = getSchema([StarterKit, MemoReference])
@@ -116,6 +162,48 @@ describe('표준 Markdown 메모 참조 노드', () => {
     }
   })
 
+  it('공개 NodeView는 목록 도착·공개 해제를 반영하고 편집용 callback을 호출하지 않는다', () => {
+    class PublicAnchor {
+      textContent: string | null = ''
+      contentEditable = ''
+      draggable = true
+      className = ''
+      attributes = new Map<string, string>()
+      listeners = new Map<string, EventListener>()
+      setAttribute(name: string, value: string) { this.attributes.set(name, value) }
+      removeAttribute(name: string) { this.attributes.delete(name) }
+      addEventListener(type: string, callback: EventListener) { this.listeners.set(type, callback) }
+      removeEventListener(type: string) { this.listeners.delete(type) }
+    }
+    vi.stubGlobal('document', { createElement: () => new PublicAnchor() })
+    vi.stubGlobal('HTMLAnchorElement', PublicAnchor)
+    try {
+      const published = ref(false)
+      const onOpen = vi.fn()
+      const title = vi.fn(() => '비공개 최신 제목')
+      const extension = MemoReference.configure({ publicHref: id => published.value ? `/ext/${id}` : null, onOpen, title })
+      const factory = getExtensionField<() => NodeViewRenderer>(extension, 'addNodeView', { options: extension.options })
+      const node = getSchema([StarterKit, extension]).node('memoReference', { id: A, label: '공개한 설명' })
+      const view = factory()({ node } as unknown as NodeViewRendererProps)
+      const dom = view.dom as unknown as PublicAnchor
+      expect(dom.attributes.has('href')).toBe(false)
+      published.value = true
+      expect(dom.attributes.get('href')).toBe(`/ext/${A}`)
+      expect(dom.className).toBe('memo-reference')
+      expect(dom.textContent).toBe('공개한 설명')
+      expect(dom.listeners.has('click')).toBe(false)
+      expect(onOpen).not.toHaveBeenCalled()
+      expect(title).not.toHaveBeenCalled()
+      published.value = false
+      expect(dom.attributes.has('href')).toBe(false)
+      expect(dom.className).toBe('memo-reference-text')
+      expect(node.attrs.label).toBe('공개한 설명')
+      view.destroy?.()
+      published.value = true
+      expect(dom.attributes.has('href')).toBe(false)
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('nodeview는 최신 제목만 반영하며 문서 속성은 유지하고 종료 뒤 watcher를 정리한다', () => {
     class FakeElement {
       textContent: string | null = ''
@@ -125,6 +213,7 @@ describe('표준 Markdown 메모 참조 노드', () => {
       attributes = new Map<string, string>()
       listeners = new Map<string, EventListener>()
       setAttribute(name: string, value: string) { this.attributes.set(name, value) }
+      removeAttribute(name: string) { this.attributes.delete(name) }
       addEventListener(type: string, callback: EventListener) { this.listeners.set(type, callback) }
       removeEventListener(type: string) { this.listeners.delete(type) }
     }

@@ -27,6 +27,21 @@ function binding(node: TemplateNode, name: string) {
 }
 
 describe('로딩 표시의 레이아웃 경계', () => {
+  it('공개 폴더와 메모는 페이지 밖의 같은 Nuxt 레이아웃을 사용한다', () => {
+    for (const path of ['../pages/ext/[id].vue', '../pages/ext/folder/[id].vue']) {
+      const source = readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
+      const { descriptor } = parse(source)
+      expect(descriptor.scriptSetup?.content).toMatch(/layout:\s*'ext'/)
+      expect(all(template(path)).some(node => 'tag' in node && node.tag === 'ExtLayout')).toBe(false)
+    }
+  })
+  it('공개·비공개 트리는 같은 트리와 행 컴포넌트를 사용한다', () => {
+    for (const path of ['../components/AppSidebar.vue', '../layouts/ext.vue']) {
+      const nodes = all(template(path))
+      expect(nodes.some(node => 'tag' in node && node.tag === 'MemoTree')).toBe(true)
+      expect(nodes.some(node => 'tag' in node && node.tag === 'MemoTreeRow')).toBe(true)
+    }
+  })
   it('빠른 열기의 목록·빈 결과·오류는 같은 viewport 안에 있어 footer와 입력의 위치를 바꾸지 않는다', () => {
     const root = template('../components/MemoQuickSwitch.vue')
     const viewport = all(root).find(node => attribute(node, 'data-testid') === 'memo-quick-viewport')!

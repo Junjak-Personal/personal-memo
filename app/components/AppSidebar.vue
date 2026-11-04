@@ -743,15 +743,11 @@ async function logout() {
         <p class="text-sm text-error">{{ treeError }}</p>
         <UButton color="neutral" variant="outline" size="sm" @click="refresh">다시 시도</UButton>
       </div>
-      <UTree
+      <MemoTree
         v-if="!treeError"
         v-model:expanded="expanded"
         :items="items"
         :model-value="selected"
-        :get-key="(item: TreeItem) => String(item.value)"
-        :as="{ link: 'div' }"
-        :ui="{ link: 'min-h-11 py-0 lg:min-h-0 lg:py-1.5', listWithChildren: 'border-s border-default animate-tree-open' }"
-        color="neutral"
         data-testid="sidebar-tree"
       >
         <!--
@@ -766,8 +762,10 @@ async function logout() {
             :ui="{ item: 'min-h-11 lg:min-h-0' }"
             @update:open="onContextOpen(item, $event)"
           >
-            <div
-              class="-mx-1 flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1"
+            <MemoTreeRow
+              :item="item"
+              :expanded="expanded.includes(String(item.value))"
+              toggle-test-id="sidebar-folder-toggle"
               :class="[item.kind === 'folder' && dnd.over.value === item.path && 'bg-primary/10 ring-1 ring-primary', slotClass(item)]"
               :draggable="!coarsePointer"
               :data-testid="item.kind === 'folder' ? 'sidebar-folder-row' : 'sidebar-memo-row'"
@@ -779,22 +777,26 @@ async function logout() {
               @dragover="dnd.overRow($event, rowTarget(item))"
               @dragleave="dnd.leaveRow(rowTarget(item))"
               @drop="dnd.dropRow($event, rowTarget(item))"
+              @toggle="handleToggle"
             >
-              <!-- 할 일이면 아이콘 자리에 체크박스. 누름이 줄까지 올라가면 메모가 열리므로 여기서 멈춘다 -->
-              <span v-if="item.kind === 'memo' && item.done !== null" class="flex size-5 shrink-0 items-center justify-center" @click.stop>
-                <UCheckbox
-                  :model-value="item.done === true"
-                  :disabled="todo.pending.value.includes(String(item.value))"
-                  :aria-label="item.done ? '안 끝난 것으로 되돌리기' : '끝냄'"
-                  data-testid="sidebar-todo-check"
-                  @update:model-value="todo.setDone(String(item.value), item.done !== true)"
-                />
-              </span>
-              <UIcon v-else :name="String(item.icon)" class="size-5 shrink-0" />
-              <span class="truncate" :class="item.done === true && 'text-muted line-through'">{{ item.label }}</span>
-              <!-- 외부 공개 중인 메모 — 무엇이 열려 있는지 트리에서 바로 보이게 -->
-              <UIcon v-if="item.public" name="i-material-symbols-public" class="size-4 shrink-0 text-primary" :aria-label="item.publicInherited ? '상위 폴더에서 공개 중' : '외부 공개 중'" :data-testid="item.kind === 'folder' ? 'sidebar-folder-public' : 'sidebar-memo-public'" />
-              <span class="ms-auto flex shrink-0 items-center">
+              <template #leading>
+                <!-- 할 일이면 아이콘 자리에 체크박스. 누름이 줄까지 올라가면 메모가 열리므로 여기서 멈춘다 -->
+                <span v-if="item.kind === 'memo' && item.done !== null" class="flex size-5 shrink-0 items-center justify-center" @click.stop>
+                  <UCheckbox
+                    :model-value="item.done === true"
+                    :disabled="todo.pending.value.includes(String(item.value))"
+                    :aria-label="item.done ? '안 끝난 것으로 되돌리기' : '끝냄'"
+                    data-testid="sidebar-todo-check"
+                    @update:model-value="todo.setDone(String(item.value), item.done !== true)"
+                  />
+                </span>
+                <UIcon v-else :name="String(item.icon)" class="size-5 shrink-0" />
+              </template>
+              <template #after-label>
+                <!-- 외부 공개 중인 메모 — 무엇이 열려 있는지 트리에서 바로 보이게 -->
+                <UIcon v-if="item.public" name="i-material-symbols-public" class="size-4 shrink-0 text-primary" :aria-label="item.publicInherited ? '상위 폴더에서 공개 중' : '외부 공개 중'" :data-testid="item.kind === 'folder' ? 'sidebar-folder-public' : 'sidebar-memo-public'" />
+              </template>
+              <template #actions>
                 <UDropdownMenu :items="rowMenu(item)" :content="{ align: 'start' }">
                   <UButton
                     icon="i-material-symbols-more-horiz"
@@ -811,28 +813,14 @@ async function logout() {
                     <span :data-testid="menuItem.testId">{{ menuItem.label }}</span>
                   </template>
                 </UDropdownMenu>
-                <!-- 펼침 여부는 사이드바가 들고 있는 expanded 로 판단한다 — item 슬롯이 넘기는 값으로는 화살표가 늘 「접힘」으로 그려졌다 -->
-                <UButton
-                  v-if="item.kind === 'folder'"
-                  :icon="expanded.includes(String(item.value)) ? 'i-material-symbols-keyboard-arrow-up' : 'i-material-symbols-keyboard-arrow-down'"
-                  color="neutral"
-                  variant="ghost"
-                  size="xs"
-                  class="size-9 justify-center lg:size-6"
-                  :aria-label="expanded.includes(String(item.value)) ? '폴더 접기' : '폴더 펼치기'"
-                  :aria-expanded="expanded.includes(String(item.value))"
-                  data-testid="sidebar-folder-toggle"
-                  @pointerdown.stop
-                  @click.stop="handleToggle"
-                />
-              </span>
-            </div>
+              </template>
+            </MemoTreeRow>
             <template #item-label="{ item: menuItem }">
               <span :data-testid="menuItem.testId">{{ menuItem.label }}</span>
             </template>
           </UContextMenu>
         </template>
-      </UTree>
+      </MemoTree>
 
       <!-- 끄는 동안만 — 최상위로 옮길 자리 -->
       <div

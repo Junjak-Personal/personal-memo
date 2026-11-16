@@ -18,6 +18,16 @@ describe('형식 바뀜 검사의 정규화', () => {
 })
 
 describe('블록 이동과 실행 취소의 자동 저장 판단', () => {
+  it('중첩 목록의 깊이만 바뀌어도 저장한다', () => {
+    expect(shouldSaveMarkdown('- 부모\n  - 자식\n    - 이동', '- 부모\n  - 자식\n  - 이동', null)).toBe(true)
+  })
+  it('코드의 들여쓰기·중간 공백·빈 줄을 보존한다', () => {
+    expect(shouldSaveMarkdown('```python\nif x:\n    run()\n```', '```python\nif x:\n  run()\n```', null)).toBe(true)
+    expect(canonicalMarkdown('```\na   b\n\n\n\nc\n```')).not.toBe(canonicalMarkdown('```\na b\n\nc\n```'))
+  })
+  it('다음 줄이 이어지는 Markdown hard break는 보존한다', () => {
+    expect(shouldSaveMarkdown('첫 줄  \n둘째 줄', '첫 줄\n둘째 줄', null)).toBe(true)
+  })
   it('최초 에디터 정규화는 기존 초기 기준과 같으면 저장하지 않는다', () => {
     expect(shouldSaveMarkdown('HTML\n\n', '<div>HTML</div>', 'HTML')).toBe(false)
   })

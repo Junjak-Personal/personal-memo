@@ -14,6 +14,7 @@ interface ActiveMemo {
   id: () => string
   folder: () => string
   flush: () => Promise<boolean>
+  refresh?: (manual: boolean) => Promise<boolean>
 }
 
 let active: ActiveMemo | null = null
@@ -50,5 +51,9 @@ export function useActiveMemo() {
     tick.value++
   }
 
-  return { tick, register, touches, flush, isOpen, reload }
+  async function refresh(manual = false) {
+    return active?.refresh ? active.refresh(manual) : true
+  }
+
+  return { tick, register, touches, flush, isOpen, reload, refresh }
 }

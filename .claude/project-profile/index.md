@@ -1,7 +1,7 @@
 # Project Profile
 
 > Generated: 2026-10-07
-> Last updated: 2026-10-07
+> Last updated: 2026-11-17
 > Profile-Generated-At: 4aa0d56
 
 혼자 쓰는 개인 마크다운 메모 앱. 메모는 N100 서버의 파일시스템(.md + frontmatter)이 원본이고, PC 는 브라우저, 폰은 Flutter 웹뷰 껍데기로 쓴다.
@@ -10,10 +10,10 @@
 ## Quick Summary
 - **Stack**: Nuxt 4.6 (SPA, `ssr: false`) + Nitro + TypeScript 6 + Nuxt UI 4 / Tailwind v4 · 폰 껍데기 Flutter
 - **Package manager**: pnpm 12.6
-- **Test framework**: Vitest 5 (580 tests / 53 files, 2026-10-23 main 할 일 변경·로딩 높이 안정화 통합 검증) · 브라우저 스모크 수동 확인
+- **Test framework**: Vitest 5 (722 tests / 66 files, 2026-11-17) · 편집기 브라우저 회귀 56개 · 격리 앱 저장·복구·갱신 smoke
 - **State management**: Pinia 없음 — `useState` composable + 모듈 변수
 - **API layer**: 수동 (Nitro 파일 라우트 + `shared/types` 공용 타입), 생성기 없음
-- **CI/CD**: 없음 (배포는 3단계 예정 — pic-blog 의 Dockerfile·deploy.sh·GitHub Actions 복제, 설계문서 §13)
+- **CI/CD**: main push → GitHub Actions verify(타입·단위·시드·빌드) → self-hosted n100 production Docker 배포
 
 ## Profile Files
 
@@ -48,6 +48,8 @@ Status tokens: `✅` scanned-from-code · `⏭️` Skipped (not applicable) · `
 11. 🔴 **개발에서 구글 캘린더 동기화를 켜지 않는다** — 대조가 모르는 memoId 일정을 지운다. 커밋·푸시·배포는 오너 지시가 있을 때만.
 
 ## Document buckets
+
+- [편집기·로딩·동기화·새로고침 보완](../../_docs/complete/implementation/2026-11-17-editor-sync-reliability.md): 목록 계층·체크박스·블록 조작·문서 도구·저장 경쟁 방지와 원문 복구. 검증·남은 실기기 QA 포함.
 
 - [공개 체험용 stage 환경](../../_docs/complete/implementation/2026-11-04-stage-demo.md): localhost:4701, 운영과 분리된 컨테이너·데이터·세션. 폴더5/메모15·공개 로그인·실제 편집/저장·재시드 확인, Website 연결. README·MIT·stage 시드 CI 포함. 추가 QA2개 pending.
 

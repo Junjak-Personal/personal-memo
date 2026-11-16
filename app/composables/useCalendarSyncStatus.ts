@@ -12,13 +12,17 @@ let recheckTimer: ReturnType<typeof setTimeout> | null = null
 export function useCalendarSyncStatus() {
   const status = useState<CalendarSyncStatus | null>('calendar-sync', () => null)
   const running = useState('calendar-sync-running', () => false)
+  const revision = useState('calendar-sync-revision', () => 0)
 
   async function refresh() {
+    if (running.value) return
+    const requested = ++revision.value
     try {
-      status.value = await $fetch<CalendarSyncStatus>('/api/calendar/sync')
+      const result = await $fetch<CalendarSyncStatus>('/api/calendar/sync', { timeout: 15_000 })
+      if (requested === revision.value) status.value = result
     } catch {
       // 상태를 못 받아도 메모 쓰기는 그대로 된다 — 표시만 비운다
-      status.value = null
+      if (requested === revision.value) status.value = null
     }
   }
 
@@ -33,9 +37,12 @@ export function useCalendarSyncStatus() {
 
   /** 지금 맞춘다. allowMassDelete 는 미뤄 둔 대량 삭제를 사람이 확인했을 때만 */
   async function runNow(allowMassDelete = false) {
+    if (running.value) return
+    const requested = ++revision.value
     running.value = true
     try {
-      status.value = await $fetch<CalendarSyncStatus>('/api/calendar/sync', { method: 'POST', body: { allowMassDelete } })
+      const result = await $fetch<CalendarSyncStatus>('/api/calendar/sync', { method: 'POST', body: { allowMassDelete }, timeout: 30_000 })
+      if (requested === revision.value) status.value = result
     } finally {
       running.value = false
     }

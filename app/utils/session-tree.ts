@@ -5,6 +5,7 @@ interface SessionTreeOptions {
   tree: () => TreeResponse | null
   setTree: (tree: TreeResponse | null) => void
   setError: (error: string | null) => void
+  setRefreshing?: (refreshing: boolean) => void
   fetch: () => Promise<TreeResponse>
   message: (error: unknown) => string
 }
@@ -39,6 +40,7 @@ export function createSessionTree(options: SessionTreeOptions) {
     latest = null
     options.setTree(null)
     options.setError(null)
+    options.setRefreshing?.(false)
     for (const changed of waiting) changed()
   }
 
@@ -47,6 +49,7 @@ export function createSessionTree(options: SessionTreeOptions) {
     if (!requestedScope) return Promise.reject(new SupersededTreeRequest())
     const requestedRevision = ++revision
     valid = false
+    options.setRefreshing?.(true)
     const current = () => requestedScope === scope && requestedRevision === revision
     const result = Promise.resolve().then(() => {
       syncScope()
@@ -65,7 +68,10 @@ export function createSessionTree(options: SessionTreeOptions) {
       options.setError(options.message(error))
       throw error
     }).finally(() => {
-      if (pending === result) pending = null
+      if (pending === result) {
+        pending = null
+        options.setRefreshing?.(false)
+      }
     })
     pending = result
     latest = result
@@ -119,7 +125,7 @@ export function createSessionTree(options: SessionTreeOptions) {
   async function refresh() {
     syncScope()
     // 저장 뒤의 갱신은 이전 조회에 합류하지 않는다. 늦은 조회가 새 결과를 덮는 것도 막는다.
-    try { await request() } catch { /* 오류는 상태로 보여 준다. 기존 호출부의 실패 처리 방식 유지 */ }
+    try { await request(); return true } catch { return false }
   }
 
   return { ensure, settled, refresh, syncScope }

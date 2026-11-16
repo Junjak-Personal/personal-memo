@@ -1,6 +1,8 @@
 import type { JSONContent } from '@tiptap/core'
 import { DOMSerializer } from '@tiptap/pm/model'
 import type { Schema } from '@tiptap/pm/model'
+import { NodeSelection } from '@tiptap/pm/state'
+import type { Transaction } from '@tiptap/pm/state'
 import { Table, TableCell, TableHeader, TableKit } from '@tiptap/extension-table'
 import type { TableOptions } from '@tiptap/extension-table'
 import { tableLayoutPlugin } from './table-layout'
@@ -19,6 +21,22 @@ export function tableUsesHtml(node: JSONContent): boolean {
 
 export function hasMergedCells(node: JSONContent): boolean {
   return (node.content ?? []).some(row => (row.content ?? []).some(cell => tableSpan(cell.attrs?.rowspan) > 1 || tableSpan(cell.attrs?.colspan) > 1))
+}
+
+/** 병합·머리글 편집은 GFM이 담지 못하는 셀 구조를 만들 수 있다. 같은 transaction에서 HTML 유형으로 전환한다. */
+export function tableEditFormat(tr: Transaction, apply = true): boolean {
+  const { selection } = tr
+  const selected = selection instanceof NodeSelection && selection.node.type.name === 'table'
+    ? { node: selection.node, pos: selection.from }
+    : null
+  let table = selected
+  for (let depth = selection.$from.depth; !table && depth > 0; depth--) {
+    const node = selection.$from.node(depth)
+    if (node.type.name === 'table') table = { node, pos: selection.$from.before(depth) }
+  }
+  if (!table) return false
+  if (apply && table.node.attrs.memoTableFormat !== 'html') tr.setNodeMarkup(table.pos, undefined, { ...table.node.attrs, memoTableFormat: 'html' })
+  return true
 }
 
 const MemoTableCell = TableCell.extend({
@@ -88,7 +106,7 @@ export function memoTableKit() {
     },
   })
 
-  /** 이름/기존 commands는 유지한다. 사람용 표 편집 UI에는 병합 조작을 추가하지 않는다. */
+  /** 이름/기존 commands는 유지한다. 툴바의 상세 편집은 tableEditFormat으로 저장 유형을 함께 바꾼다. */
   return TableKit.extend({
     addExtensions() {
       return this.parent!().map(extension => {

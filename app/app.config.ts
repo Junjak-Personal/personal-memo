@@ -57,9 +57,12 @@ export default defineAppConfig({
           '[&_.memo-table-corner-tl]:rounded-tl-md [&_.memo-table-corner-tr]:rounded-tr-md [&_.memo-table-corner-bl]:rounded-bl-md [&_.memo-table-corner-br]:rounded-br-md',
           '[&_.selectedCell]:bg-primary/10 [&_.selectedCell]:ring-2 [&_.selectedCell]:ring-primary [&_.selectedCell]:ring-inset',
           // Task lists
-          '[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:ps-1',
-          '[&_ul[data-type=taskList]_li]:flex [&_ul[data-type=taskList]_li]:items-center [&_ul[data-type=taskList]_li]:ps-0',
-          '[&_ul[data-type=taskList]_li_label]:inline-flex [&_ul[data-type=taskList]_li_label]:pr-2.5',
+          '[&_ul[data-type=taskList]]:list-none [&_ul[data-type=taskList]]:ps-0',
+          // 항목 전체 높이가 아니라 첫 줄에 맞춘다. data-checked로 한정해 하위 일반 목록의 마커를 보존한다.
+          '[&_li[data-checked]]:flex [&_li[data-checked]]:items-start [&_li[data-checked]]:ps-0',
+          '[&_li[data-checked]>label]:inline-flex [&_li[data-checked]>label]:h-7 [&_li[data-checked]>label]:shrink-0 [&_li[data-checked]>label]:items-center [&_li[data-checked]>label]:pe-2.5',
+          '[&_:is(td,th)_li[data-checked]>label]:h-5',
+          '[&_li[data-checked]>div]:min-w-0 [&_li[data-checked]>div]:flex-1 [&_li[data-checked]>div]:break-words',
           '[&_ul[data-type=taskList]_li_label_input]:appearance-none [&_ul[data-type=taskList]_li_label_input]:size-4 [&_ul[data-type=taskList]_li_label_input]:rounded-sm [&_ul[data-type=taskList]_li_label_input]:ring [&_ul[data-type=taskList]_li_label_input]:ring-inset [&_ul[data-type=taskList]_li_label_input]:ring-accented [&_ul[data-type=taskList]_li_label_input]:outline-primary/25 [&_ul[data-type=taskList]_li_label_input]:outline-offset-0 [&_ul[data-type=taskList]_li_label_input]:bg-center',
           '[&_ul[data-type=taskList]_li_label_input]:focus-visible:outline-3 [&_ul[data-type=taskList]_li_label_input]:focus-visible:ring-primary',
           '[&_ul[data-type=taskList]_li_label_input:checked]:bg-primary [&_ul[data-type=taskList]_li_label_input:checked]:ring-primary [&_ul[data-type=taskList]_li_label_input:checked]:bg-[url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNCIgaGVpZ2h0PSIxNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTIwIDZMOSAxN2wtNS01Ii8+PC9zdmc+)] dark:[&_ul[data-type=taskList]_li_label_input:checked]:bg-[url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNCIgaGVpZ2h0PSIxNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTIwIDZMOSAxN2wtNS01Ii8+PC9zdmc+)]',

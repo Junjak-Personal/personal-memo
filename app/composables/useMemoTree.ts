@@ -18,17 +18,20 @@ export function useMemoTree() {
   const tree = useState<TreeResponse | null>('memo-tree', () => null)
   const error = useState<string | null>('memo-tree-error', () => null)
   const requests = useState('startup-tree-requests', () => 0)
+  const refreshing = useState('memo-tree-refreshing', () => false)
+  const refreshedAt = useState<number | null>('memo-tree-refreshed-at', () => null)
 
   let shared = appTrees.get(nuxtApp)
   if (!shared) {
     shared = createSessionTree({
       scope: () => screenScope(session.value),
       tree: () => tree.value,
-      setTree: (value) => { tree.value = value },
+      setTree: (value) => { tree.value = value; refreshedAt.value = value ? Date.now() : null },
       setError: (value) => { error.value = value },
+      setRefreshing: value => { refreshing.value = value },
       fetch: () => {
         requests.value++
-        return $fetch<TreeResponse>('/api/tree')
+        return $fetch<TreeResponse>('/api/tree', { timeout: 15_000 })
       },
       message: (e) => apiMessage(e, '목록을 불러오지 못했습니다'),
     })
@@ -58,5 +61,5 @@ export function useMemoTree() {
     }
   }
 
-  return { tree, error, ensure, settled, refresh, setFolderOrder }
+  return { tree, error, refreshing, refreshedAt, ensure, settled, refresh, setFolderOrder }
 }

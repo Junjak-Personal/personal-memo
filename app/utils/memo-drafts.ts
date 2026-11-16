@@ -21,6 +21,10 @@ export interface MemoDraft {
   savedAt: string
   /** 서버가 409 로 거절했다 — 사람이 고를 때까지 자동 저장하지 않는다 */
   conflict?: boolean
+  /** 원문 편집에서 보관했다. 자동 재전송·시각 편집기 정규화 대신 원문 편집에서 복구한다. */
+  source?: boolean
+  /** 자동 재전송 전에 최초 형식 검사를 하거나 명시적 형식 변경 승인을 받아야 한다. */
+  review?: 'pending' | 'format'
 }
 
 function storage(): Storage | null {
@@ -74,6 +78,23 @@ export function removeDraft(id: string, store = storage()) {
   } catch {
     // 지우지 못하면 다음 저장이 덮어쓴다
   }
+}
+
+/** 늦은 저장 응답이 다른 탭이나 더 최근 입력의 보관 수정을 지우지 못하게 한다. */
+export function removeSavedDraft(saved: MemoDraft, store = storage()) {
+  const current = readDraft(saved.id, store)
+  if (current && JSON.stringify(current) === JSON.stringify(saved)) removeDraft(saved.id, store)
+}
+
+export function markDraftConflict(requested: MemoDraft, store = storage()) {
+  const current = readDraft(requested.id, store)
+  if (current && JSON.stringify(current) === JSON.stringify(requested)) writeDraft({ ...current, conflict: true }, store)
+}
+
+/** 내용은 보내지 않고 다른 탭에 재조회 계기만 알린다. */
+export function notifyMemoSaved(store = storage()) {
+  try { store?.setItem('memo-saved-at', String(Date.now())) } catch { /* 저장 자체는 이미 성공했다 */ }
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('memo-drafts-changed'))
 }
 
 export function listDrafts(store = storage()): MemoDraft[] {

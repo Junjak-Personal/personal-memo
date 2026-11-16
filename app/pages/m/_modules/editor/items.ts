@@ -8,6 +8,7 @@ import { mapEditorItems } from '@nuxt/ui/utils/editor'
 import type {} from '@tiptap/extension-table'
 import type { Editor, JSONContent } from '@tiptap/vue-3'
 import type {} from '~/utils/editor-columns'
+import { tableEditFormat } from '~/utils/editor-table'
 
 /** 「바꾸기」 대상 — 슬래시 메뉴·말풍선 툴바·끌기 손잡이가 같은 목록을 쓴다 */
 const BLOCK_TYPES = [
@@ -58,6 +59,16 @@ function columnHandler(count: 2 | 3 | 4) {
   }
 }
 
+function tableDetailHandler(command: 'mergeCells' | 'splitCell' | 'toggleHeaderRow' | 'toggleHeaderColumn') {
+  return {
+    canExecute: (editor: Editor) => editor.can()[command](),
+    execute: (editor: Editor) => editor.chain().focus()
+      .command(({ tr, dispatch }) => tableEditFormat(tr, !!dispatch))[command](),
+    isActive: () => false,
+    isDisabled: undefined,
+  }
+}
+
 /** 이미지 올리기·표 넣기 — 템플릿과 같은 사용자 정의 명령 */
 export const customHandlers = {
   imageUpload: {
@@ -75,6 +86,10 @@ export const customHandlers = {
   columns2: columnHandler(2),
   columns3: columnHandler(3),
   columns4: columnHandler(4),
+  tableMergeCells: tableDetailHandler('mergeCells'),
+  tableSplitCell: tableDetailHandler('splitCell'),
+  tableHeaderRow: tableDetailHandler('toggleHeaderRow'),
+  tableHeaderColumn: tableDetailHandler('toggleHeaderColumn'),
   columnsUnset: {
     canExecute: (editor: Editor) => editor.can().unsetMemoColumns(),
     execute: (editor: Editor) => editor.chain().focus().unsetMemoColumns(),
@@ -84,6 +99,7 @@ export const customHandlers = {
 } satisfies EditorCustomHandlers
 
 type Handlers = typeof customHandlers
+type TestableToolbarItem = EditorToolbarItem<Handlers> & { 'data-testid'?: string }
 
 /** 위 줄에 늘 떠 있는 툴바 */
 export const toolbarItems: (EditorToolbarItem<Handlers> & { 'data-testid'?: string })[][] = [
@@ -156,7 +172,7 @@ export const suggestionItems = [
 ] satisfies EditorSuggestionMenuItem<Handlers>[][]
 
 /** 이미지를 고르면 뜨는 툴바 */
-export function imageToolbarItems(editor: Editor, actions: { showOriginal: (src: string) => void }): EditorToolbarItem<Handlers>[][] {
+export function imageToolbarItems(editor: Editor, actions: { showOriginal: (src: string) => void; editProperties?: () => void }): TestableToolbarItem[][] {
   const pos = editor.state.selection.from
   const node = editor.state.doc.nodeAt(pos)
   const isImage = node?.type.name === 'image'
@@ -170,6 +186,12 @@ export function imageToolbarItems(editor: Editor, actions: { showOriginal: (src:
         },
       },
     ],
+    ...(actions.editProperties ? [[{
+      icon: 'i-material-symbols-tune',
+      tooltip: { text: '이미지 설정' },
+      'data-testid': 'memo-image-properties-open',
+      onClick: actions.editProperties,
+    }]] : []),
     [
       {
         icon: 'i-material-symbols-sync',
@@ -192,7 +214,7 @@ export function imageToolbarItems(editor: Editor, actions: { showOriginal: (src:
 }
 
 /** 표 칸을 고르면 뜨는 툴바 — 행·열 추가/삭제 */
-export function tableToolbarItems(editor: Editor): EditorToolbarItem<Handlers>[][] {
+export function tableToolbarItems(editor: Editor): TestableToolbarItem[][] {
   const run = (fn: (c: ReturnType<Editor['chain']>) => ReturnType<Editor['chain']>) => () => fn(editor.chain().focus()).run()
   return [
     [
@@ -201,6 +223,22 @@ export function tableToolbarItems(editor: Editor): EditorToolbarItem<Handlers>[]
       { icon: 'i-material-symbols-add-column-left-outline', tooltip: { text: '왼쪽에 열 추가' }, onClick: run((c) => c.addColumnBefore()) },
       { icon: 'i-material-symbols-add-column-right-outline', tooltip: { text: '오른쪽에 열 추가' }, onClick: run((c) => c.addColumnAfter()) },
     ],
+    [{
+      icon: 'i-material-symbols-table-edit-outline',
+      tooltip: { text: '셀·머리글 편집' },
+      'data-testid': 'memo-table-details-open',
+      content: { align: 'start' },
+      items: [
+        [
+          { kind: 'tableMergeCells', label: '선택한 셀 병합', icon: 'i-material-symbols-table-rows', 'data-testid': 'memo-table-merge-cells' },
+          { kind: 'tableSplitCell', label: '셀 분할', icon: 'i-material-symbols-table-chart-outline', 'data-testid': 'memo-table-split-cell' },
+        ],
+        [
+          { kind: 'tableHeaderRow', label: '머리글 행 전환', icon: 'i-material-symbols-table-rows', 'data-testid': 'memo-table-toggle-header-row' },
+          { kind: 'tableHeaderColumn', label: '머리글 열 전환', icon: 'i-material-symbols-view-column-outline', 'data-testid': 'memo-table-toggle-header-column' },
+        ],
+      ],
+    }],
     [
       { icon: 'i-material-symbols-variable-remove-outline', tooltip: { text: '행 삭제' }, onClick: run((c) => c.deleteRow()) },
       { icon: 'i-material-symbols-view-column-outline', tooltip: { text: '열 삭제' }, onClick: run((c) => c.deleteColumn()) },

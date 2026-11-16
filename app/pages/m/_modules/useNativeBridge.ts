@@ -38,6 +38,7 @@ export function inNativeShell() {
 }
 
 export function useNativeBridge(getEditor: () => Editor | undefined, onLink: () => void) {
+  const documentPending = useState('memo-document-pending', () => false)
   const win = window as NativeWindow
   const channel = win.MemoNative ?? null
   let attachedEditor: Editor | null = null
@@ -121,7 +122,7 @@ export function useNativeBridge(getEditor: () => Editor | undefined, onLink: () 
 
   function exec(command: NativeCommand) {
     const editor = getEditor()
-    if (!editor) return
+    if (!editor || !editor.isEditable || documentPending.value) return
     const chain = editor.chain().focus()
     switch (command) {
       // `/` 를 넣으면 블록 메뉴가 뜬다 — 키보드에서 기호판으로 바꾸지 않아도 되게

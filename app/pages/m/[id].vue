@@ -13,6 +13,8 @@ definePageMeta({
 
 const route = useRoute()
 const { tick } = useActiveMemo()
+const pending = useState('memo-document-pending', () => false)
+onBeforeUnmount(() => { pending.value = false })
 
 /**
  * 경로 id(`p:…`)로 연 메모는 첫 저장에서 새 id 를 받아 주소가 바뀐다. 그때 화면을 새로 세우면
@@ -42,8 +44,12 @@ function onRenamed(from: string, to: string) {
       Suspense 가 새 메모를 받는 동안 이전 메모를 그대로 두었다가 한 번에 바꾼다(빈 화면 없음).
       suspensible — 다른 화면에서 처음 들어올 때는 Nuxt 의 페이지 전환이 메모를 받을 때까지 기다린다(지금과 같음).
     -->
-    <Suspense suspensible>
-      <MemoDocument :key="key" :memo-id="id" @renamed="onRenamed" />
-    </Suspense>
+    <MemoLoadingRegion :loading="pending" label="메모를 불러오는 중…" class="w-full min-w-0">
+      <div :inert="pending" :aria-busy="pending" class="w-full min-w-0" data-testid="memo-document-region">
+        <Suspense suspensible @pending="pending = true" @resolve="pending = false">
+          <MemoDocument :key="key" :memo-id="id" @renamed="onRenamed" />
+        </Suspense>
+      </div>
+    </MemoLoadingRegion>
   </div>
 </template>

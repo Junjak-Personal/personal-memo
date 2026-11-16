@@ -6,7 +6,8 @@
  *
  * 시점: 앱이 뜬 뒤, online 이벤트, 앱이 다시 보일 때, 보관된 게 있으면 1분마다.
  */
-import { isNetworkError, listDrafts, removeDraft, writeDraft } from '~/utils/memo-drafts'
+import { isNetworkError, listDrafts, markDraftConflict, notifyMemoSaved, removeSavedDraft } from '~/utils/memo-drafts'
+import { screenScope } from '~/utils/last-screen'
 
 const RETRY_MS = 60_000
 
@@ -14,25 +15,32 @@ export default defineNuxtPlugin((nuxtApp) => {
   const activeMemo = useActiveMemo()
   const { refresh } = useMemoTree()
   const toast = useToast()
+  const { loggedIn, session } = useUserSession()
   let running = false
 
   async function flushDrafts() {
-    if (running || navigator.onLine === false) return
+    if (running || !loggedIn.value || navigator.onLine === false) return
     running = true
+    const requestedScope = screenScope(session.value)
+    const current = () => requestedScope !== null && requestedScope === screenScope(session.value)
     let saved = 0
     try {
       for (const draft of listDrafts()) {
-        if (draft.conflict || activeMemo.isOpen(draft.id)) continue
+        if (!current()) break
+        if (draft.conflict || draft.source || draft.review || activeMemo.isOpen(draft.id)) continue
         try {
           await $fetch(`/api/memos/${encodeURIComponent(draft.id)}`, {
             method: 'PUT',
             body: { ...draft.input, baseVersion: draft.baseVersion },
+            timeout: 15_000,
           })
-          removeDraft(draft.id)
+          if (!current()) break
+          removeSavedDraft(draft)
           saved++
         } catch (e) {
           const status = apiStatus(e)
-          if (status === 409) writeDraft({ ...draft, conflict: true })
+          if (!current()) break
+          if (status === 409) markDraftConflict(draft)
           // 아직 닿지 않거나 로그인 전이면 나머지도 안 된다 — 다음 기회에
           else if (isNetworkError(e) || status === 401) break
           // 그 밖(메모가 지워짐 등)은 남겨 둔다 — 지우면 되살릴 길이 없다
@@ -41,18 +49,23 @@ export default defineNuxtPlugin((nuxtApp) => {
     } finally {
       running = false
     }
-    if (saved) {
+    if (saved && current()) {
+      notifyMemoSaved()
       await refresh()
       toast.add({ title: `이 기기에 보관해 둔 수정 ${saved}개를 저장했습니다` })
     }
   }
 
-  window.addEventListener('online', () => void flushDrafts())
-  document.addEventListener('visibilitychange', () => {
+  const online = () => void flushDrafts()
+  const visible = () => {
     if (document.visibilityState === 'visible') void flushDrafts()
-  })
-  setInterval(() => {
-    if (listDrafts().length) void flushDrafts()
+  }
+  window.addEventListener('online', online)
+  document.addEventListener('visibilitychange', visible)
+  const timer = setInterval(() => {
+    if (document.visibilityState === 'visible' && listDrafts().length) void flushDrafts()
   }, RETRY_MS)
+  const stop = watch(loggedIn, value => { if (value) void flushDrafts() })
+  nuxtApp.vueApp.onUnmount(() => { clearInterval(timer); stop(); window.removeEventListener('online', online); document.removeEventListener('visibilitychange', visible) })
   nuxtApp.hook('app:mounted', () => void flushDrafts())
 })

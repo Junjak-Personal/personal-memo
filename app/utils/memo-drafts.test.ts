@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { listDrafts, type MemoDraft, readDraft, removeDraft, writeDraft } from './memo-drafts'
+import { listDrafts, markDraftConflict, type MemoDraft, readDraft, removeDraft, removeSavedDraft, writeDraft } from './memo-drafts'
 
 /** localStorage 흉내 */
 class MemoryStorage implements Storage {
@@ -34,6 +34,18 @@ function draft(id: string): MemoDraft {
 }
 
 describe('memo-drafts', () => {
+  it('지연된 성공·409 응답이 더 최신의 원문 초안을 지우거나 덮지 않는다', () => {
+    const store = new MemoryStorage()
+    const requested = draft('A')
+    writeDraft(requested, store)
+    const latest = { ...requested, source: true, input: { ...requested.input, content: '최신 원문' }, savedAt: '2026-11-17T00:00:00Z' }
+    writeDraft(latest, store)
+    removeSavedDraft(requested, store)
+    markDraftConflict(requested, store)
+    expect(readDraft('A', store)).toEqual(latest)
+    markDraftConflict(latest, store)
+    expect(readDraft('A', store)).toEqual({ ...latest, conflict: true })
+  })
   it('쓰고 읽고 지운다', () => {
     const store = new MemoryStorage()
     expect(writeDraft(draft('A'), store)).toBe(true)

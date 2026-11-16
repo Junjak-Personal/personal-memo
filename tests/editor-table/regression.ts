@@ -6,6 +6,8 @@ import { Markdown } from '@tiptap/markdown'
 import { memoExtensions } from '../../app/utils/editor-extensions'
 import { canonicalMarkdown } from '../../app/pages/m/_modules/useMemoAutosave'
 import type { Memo } from '../../shared/types/memo'
+import { MemoBlockSelection } from '../../app/utils/editor-interactions'
+import { applyMemoPaste } from '../../app/utils/editor-paste'
 
 const run = document.querySelector<HTMLButtonElement>('#run')!
 const status = document.querySelector<HTMLElement>('#status')!
@@ -62,6 +64,29 @@ function editCell(editor: Editor, text: string) {
   assert(editor.commands.insertContentAt(position, { type: 'text', text: ' 수정' }), '셀 내용 수정 실패')
   // 표 앞 문단 삽입으로 모든 셀의 문서 위치도 바꾼다. decoration이 옛 위치에 남아서는 안 된다.
   assert(editor.commands.insertContentAt(0, { type: 'paragraph', content: [{ type: 'text', text: '표 앞 합성 문단' }] }), '표 앞 문단 삽입 실패')
+}
+function listCursor(editor: Editor, text: string, offset = 2) {
+  let position = -1
+  editor.state.doc.descendants((node, pos) => { if (node.isText && node.text === text) position = pos + Math.min(offset, node.nodeSize) })
+  assert(position >= 0, `목록 문장을 찾지 못함: ${text}`)
+  editor.commands.setTextSelection(position)
+}
+function listTab(editor: Editor, shiftKey = false) {
+  const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
+  editor.view.dom.dispatchEvent(event)
+  return event.defaultPrevented
+}
+function listAncestors(editor: Editor) {
+  const { $from } = editor.state.selection
+  return Array.from({ length: $from.depth }, (_, index) => $from.node(index + 1).type.name)
+}
+function editorKey(editor: Editor, key: string, options: KeyboardEventInit = {}) {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...options })
+  editor.view.dom.dispatchEvent(event)
+  return event.defaultPrevented
+}
+function modKey(editor: Editor, key: string, options: KeyboardEventInit = {}) {
+  return editorKey(editor, key, { ...options, ...(/Mac|iPhone|iPad/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true }) })
 }
 async function check(name: string, action: () => void | Promise<void>) {
   count++
@@ -120,6 +145,292 @@ run.addEventListener('click', async () => {
   results.replaceChildren()
   status.dataset.state = 'running'
   status.textContent = '실제 에디터·임시 저장소 검사 중'
+  await check('빈 체크 항목 Enter는 목록에서 빠져나오고 앞 항목을 유지한다', () => {
+    const editor = makeEditor('- [ ] 앞 항목\n- [ ] ')
+    try {
+      let position = -1
+      editor.state.doc.descendants((node, pos) => { if (node.type.name === 'taskItem' && !node.textContent) position = pos + 2 })
+      assert(position >= 0, '빈 체크 항목 파싱 실패')
+      editor.commands.setTextSelection(position)
+      assert(editorKey(editor, 'Enter'), '빈 항목 Enter 미처리')
+      same(editor.view.dom.querySelectorAll('li[data-checked]').length, 1, '앞 항목까지 목록에서 빠짐')
+      same(listAncestors(editor), ['paragraph'], '빈 항목이 본문으로 빠져나오지 않음')
+      assert(editor.state.doc.textContent.includes('앞 항목'), '앞 항목 내용 손실')
+    } finally { editor.destroy() }
+  })
+  await check('조합 중 Enter·Backspace·Tab은 블록 명령을 실행하지 않는다', () => {
+    const editor = makeEditor('- [ ] 앞 항목\n- [x] 한글 조합')
+    try {
+      listCursor(editor, '한글 조합')
+      const original = editor.getJSON()
+      for (const key of ['Enter', 'Backspace', 'Delete', 'Tab', 'Escape']) editorKey(editor, key, { isComposing: true })
+      same(editor.getJSON(), original, '한글 조합에서 문서 구조가 바뀜')
+    } finally { editor.destroy() }
+  })
+  await check('중첩 항목 맨 앞 Backspace는 본문과 손자 항목을 잃지 않는다', () => {
+    const editor = makeEditor('- [ ] 부모\n  - [ ] 자식\n    - [x] 손자\n  - [ ] 다음')
+    try {
+      listCursor(editor, '자식', 0)
+      const before = editor.state.doc.textContent
+      assert(editorKey(editor, 'Backspace'), '블록 경계 Backspace 미처리')
+      same(editor.state.doc.textContent, before, '블록 경계 Backspace에서 글자 손실')
+      assert([...editor.view.dom.querySelectorAll('li[data-checked="true"]')].some(node => node.textContent?.includes('손자')), '손자 체크 상태 손실')
+      editor.state.doc.check()
+    } finally { editor.destroy() }
+  })
+  await check('문단 끝 Delete는 다음 목록 항목과 자식의 글자를 보존한다', () => {
+    const editor = makeEditor('- [ ] 첫째\n- [x] 둘째\n  - [ ] 자식')
+    try {
+      listCursor(editor, '첫째', '첫째'.length)
+      const before = editor.state.doc.textContent
+      assert(editorKey(editor, 'Delete'), '블록 경계 Delete 미처리')
+      same(editor.state.doc.textContent, before, '블록 경계 Delete에서 글자 손실')
+      editor.state.doc.check()
+    } finally { editor.destroy() }
+  })
+  await check('Esc 블록 선택·Shift+방향키·복제·삭제가 선택된 블록만 처리한다', () => {
+    const editor = makeEditor('하나\n\n둘\n\n셋')
+    try {
+      listCursor(editor, '하나')
+      assert(editorKey(editor, 'Escape'), 'Esc 블록 선택 미처리')
+      assert(editor.state.selection instanceof MemoBlockSelection, '문자 선택과 블록 선택이 구분되지 않음')
+      assert(editor.view.dom.querySelector('[data-memo-block-selected]'), '블록 선택 표시 없음')
+      assert(editorKey(editor, 'ArrowDown', { shiftKey: true }), '블록 선택 확장 미처리')
+      assert(modKey(editor, 'd'), '블록 묶음 복제 미처리')
+      same(editor.state.doc.textContent, '하나둘하나둘셋', '선택하지 않은 블록까지 복제됨')
+      assert(editorKey(editor, 'Backspace'), '선택된 블록 삭제 미처리')
+      same(editor.state.doc.textContent, '하나둘셋', '선택하지 않은 블록이 삭제됨')
+    } finally { editor.destroy() }
+  })
+  await check('목록 블록 이동에서 자식·체크 상태·실행 취소 선택을 유지한다', () => {
+    const editor = makeEditor('- [ ] 앞 항목\n- [x] 이동 항목\n  - [ ] 원래 자식\n- [ ] 뒤 항목')
+    try {
+      listCursor(editor, '이동 항목')
+      const before = editor.getJSON()
+      assert(editorKey(editor, 'Escape'), '목록 블록 선택 미처리')
+      assert(modKey(editor, 'ArrowUp', { shiftKey: true }), '목록 블록 위로 이동 미처리')
+      const first = editor.state.doc.firstChild!.firstChild!
+      assert(first.textContent.includes('이동 항목원래 자식') && first.attrs.checked === true, '이동에서 항목 속성/자식 손실')
+      assert(editor.commands.undo(), '목록 이동 실행 취소 실패')
+      same(editor.getJSON(), before, '목록 이동 실행 취소 문서')
+    } finally { editor.destroy() }
+  })
+  await check('Ctrl/⌘+Enter는 현재 체크 항목만 완료 전환한다', () => {
+    const editor = makeEditor('- [ ] 부모\n  - [ ] 자식')
+    try {
+      listCursor(editor, '부모')
+      assert(modKey(editor, 'Enter'), '체크 완료 단축키 미처리')
+      assert(editor.state.doc.firstChild!.firstChild!.attrs.checked === true, '현재 체크 항목 완료 미반영')
+      assert(editor.state.doc.firstChild!.firstChild!.lastChild!.firstChild!.attrs.checked === false, '자식 체크 항목까지 변경됨')
+    } finally { editor.destroy() }
+  })
+  await check('모바일 목록 명령의 can 검사는 변경 없이 실제 경계를 표시한다', () => {
+    const editor = makeEditor('- [ ] 앞 항목\n- [ ] 다음 항목')
+    try {
+      listCursor(editor, '앞 항목')
+      const original = editor.getJSON()
+      assert(!editor.can().indentMemoList() && !editor.can().outdentMemoList(), '첫 항목/최상위 경계 검사 오류')
+      same(editor.getJSON(), original, 'can 검사가 문서를 수정함')
+      listCursor(editor, '다음 항목')
+      assert(editor.can().indentMemoList(), '모바일 들여쓰기 가능 상태 누락')
+      assert(editor.commands.indentMemoList(), '모바일 들여쓰기 명령 실패')
+      assert(editor.can().outdentMemoList(), '모바일 내어쓰기 가능 상태 누락')
+    } finally { editor.destroy() }
+  })
+  await check('붙여넣기 방식 선택은 Markdown과 평문을 구분한다', () => {
+    const editor = makeEditor('')
+    try {
+      assert(applyMemoPaste(editor, '**글자**', '', 'plain'), '평문 붙여넣기 실패')
+      assert(!editor.view.dom.querySelector('strong') && editor.state.doc.textContent === '**글자**', '평문이 서식으로 변환됨')
+      editor.commands.setContent('', { contentType: 'markdown' })
+      assert(applyMemoPaste(editor, '**글자**', '', 'markdown'), 'Markdown 붙여넣기 실패')
+      assert(editor.view.dom.querySelector('strong'), 'Markdown 서식 누락')
+      editor.commands.setContent('', { contentType: 'markdown' })
+      assert(applyMemoPaste(editor, '글자', '<strong>글자</strong>', 'formatted'), '서식 유지 붙여넣기 실패')
+      assert(editor.view.dom.querySelector('strong'), 'HTML 서식 누락')
+    } finally { editor.destroy() }
+  })
+  await check('서식 없이 붙여넣기 단축키는 Markdown 자동 변환보다 먼저 처리한다', () => {
+    const editor = makeEditor('')
+    try {
+      modKey(editor, 'v', { shiftKey: true })
+      const clipboardData = new DataTransfer()
+      clipboardData.setData('text/plain', '**평문**\n<script>문자</script>')
+      const event = new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true })
+      editor.view.dom.dispatchEvent(event)
+      assert(event.defaultPrevented, '평문 붙여넣기 미처리')
+      assert(!editor.view.dom.querySelector('strong,script'), '평문에서 서식/HTML 노드 생성')
+      assert(editor.state.doc.textContent.includes('**평문**') && editor.state.doc.textContent.includes('<script>문자</script>'), '평문 문자 손실')
+    } finally { editor.destroy() }
+  })
+  for (const marker of ['- [x]', '-', '1.']) await check(`${marker}: Tab·Shift+Tab 왕복에서 항목·커서·자식 유지`, () => {
+    const editor = makeEditor(`${marker} 부모\n${marker} 이동할 항목\n   ${marker} 자식`)
+    try {
+      listCursor(editor, '이동할 항목')
+      const before = editor.getJSON()
+      const offset = editor.state.selection.$from.parentOffset
+      assert(listTab(editor), 'Tab을 처리하지 않음')
+      assert(listAncestors(editor).filter(type => type === (marker.includes('[') ? 'taskItem' : 'listItem')).length === 2, '한 단계 하위로 이동하지 않음')
+      assert(listTab(editor, true), 'Shift+Tab을 처리하지 않음')
+      same(editor.getJSON(), before, '왕복 뒤 문서 구조')
+      same(editor.state.selection.$from.parentOffset, offset, '왕복 뒤 커서')
+    } finally { editor.destroy() }
+  })
+  for (const marker of ['- [ ]', '-', '1.']) await check(`${marker}: 첫 항목 Tab·최상위 Shift+Tab은 서식과 포커스 유지`, () => {
+    const editor = makeEditor(`${marker} 첫 항목\n${marker} 다음 항목`)
+    try {
+      listCursor(editor, '첫 항목')
+      const before = editor.getJSON()
+      assert(listTab(editor), '첫 항목 Tab이 편집기 밖으로 빠짐')
+      same(editor.getJSON(), before, '첫 항목 Tab이 문서를 바꿈')
+      assert(listTab(editor, true), '최상위 Shift+Tab이 편집기 밖으로 빠짐')
+      same(editor.getJSON(), before, '최상위 Shift+Tab이 목록 서식을 제거함')
+    } finally { editor.destroy() }
+  })
+  await check('체크리스트 안의 글머리 Tab은 현재 글머리만 들여쓴다', () => {
+    const editor = makeEditor('- [ ] 앞 할 일\n- [ ] 부모 할 일\n  - 첫 글머리\n  - 둘째 글머리')
+    try {
+      listCursor(editor, '둘째 글머리')
+      assert(listTab(editor), '혼합 목록 Tab 미처리')
+      same(listAncestors(editor), ['taskList', 'taskItem', 'bulletList', 'listItem', 'bulletList', 'listItem', 'paragraph'], '혼합 목록에서 상위 할 일이 움직임')
+      assert(listTab(editor, true), '혼합 목록 Shift+Tab 미처리')
+      same(listAncestors(editor), ['taskList', 'taskItem', 'bulletList', 'listItem', 'paragraph'], '혼합 목록 왕복')
+    } finally { editor.destroy() }
+  })
+  await check('글머리 안의 첫 체크 항목 Tab이 상위 글머리를 움직이지 않는다', () => {
+    const editor = makeEditor('- 앞 글머리\n- 부모 글머리\n  - [x] 첫 체크 항목')
+    try {
+      listCursor(editor, '첫 체크 항목')
+      const before = editor.getJSON()
+      assert(listTab(editor), '첫 체크 항목 Tab 미처리')
+      same(editor.getJSON(), before, '상위 글머리가 들여써짐')
+    } finally { editor.destroy() }
+  })
+  await check('목록 뒤 일반 문단은 커서 중간에서도 Tab으로 들어가고 Shift+Tab으로 복귀한다', () => {
+    const editor = makeEditor('- [ ] 부모\n\n설명 문단')
+    try {
+      listCursor(editor, '설명 문단')
+      const before = editor.getJSON()
+      assert(listTab(editor), '문단 중간 Tab 미처리')
+      same(listAncestors(editor), ['taskList', 'taskItem', 'paragraph'], '설명 문단이 부모 안으로 들어가지 않음')
+      same(editor.state.selection.$from.parentOffset, 2, '들여쓰기에서 커서 위치 손실')
+      assert(listTab(editor, true), '설명 문단 Shift+Tab 미처리')
+      // 끝이 목록이 되는 동안 StarterKit이 끝의 빈 문단을 보충할 수 있다.
+      same(editor.getJSON().content?.slice(0, 2), before.content, '설명 대신 부모 목록 전체가 움직임')
+      same(listAncestors(editor), ['paragraph'], '설명 문단이 최상위로 복귀하지 않음')
+      same(editor.state.selection.$from.parentOffset, 2, '내어쓰기에서 커서 위치 손실')
+    } finally { editor.destroy() }
+  })
+  await check('서로 다른 목록 종류에서 내어써도 체크 상태와 항목 종류를 보존한다', () => {
+    const editor = makeEditor('- 부모 글머리\n  - [x] 완료 항목\n  - [ ] 뒤 항목\n- 다음 글머리')
+    try {
+      listCursor(editor, '완료 항목')
+      assert(listTab(editor, true), '혼합 목록 내어쓰기 미처리')
+      same(listAncestors(editor), ['taskList', 'taskItem', 'paragraph'], '내어쓰기에서 체크 항목 유형 손실')
+      assert(editor.state.selection.$from.node(-1).attrs.checked === true, '내어쓰기에서 완료 상태 손실')
+      assert(editor.getMarkdown().includes('뒤 항목') && editor.getMarkdown().includes('다음 글머리'), '형제 내용 손실')
+    } finally { editor.destroy() }
+  })
+  for (const [outer, inner] of [['-', '- [x]'], ['- [ ]', '-'], ['1.', '- [x]'], ['- [ ]', '1.'], ['-', '1.'], ['1.', '-']] as const) {
+    await check(`${outer} 안의 ${inner}: 중간 항목 내어쓰기에서 앞·뒤 형제와 자식을 보존`, () => {
+      const editor = makeEditor(`${outer} 앞 부모\n${outer} 현재 부모\n  ${inner} 앞 형제\n  ${inner} 이동 항목\n    ${inner} 원래 자식\n  ${inner} 뒤 형제\n${outer} 뒤 부모`)
+      try {
+        listCursor(editor, '이동 항목')
+        const order = editor.state.doc.textContent
+        const listType = editor.state.selection.$from.node(-2).type.name
+        assert(listTab(editor, true), '혼합 중간 항목 내어쓰기 미처리')
+        same(editor.state.doc.textContent, order, '혼합 내어쓰기의 읽기 순서/내용')
+        same(editor.state.selection.$from.parentOffset, 2, '혼합 내어쓰기 커서 위치')
+        assert(listAncestors(editor).length === 3, '한 단계 밖으로 나오지 않음')
+        same(editor.state.selection.$from.node(-2).type.name, listType, '내어쓰기에서 글머리/번호 유형 손실')
+        editor.state.doc.check()
+        const markdown = editor.getMarkdown()
+        const reopened = makeEditor(markdown)
+        try { same(reopened.getJSON(), editor.getJSON(), '혼합 내어쓰기 저장 형식') }
+        finally { reopened.destroy() }
+      } finally { editor.destroy() }
+    })
+  }
+  await check('여러 체크 항목을 함께 들여쓰고 내어써도 선택과 자식이 유지된다', () => {
+    const editor = makeEditor('- [ ] 부모\n- [x] 첫 선택\n  - [ ] 원래 자식\n- [ ] 끝 선택')
+    try {
+      listCursor(editor, '첫 선택', 1)
+      const from = editor.state.selection.from
+      listCursor(editor, '끝 선택', 2)
+      editor.commands.setTextSelection({ from, to: editor.state.selection.to })
+      const before = editor.getJSON()
+      const selected = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to)
+      assert(listTab(editor), '범위 Tab 미처리')
+      assert(listTab(editor, true), '범위 Shift+Tab 미처리')
+      same(editor.getJSON(), before, '범위 왕복 문서')
+      same(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to), selected, '범위 왕복 선택')
+    } finally { editor.destroy() }
+  })
+  for (const [outer, inner] of [['-', '- [x]'], ['- [ ]', '-'], ['-', '1.'], ['1.', '-']] as const) {
+    await check(`${outer} 안의 ${inner}: 내어쓰기 후 Tab으로 원래 부모에 복귀`, () => {
+      const editor = makeEditor(`${outer} 부모\n  ${inner} 이동 항목`)
+      try {
+        listCursor(editor, '이동 항목')
+        const before = editor.getJSON()
+        assert(listTab(editor, true), '혼합 내어쓰기 미처리')
+        assert(listTab(editor), '인접한 다른 목록 아래로 Tab 미처리')
+        same(editor.getJSON(), before, '다른 종류 목록의 왕복 구조')
+        same(editor.state.selection.$from.parentOffset, 2, '다른 종류 목록의 왕복 커서')
+      } finally { editor.destroy() }
+    })
+  }
+  await check('목록 들여쓰기는 한 번씩 실행 취소·다시 실행하고 저장·재조회해도 유지된다', async () => {
+    const editor = makeEditor('- [ ] 부모\n- [x] 완료 자식')
+    try {
+      listCursor(editor, '완료 자식')
+      const before = editor.getJSON()
+      assert(listTab(editor), 'Tab 미처리')
+      const indented = editor.getJSON()
+      assert(editor.commands.undo(), '실행 취소 실패')
+      same(editor.getJSON(), before, '실행 취소 문서')
+      assert(editor.commands.redo(), '다시 실행 실패')
+      same(editor.getJSON(), indented, '다시 실행 문서')
+      const memo = await api('create', { content: editor.getMarkdown() })
+      const saved = await api('get', { id: memo.id })
+      const reopened = makeEditor(saved.content)
+      try { same(reopened.getJSON(), indented, '목록 저장·재조회 구조') }
+      finally { reopened.destroy() }
+    } finally { editor.destroy() }
+  })
+  await check('표 안의 Tab·Shift+Tab은 목록 이동 대신 다음·이전 셀로 이동한다', () => {
+    const editor = makeEditor('<table><tr><td><ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>셀 체크</p></li></ul></td><td>옆 셀</td></tr></table>')
+    try {
+      listCursor(editor, '셀 체크')
+      const before = editor.getJSON()
+      assert(listTab(editor), '표 Tab 미처리')
+      same(editor.state.selection.$from.parent.textContent, '옆 셀', '표 Tab이 다음 셀로 이동하지 않음')
+      assert(listTab(editor, true), '표 Shift+Tab 미처리')
+      same(editor.state.selection.$from.parent.textContent, '셀 체크', '표 Shift+Tab이 이전 셀로 복귀하지 않음')
+      same(editor.getJSON(), before, '표 이동이 목록 구조를 바꿈')
+    } finally { editor.destroy() }
+  })
+  await check('목록 안의 코드 Tab·Shift+Tab은 코드만 들여쓰고 목록을 움직이지 않는다', () => {
+    const editor = makeEditor('<ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p>앞 항목</p></li><li data-type="taskItem" data-checked="false"><p>코드 부모</p><pre><code>const result = 1</code></pre></li></ul>')
+    try {
+      listCursor(editor, 'const result = 1', 0)
+      const before = editor.getJSON()
+      assert(listTab(editor), '코드 Tab 미처리')
+      assert(/^ +const result/.test(editor.state.selection.$from.parent.textContent), '코드 대신 부모 목록이 움직임')
+      assert(listTab(editor, true), '코드 Shift+Tab 미처리')
+      same(editor.getJSON(), before, '코드 들여쓰기 왕복이 목록을 바꿈')
+    } finally { editor.destroy() }
+  })
+  await check('Shift+Enter는 체크 항목 안의 줄바꿈, Enter는 다음 체크 항목을 만든다', () => {
+    const editor = makeEditor('- [x] 입력 문장')
+    try {
+      listCursor(editor, '입력 문장', '입력 문장'.length)
+      editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }))
+      same(editor.view.dom.querySelectorAll('li[data-checked]').length, 1, 'Shift+Enter가 항목을 나눔')
+      assert(editor.view.dom.querySelector('li[data-checked] p br'), 'Shift+Enter의 블록 내부 줄바꿈 없음')
+      editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      same(editor.view.dom.querySelectorAll('li[data-checked]').length, 2, 'Enter가 다음 체크 항목을 만들지 않음')
+    } finally { editor.destroy() }
+  })
   await check('기존 TableKit의 HTML→Markdown 병합 손실을 재현한다', () => {
     const editor = makeEditor(examples[0][1], { baseline: true })
     try {

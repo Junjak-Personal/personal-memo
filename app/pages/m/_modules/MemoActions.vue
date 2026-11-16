@@ -19,6 +19,8 @@ const props = defineProps<{
   title: () => string
   folder: string
   hideMenu?: boolean
+  currentContent?: () => string
+  openSource?: () => Promise<void>
 }>()
 
 const toast = useToast()
@@ -42,6 +44,7 @@ const items = computed<DropdownMenuItem[][]>(() => [
   [
     { label: navigation.isFavorite(props.memoId()) ? '즐겨찾기 해제' : '즐겨찾기에 추가', icon: navigation.isFavorite(props.memoId()) ? 'i-material-symbols-star' : 'i-material-symbols-star-outline', disabled: navigation.pending.value, onSelect: toggleFavorite },
     { label: '수정 이력', icon: 'i-material-symbols-history', onSelect: () => void historyDialog.value?.show() },
+    ...(props.openSource ? [{ label: 'Markdown 원문 편집', icon: 'i-material-symbols-code', onSelect: () => void props.openSource?.() }] : []),
     { label: '템플릿으로 저장', icon: 'i-material-symbols-note-stack-add-outline', onSelect: () => saveTemplateDialog.value?.show() },
   ],
   done.value === null
@@ -114,6 +117,6 @@ async function remove() {
   </UDropdownMenu>
 
   <FolderPickDialog v-model:open="moveOpen" title="폴더 이동" :current="folder" @pick="move" />
-  <MemoHistoryDialog ref="historyDialog" :memo-id="props.memoId" :version="props.version" :flush="props.flush" />
+  <MemoHistoryDialog ref="historyDialog" :memo-id="props.memoId" :version="props.version" :flush="props.flush" :current-content="props.currentContent" :current-title="props.title" />
   <MemoSaveTemplateDialog ref="saveTemplateDialog" :memo-id="props.memoId" :version="props.version" :flush="props.flush" :title="props.title" />
 </template>

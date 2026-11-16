@@ -236,7 +236,7 @@ describe('세션 안에서 공유하는 첫 목록 조회', () => {
     expect(state.error).toBeNull()
     expect(state.fetch).toHaveBeenCalledTimes(2)
     state.fetch.mockRejectedValueOnce(new Error('403'))
-    await expect(state.refresh()).resolves.toBeUndefined()
+    await expect(state.refresh()).resolves.toBe(false)
     expect(state.error).toBe('목록 오류')
     state.switch(null)
     expect(state.tree).toBeNull()

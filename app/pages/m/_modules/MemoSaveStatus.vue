@@ -5,7 +5,7 @@
  */
 import type { SaveState } from './useMemoAutosave'
 
-const props = defineProps<{ state: SaveState }>()
+const props = withDefaults(defineProps<{ state: SaveState; draftStored?: boolean }>(), { draftStored: true })
 
 const emit = defineEmits<{ retry: [] }>()
 
@@ -20,7 +20,7 @@ const view = computed(() => {
     case 'error':
       return { icon: 'i-material-symbols-cloud-off-outline', text: '저장 실패', class: 'text-error' }
     case 'offline':
-      return { icon: 'i-material-symbols-cloud-off-outline', text: '기기에 보관', class: 'text-warning' }
+      return { icon: 'i-material-symbols-cloud-off-outline', text: props.draftStored ? '기기에 보관' : '저장 안 됨', class: props.draftStored ? 'text-warning' : 'text-error' }
     case 'conflict':
       return { icon: 'i-material-symbols-warning-outline', text: '충돌', class: 'text-warning' }
     case 'format':
@@ -31,7 +31,7 @@ const view = computed(() => {
 const failed = computed(() => props.state.status === 'error')
 const message = computed(() => {
   if (props.state.status === 'error') return `${props.state.message} — 눌러서 다시 시도`
-  if (props.state.status === 'offline') return '서버에 닿지 않아 이 기기에 보관했습니다. 연결되면 저장합니다'
+  if (props.state.status === 'offline') return props.draftStored ? '서버에 닿지 않아 이 기기에 보관했습니다. 연결되면 저장합니다' : '서버와 기기 저장소에 보관하지 못했습니다. 연결 후 다시 저장하세요.'
   return undefined
 })
 </script>

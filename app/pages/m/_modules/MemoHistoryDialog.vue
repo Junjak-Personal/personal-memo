@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { diffMemoLines } from '~/utils/revision-diff'
 import { useMemoHistory } from './useMemoHistory'
 
 const props = defineProps<{
   memoId: () => string
   version: () => string
   flush: () => Promise<boolean>
+  currentContent?: () => string
+  currentTitle?: () => string
 }>()
 
 const toast = useToast()
@@ -21,6 +24,9 @@ const history = useMemoHistory({
   },
 })
 const { open, loading, selecting, restoring, confirming, error, conflict, revisions, selected, selectedReady } = history
+const comparison = shallowRef<{ content: string; title: string | null } | null>(null)
+const previewMode = ref<'source' | 'changes'>('changes')
+const difference = computed(() => selected.value && comparison.value ? diffMemoLines(selected.value.content, comparison.value.content) : null)
 const dateTime = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' })
 function label(value: string) {
   const date = new Date(value)
@@ -33,7 +39,13 @@ function reloadCurrent() {
   history.close()
   if (active.isOpen(props.memoId())) active.reload()
 }
-defineExpose({ show: history.show })
+async function show() {
+  comparison.value = null
+  await history.show()
+  if (open.value && props.currentContent) comparison.value = { content: props.currentContent(), title: props.currentTitle?.() ?? null }
+}
+watch(open, value => { if (!value) comparison.value = null })
+defineExpose({ show })
 </script>
 
 <template>
@@ -52,7 +64,7 @@ defineExpose({ show: history.show })
         color="error"
         variant="subtle"
         :title="error"
-        :actions="[{ label: conflict ? '현재 메모 다시 불러오기' : '다시 불러오기', color: 'neutral', variant: 'outline', onClick: conflict ? reloadCurrent : history.show }]"
+        :actions="[{ label: conflict ? '현재 메모 다시 불러오기' : '다시 불러오기', color: 'neutral', variant: 'outline', onClick: conflict ? reloadCurrent : show }]"
         class="mb-4"
         data-testid="memo-history-error"
       />
@@ -79,8 +91,28 @@ defineExpose({ show: history.show })
               <h3 class="mb-2 text-lg font-semibold break-words">{{ selected.title || '제목 없음' }}</h3>
               <p v-if="selected.date" class="mb-2 text-xs text-muted">{{ selected.date }}{{ selected.dateEnd ? ` ~ ${selected.dateEnd}` : '' }}</p>
               <p v-if="selected.tags.length" class="mb-3 text-xs text-muted">{{ selected.tags.map(tag => `#${tag}`).join(' ') }}</p>
-              <p class="mb-2 text-xs text-dimmed">본문 원문</p>
-              <pre class="font-sans text-sm whitespace-pre-wrap break-words">{{ selected.content || '(빈 메모)' }}</pre>
+              <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p class="text-xs text-dimmed">{{ comparison && previewMode === 'changes' ? '선택한 버전 → 현재 저장 내용' : '본문 원문' }}</p>
+                <div v-if="comparison" class="ml-auto flex gap-1">
+                  <UButton color="neutral" :variant="previewMode === 'source' ? 'solid' : 'outline'" size="xs" :aria-pressed="previewMode === 'source'" data-testid="memo-history-source-tab" @click="previewMode = 'source'">원문</UButton>
+                  <UButton color="neutral" :variant="previewMode === 'changes' ? 'solid' : 'outline'" size="xs" :aria-pressed="previewMode === 'changes'" data-testid="memo-history-changes-tab" @click="previewMode = 'changes'">변경점</UButton>
+                </div>
+              </div>
+              <div v-if="comparison && previewMode === 'changes' && difference" data-testid="memo-history-diff">
+                <p v-if="comparison.title !== null && selected.title !== comparison.title" class="mb-3 text-sm break-words">제목: 「{{ selected.title || '제목 없음' }}」 → 「{{ comparison.title || '제목 없음' }}」</p>
+                <div class="mb-3 flex flex-wrap gap-3 text-xs">
+                  <span class="text-error">− {{ difference.removed }}줄 · 선택한 버전에만 있음</span>
+                  <span class="text-success">+ {{ difference.added }}줄 · 현재에만 있음</span>
+                </div>
+                <p v-if="!difference.added && !difference.removed" class="py-3 text-sm text-muted">본문 내용이 같습니다.</p>
+                <p v-if="difference.coarse" class="mb-2 text-xs text-muted">변경 구간이 커서 해당 구간 전체를 비교합니다.</p>
+                <div v-for="(line, index) in difference.lines" :key="index" class="flex gap-2 px-2 py-0.5 font-mono text-xs whitespace-pre-wrap break-words" :class="line.kind === 'removed' ? 'bg-error/10 text-error' : line.kind === 'added' ? 'bg-success/10 text-success' : 'text-muted'" :data-testid="`memo-history-diff-line-${index}`">
+                  <span v-if="line.kind === 'context'">… 같은 내용 {{ line.count }}줄 …</span>
+                  <template v-else><span class="w-3 shrink-0 select-none" aria-hidden="true">{{ line.kind === 'removed' ? '−' : line.kind === 'added' ? '+' : ' ' }}</span><span><span v-if="line.kind !== 'equal'" class="sr-only">{{ line.kind === 'removed' ? '선택한 버전에만 있음: ' : '현재에만 있음: ' }}</span>{{ line.text || ' ' }}</span></template>
+                </div>
+                <p v-if="difference.truncated" class="mt-2 text-xs text-warning">변경점은 처음 600줄까지 표시합니다. 전체 내용은 「원문」에서 확인하세요.</p>
+              </div>
+              <pre v-else class="font-sans text-sm whitespace-pre-wrap break-words">{{ selected.content || '(빈 메모)' }}</pre>
             </article>
           </MemoLoadingRegion>
         </div>

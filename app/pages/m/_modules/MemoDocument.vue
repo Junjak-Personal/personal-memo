@@ -16,8 +16,9 @@ import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS, sameTags, TAG_DELIMITER } from '#s
 import { isScheduled } from '#shared/utils/todo'
 import { emojiItems } from '~/utils/editor-emoji'
 import { memoExtensions } from '~/utils/editor-extensions'
+import { MemoBlockSelection } from '~/utils/editor-interactions'
 import { MemoOutlineExtension } from '~/utils/memo-outline'
-import { type MemoDraft, removeDraft } from '~/utils/memo-drafts'
+import { type MemoDraft, markDraftConflict, notifyMemoSaved, removeDraft, removeSavedDraft, writeDraft } from '~/utils/memo-drafts'
 import { ImageUpload } from './editor/ImageUploadExtension'
 import { blockHandleOptions, blockHandleUi } from './editor/drag-handle-options'
 import MobileBlockMove from './editor/MobileBlockMove.vue'
@@ -38,6 +39,11 @@ import MemoSaveStatus from './MemoSaveStatus.vue'
 import MemoOutline from './MemoOutline.vue'
 import MemoBacklinks from './MemoBacklinks.vue'
 import MemoLinkSuggestions from './MemoLinkSuggestions.vue'
+import MemoFindReplace from './MemoFindReplace.vue'
+import MemoSourceDialog from './MemoSourceDialog.vue'
+import MemoListToolbar from './editor/MemoListToolbar.vue'
+import MemoPasteMenu from './editor/MemoPasteMenu.vue'
+import BlockProperties from './editor/BlockProperties.vue'
 import { canonicalMarkdown, shouldSaveMarkdown, type SaveState, useMemoAutosave } from './useMemoAutosave'
 import { useMemoImages } from './useMemoImages'
 import { useNativeBridge } from './useNativeBridge'
@@ -71,7 +77,7 @@ const { data: memo, error } = await useAsyncData(
    * 이전 화면의 데이터를 나눠 쓰고 새로 받지 않는다 (폴더를 옮긴 뒤에도 옛 폴더·이미지 주소가 나왔다 — 2026-10-16 실측)
    */
   `memo-${props.memoId}#${activeMemo.tick.value}`,
-  () => $fetch<Memo>(`/api/memos/${encodeURIComponent(props.memoId)}`),
+  () => $fetch<Memo>(`/api/memos/${encodeURIComponent(props.memoId)}`, { timeout: 15_000 }),
   // 열 때마다 서버에서 새로 받는다 — 옮기거나 밖에서 고친 뒤 다시 세울 때 옛 내용이 나오면 안 된다
   { getCachedData: () => undefined },
 )
@@ -96,6 +102,20 @@ const referenceTitles = computed(() => tree.value ? new Map(tree.value.memos.fil
 const selectedNode = ref<{ node: JSONContent | null; pos: number }>()
 const blockMoveActive = ref(false)
 const linkOpen = ref(false)
+const sourceOpen = ref(false)
+const sourceContent = ref('')
+const sourceSaving = ref(false)
+const sourceOpening = ref(false)
+const sourceError = ref('')
+const sourceMemo = shallowRef<Memo | null>(null)
+const sourceDraft = shallowRef<MemoDraft | null>(null)
+const sourceStored = ref(true)
+let sourceRequest: Promise<boolean> | null = null
+let alive = true
+const remoteChanged = ref(false)
+const remoteChecking = ref(false)
+const blockProperties = useTemplateRef<{ show: () => void }>('blockProperties')
+const mobileBlockProperties = useTemplateRef<{ show: () => void }>('mobileBlockProperties')
 /** 원본 보기 창에 띄울 원본 주소 */
 const originalUrl = ref<string | null>(null)
 /** 원본 보기 — 화면에 맞춤 / 원래 크기 (확대가 막혀 있어서 원래 크기로 보고 밀어서 본다) */
@@ -125,7 +145,7 @@ const saveState = computed<SaveState>(() => {
   const state = autosave?.state.value ?? { status: 'saved' }
   return state.status === 'saved' && title.value !== savedTitle.value ? { status: 'dirty' } : state
 })
-if (autosave) activeMemo.register({ id: autosave.currentId, folder: () => currentFolder.value, flush: flushAll })
+if (autosave) activeMemo.register({ id: autosave.currentId, folder: () => currentFolder.value, flush: flushAll, refresh: refreshCurrentMemo })
 /** 할 일 체크 — 사이드바 트리가 원본이다(useTodo). 이 메모가 할 일이 아니면 null */
 const todoDone = computed(() => (autosave ? (todo.find(autosave.currentId())?.done ?? null) : null))
 const todoPriority = computed(() => (autosave ? (todo.find(autosave.currentId())?.priority ?? 'medium') : 'medium'))
@@ -135,9 +155,17 @@ const todoPriority = computed(() => (autosave ? (todo.find(autosave.currentId())
  * - 바뀌었거나 이미 충돌로 거절됐으면 사람이 고른다 (조용히 덮지 않는다)
  */
 const draftOnOpen = autosave?.pendingDraft() ?? null
-const restoredDraft = !!draftOnOpen && !draftOnOpen.conflict && draftOnOpen.baseVersion === memo.value?.version
-const staleDraft = ref<MemoDraft | null>(draftOnOpen && !restoredDraft ? draftOnOpen : null)
+const restoredSource = !!draftOnOpen?.source && !draftOnOpen.conflict && draftOnOpen.baseVersion === memo.value?.version
+const restoredDraft = !!draftOnOpen && !draftOnOpen.source && draftOnOpen.review !== 'format' && !draftOnOpen.conflict && draftOnOpen.baseVersion === memo.value?.version
+const staleDraft = ref<MemoDraft | null>(draftOnOpen && !restoredDraft && !restoredSource ? draftOnOpen : null)
 if (draftOnOpen && restoredDraft) applyDraft(draftOnOpen)
+if (draftOnOpen && restoredSource && memo.value) {
+  autosave?.pause()
+  sourceMemo.value = memo.value
+  sourceContent.value = draftOnOpen.input.content
+  sourceDraft.value = draftOnOpen
+  sourceOpen.value = true
+}
 const extensions = memoExtensions(
   {
     toDisplay: (src: string) => toDisplaySrc(folder, src),
@@ -164,6 +192,7 @@ onMounted(() => {
   // 메모끼리는 같은 자리에서 바꿔 끼워서([id].vue) 이전 메모의 스크롤 위치가 남는다 — 새 메모는 맨 위부터
   rootRef.value?.closest('[data-slot="body"]')?.scrollTo({ top: 0 })
   document.addEventListener('visibilitychange', onVisibility)
+  window.addEventListener('beforeunload', beforeUnload)
   attachBridge()
   if (!error.value && memo.value && !memo.value.unreadable) void navigation.recordOpened(memo.value.id)
   if (error.value || !memo.value || !autosave) startup.memoReady(openingMemoId)
@@ -175,8 +204,10 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  alive = false
   if (titleTimer) clearTimeout(titleTimer)
   document.removeEventListener('visibilitychange', onVisibility)
+  window.removeEventListener('beforeunload', beforeUnload)
 })
 
 /** 「저장 안 하고 이동」 을 골랐다 — 다시 막지 않는다 */
@@ -192,9 +223,14 @@ onBeforeRouteLeave((to) => saveBeforeLeaving(to))
 onBeforeRouteUpdate((to) => (autosave && String(to.params.id) === autosave.currentId() ? true : saveBeforeLeaving(to)))
 
 async function saveBeforeLeaving(to: RouteLocationNormalized) {
+  if (sourceRequest && !(await sourceRequest)) return false
+  if (sourceDraft.value && sourceOpen.value) {
+    toast.add({ color: 'warning', title: '원문 편집을 저장하거나 닫은 뒤 이동해 주세요.' })
+    return false
+  }
   if (!autosave || discarding || (await flushAll())) return true
   // 서버에 닿지 못했지만 이 기기에 보관했다 — 연결되면 보관함이 저장한다 (plugins/memo-drafts.client.ts)
-  if (autosave.state.value.status === 'offline') {
+  if (autosave.state.value.status === 'offline' && autosave.draftStored.value) {
     toast.add({ color: 'warning', title: '연결이 없어 이 기기에 보관했습니다', description: '연결되면 자동으로 저장합니다.' })
     return true
   }
@@ -226,7 +262,132 @@ async function leaveWithoutSaving(path: string) {
 
 function onVisibility() {
   // 앱이 뒤로 가거나 탭을 바꾸면 기다리지 않고 저장한다
-  if (document.visibilityState === 'hidden' && !discarding) void flushAll()
+  if (document.visibilityState === 'hidden' && !discarding && !sourceOpen.value) void flushAll()
+}
+
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (sourceDraft.value) {
+    if (!sourceStored.value) { event.preventDefault(); event.returnValue = '' }
+    return
+  }
+  if (!autosave || discarding || saveState.value.status === 'saved') return
+  if (!autosave.preserveDraft({ title: title.value })) {
+    event.preventDefault()
+    event.returnValue = ''
+  }
+}
+
+/** 자동 확인은 본문을 교체하지 않는다. 직접 갱신은 저장과 조회 사이에 추가 입력이 없는 경우만 반영한다. */
+async function refreshCurrentMemo(manual: boolean) {
+  if (!autosave || sourceOpen.value || sourceOpening.value || blockMoveActive.value || remoteChecking.value) return !manual
+  if (manual && !(await flushAll())) return false
+  if (!manual && saveState.value.status !== 'saved') return true
+  const id = autosave.currentId()
+  const version = autosave.currentVersion()
+  const snapshot = JSON.stringify({ title: title.value, content: content.value, date: date.value, dateEnd: dateEnd.value, tags: tags.value })
+  remoteChecking.value = true
+  try {
+    const fresh = await $fetch<Memo>(`/api/memos/${encodeURIComponent(id)}`, { timeout: 15_000 })
+    if (!alive || !activeMemo.isOpen(id) || id !== autosave.currentId() || version !== autosave.currentVersion() || snapshot !== JSON.stringify({ title: title.value, content: content.value, date: date.value, dateEnd: dateEnd.value, tags: tags.value }) || saveState.value.status !== 'saved') return !manual
+    remoteChanged.value = fresh.version !== version || fresh.folder !== currentFolder.value
+    if (manual && remoteChanged.value) activeMemo.reload()
+    return true
+  } catch (error) {
+    if (manual) toast.add({ color: 'error', title: apiMessage(error, '메모를 새로고침하지 못했습니다') })
+    return false
+  } finally { remoteChecking.value = false }
+}
+
+async function openSource() {
+  if (!autosave || !memo.value || sourceSaving.value || sourceOpening.value || sourceOpen.value) return
+  sourceOpening.value = true
+  sourceError.value = ''
+  const blockedFormat = autosave.state.value.status === 'format'
+  commitTitle()
+  if (!blockedFormat && !(await flushAll())) {
+    toast.add({ color: 'warning', title: '저장 상태를 확인한 뒤 원문 편집을 열어 주세요.' })
+    sourceOpening.value = false
+    return
+  }
+  const snapshot = JSON.stringify({ title: title.value, content: content.value, date: date.value, dateEnd: dateEnd.value, tags: tags.value })
+  autosave.pause()
+  try {
+    const fresh = await $fetch<Memo>(`/api/memos/${encodeURIComponent(autosave.currentId())}`, { timeout: 15_000 })
+    if (!alive || !activeMemo.isOpen(autosave.currentId())) return
+    if (snapshot !== JSON.stringify({ title: title.value, content: content.value, date: date.value, dateEnd: dateEnd.value, tags: tags.value })) {
+      autosave.resume(); autosave.changed()
+      toast.add({ title: '입력이 바뀌어 원문 열기를 멈췄습니다. 다시 시도하세요.' })
+      return
+    }
+    sourceMemo.value = fresh
+    sourceContent.value = fresh.content
+    sourceOpen.value = true
+    if (blockedFormat) toast.add({ title: '서버 원문을 기준으로 엽니다', description: '시각 편집기에서 저장하지 못한 수정은 기기에 보관했습니다.' })
+  } catch (error) { autosave.resume(); toast.add({ color: 'error', title: apiMessage(error, '원문을 불러오지 못했습니다') }) }
+  finally { sourceOpening.value = false }
+}
+
+function preserveSource(raw: string) {
+  const current = sourceMemo.value
+  if (!current) return
+  if (raw === current.content) {
+    if (sourceDraft.value) removeSavedDraft(sourceDraft.value)
+    sourceDraft.value = null
+    return
+  }
+  const draft: MemoDraft = { id: current.id, baseVersion: current.version, input: { title: current.title, content: raw, date: current.date, dateEnd: current.dateEnd, tags: current.tags }, savedAt: new Date().toISOString(), source: true }
+  sourceDraft.value = draft
+  sourceStored.value = writeDraft(draft)
+  if (!sourceStored.value) sourceError.value = '기기 저장소에 보관하지 못했습니다. 창을 닫기 전에 서버에 저장해 주세요.'
+  window.dispatchEvent(new Event('memo-drafts-changed'))
+}
+
+function saveSource(raw: string): Promise<boolean> {
+  if (sourceRequest) return sourceRequest
+  const result = submitSource(raw).finally(() => { if (sourceRequest === result) sourceRequest = null })
+  sourceRequest = result
+  return result
+}
+
+async function submitSource(raw: string) {
+  if (!sourceMemo.value || sourceSaving.value) return false
+  preserveSource(raw)
+  const draft = sourceDraft.value
+  if (!draft) return false
+  sourceSaving.value = true
+  sourceError.value = ''
+  try {
+    const saved = await $fetch<Memo>(`/api/memos/${encodeURIComponent(draft.id)}`, { method: 'PUT', body: { ...draft.input, baseVersion: draft.baseVersion }, timeout: 15_000 })
+    removeSavedDraft(draft)
+    notifyMemoSaved()
+    if (!alive || !activeMemo.isOpen(draft.id)) return true
+    onSaved(saved, sourceMemo.value)
+    sourceDraft.value = null
+    sourceOpen.value = false
+    void refreshTree()
+    activeMemo.reload()
+    return true
+  } catch (error) {
+    sourceError.value = apiStatus(error) === 409 ? '다른 곳에서 메모가 바뀌었습니다. 원문을 복사해 보관한 뒤 새로 불러와 비교하세요.' : apiMessage(error, '원문을 저장하지 못했습니다. 입력은 유지됩니다. 다시 시도하세요.')
+    if (apiStatus(error) === 409) {
+      sourceDraft.value = { ...draft, conflict: true }
+      markDraftConflict(draft)
+      remoteChanged.value = true
+    }
+    return false
+  } finally { sourceSaving.value = false }
+}
+
+function discardSource() {
+  if (sourceDraft.value) removeSavedDraft(sourceDraft.value)
+  sourceDraft.value = null
+  autosave?.resume()
+  if (autosave && saveState.value.status !== 'saved') autosave.preserveDraft({ title: title.value })
+}
+
+function editBlockProperties() {
+  if (window.innerWidth < 1024) mobileBlockProperties.value?.show()
+  else blockProperties.value?.show()
 }
 
 function onSaved(saved: Memo, previous: Memo) {
@@ -270,6 +431,7 @@ const TITLE_DELAY_MS = 5000
 let titleTimer: ReturnType<typeof setTimeout> | null = null
 
 function onTitleInput() {
+  autosave?.preserveDraft({ title: title.value })
   if (titleTimer) clearTimeout(titleTimer)
   titleTimer = setTimeout(commitTitle, TITLE_DELAY_MS)
 }
@@ -328,6 +490,14 @@ function applyDraft(draft: MemoDraft) {
 function keepStaleDraft() {
   const draft = staleDraft.value
   if (!draft || !autosave) return
+  if (draft.source && memo.value) {
+    autosave.pause()
+    sourceMemo.value = { ...memo.value, id: autosave.currentId(), version: autosave.currentVersion() }
+    sourceContent.value = draft.input.content
+    sourceOpen.value = true
+    staleDraft.value = null
+    return
+  }
   applyDraft(draft)
   staleDraft.value = null
   // 지금 서버 버전을 기준으로 보낸다 — 덮어쓰기를 사람이 골랐다
@@ -346,13 +516,8 @@ function draftTime(iso: string) {
 
 async function reloadFromServer() {
   if (!autosave) return
-  const fresh = await autosave.reload()
-  title.value = fresh.title
-  savedTitle.value = fresh.title
-  content.value = fresh.content
-  date.value = fresh.date
-  dateEnd.value = fresh.dateEnd
-  tags.value = fresh.tags
+  try { await autosave.reload(); activeMemo.reload() }
+  catch (error) { toast.add({ color: 'error', title: apiMessage(error, '메모를 다시 불러오지 못했습니다') }) }
 }
 
 /**
@@ -388,7 +553,7 @@ function onNodeChange(event: { node: JSONContent | null; pos: number }) {
 
 function showTextBubble({ editor, view, state }: MenuContext) {
   if (coarsePointer || blockMoveActive.value) return false
-  if (editor.isActive('imageUpload') || editor.isActive('image') || state.selection instanceof CellSelection) return false
+  if (editor.isActive('imageUpload') || editor.isActive('image') || state.selection instanceof CellSelection || state.selection instanceof MemoBlockSelection) return false
   return view.hasFocus() && !state.selection.empty
 }
 
@@ -411,7 +576,10 @@ function showTableBubble({ editor, view, state }: MenuContext) {
     <div v-if="error || !memo || !autosave" class="flex h-full flex-col items-center justify-center gap-3 text-center">
       <UIcon name="i-material-symbols-error-outline" class="size-10 text-error" />
       <p class="text-muted">{{ apiMessage(error, '메모를 열지 못했습니다') }}</p>
-      <UButton to="/" color="neutral" variant="outline">처음으로</UButton>
+      <div class="flex justify-end gap-2">
+        <UButton to="/" color="neutral" variant="outline">처음으로</UButton>
+        <UButton icon="i-material-symbols-refresh" data-testid="memo-load-retry" @click="activeMemo.reload()">다시 불러오기</UButton>
+      </div>
     </div>
 
     <UEditor
@@ -425,7 +593,7 @@ function showTableBubble({ editor, view, state }: MenuContext) {
       :mention="false"
       :extensions="extensions"
       :handlers="customHandlers"
-      :editable="!memo.unreadable"
+      :editable="!memo.unreadable && !sourceOpen && !sourceOpening"
       :editor-props="editorProps"
       placeholder="내용을 입력하세요. 「/」 로 블록 넣기"
       :ui="{ base: 'sm:px-0 pt-6 pb-32 min-h-[50dvh]', content: 'mx-auto w-full max-w-4xl px-4 sm:px-14' }"
@@ -433,12 +601,18 @@ function showTableBubble({ editor, view, state }: MenuContext) {
       @paste="onPaste"
     >
       <Teleport to="#app-header-toolbar" defer>
-        <UEditorToolbar v-if="!blockMoveActive" :editor="editor" :items="toolbarItems" />
+        <div v-if="!blockMoveActive" class="flex w-max items-center gap-1">
+          <UEditorToolbar :editor="editor" :items="toolbarItems" />
+          <MemoListToolbar :editor="editor" :disabled="memo.unreadable || sourceOpen" />
+          <MemoPasteMenu :editor="editor" :disabled="memo.unreadable || sourceOpen" />
+          <BlockProperties ref="blockProperties" :editor="editor" :disabled="memo.unreadable || sourceOpen" />
+        </div>
       </Teleport>
       <Teleport to="#app-header-actions" defer>
-        <MemoSaveStatus :state="saveState" @retry="autosave.save()" />
+        <MemoSaveStatus :state="saveState" :draft-stored="autosave.draftStored.value" @retry="autosave.save()" />
+        <MemoFindReplace :editor="editor" :disabled="blockMoveActive || sourceOpen" />
         <MemoOutline :editor="editor" :disabled="blockMoveActive" />
-        <MemoActions :hide-menu="blockMoveActive" :memo-id="autosave.currentId" :version="autosave.currentVersion" :flush="flushAll" :title="() => savedTitle" :folder="currentFolder">
+        <MemoActions :hide-menu="blockMoveActive" :memo-id="autosave.currentId" :version="autosave.currentVersion" :flush="flushAll" :title="() => savedTitle" :current-content="() => content" :open-source="memo.unreadable ? undefined : openSource" :folder="currentFolder">
           <MobileBlockMove
             v-model:active="blockMoveActive"
             :editor="editor"
@@ -449,13 +623,19 @@ function showTableBubble({ editor, view, state }: MenuContext) {
       </Teleport>
 
       <!-- 좁은 화면의 브라우저(껍데기 밖)에서는 위 줄 가운데가 숨는다 — 툴바를 한 줄 아래로 내린다 -->
-      <Teleport v-if="!bridge.native && !blockMoveActive" to="#app-header-secondary" defer>
+      <Teleport v-if="!blockMoveActive" to="#app-header-secondary" defer>
         <div class="overflow-x-auto border-b border-default px-2 py-1 lg:hidden">
-          <UEditorToolbar :editor="editor" :items="toolbarItems" />
+          <div class="flex w-max items-center gap-1">
+            <MemoListToolbar :editor="editor" :disabled="memo.unreadable || sourceOpen" />
+            <UEditorToolbar v-if="!bridge.native" :editor="editor" :items="toolbarItems" />
+            <MemoPasteMenu :editor="editor" :disabled="memo.unreadable || sourceOpen" />
+            <BlockProperties ref="mobileBlockProperties" :editor="editor" :disabled="memo.unreadable || sourceOpen" />
+          </div>
         </div>
       </Teleport>
 
       <div class="mx-auto w-full max-w-4xl px-4 pt-6 sm:px-14 sm:pt-10">
+        <UAlert v-if="remoteChanged" color="info" variant="subtle" title="다른 곳에서 메모가 바뀌었습니다" description="현재 입력을 보존하고 있습니다. 새 내용을 불러오려면 저장 상태를 확인한 뒤 새로고침하세요." class="mb-6" data-testid="memo-remote-changed" :actions="[{ label: '새 내용 불러오기', variant: 'outline', loading: remoteChecking, onClick: () => refreshCurrentMemo(true) }]" />
         <UAlert
           v-if="memo.unreadable"
           color="warning"
@@ -570,7 +750,7 @@ function showTableBubble({ editor, view, state }: MenuContext) {
         </template>
       </UEditorToolbar>
 
-      <UEditorToolbar :editor="editor" :items="imageToolbarItems(editor, { showOriginal })" layout="bubble" :should-show="showImageBubble" />
+      <UEditorToolbar :editor="editor" :items="imageToolbarItems(editor, { showOriginal, editProperties: editBlockProperties })" layout="bubble" :should-show="showImageBubble" />
 
       <UEditorToolbar :editor="editor" :items="tableToolbarItems(editor)" layout="bubble" :should-show="showTableBubble" />
 
@@ -663,6 +843,7 @@ function showTableBubble({ editor, view, state }: MenuContext) {
         </template>
       </UModal>
     </UEditor>
+    <MemoSourceDialog v-model:open="sourceOpen" :content="sourceContent" :baseline="sourceMemo?.content" :saving="sourceSaving" :error="sourceError" @change="preserveSource" @submit="saveSource" @close="discardSource" />
     <MemoBacklinks v-if="memo && !error && !memo.unreadable" :memo-id="liveMemoId" />
   </div>
 </template>

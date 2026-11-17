@@ -9,7 +9,7 @@ const searchInput = ref('')
 const selectedSearchMemo = ref<PublicMemoSummary | null>(null)
 const { data: tree, status, error, refresh } = useAsyncData(
   'ext-navigation',
-  () => $fetch<PublicTreeResponse>('/api/ext/tree'),
+  () => $fetch<PublicTreeResponse>('/api/ext/tree', { timeout: 15_000 }),
   { getCachedData: () => undefined },
 )
 
@@ -26,7 +26,11 @@ watch([items, () => route.path], ([nodes, path]) => {
   expanded.value = [...new Set([...expanded.value, ...ancestorKeys(nodes, path)])]
 }, { immediate: true })
 
-useHead({ titleTemplate: title => title ? `${title} · Jun's Memo` : "Jun's Memo" })
+useHead({
+  titleTemplate: title => title ? `${title} · Jun's Memo` : "Jun's Memo",
+  // 공개 문서는 브라우저의 확대를 허용한다. 앱의 같은 name 설정은 이 레이아웃 안에서만 덮어쓴다.
+  meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' }],
+})
 
 function openItem(url: string) {
   return navigateTo(url)

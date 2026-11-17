@@ -55,4 +55,4 @@
 
 ## 폴더 공개·공개 탐색 (2026-11-04 로컬 구현)
 
-AppSidebar 폴더 메뉴→FolderPublicDialog에서 하위·향후 항목 공개를 확인한다. 상위 공개를 상속하는 항목의 개별 해제는 비활성화하며 링크 복사는 허용한다. 공개 ExtLayout은 `/api/ext/tree`만 사용하고 ExtFolder/ExtMemo를 LNB와 함께 표시한다. 비공개 조상은 그리지 않는다. 모바일 목록·저장 실패 흐름은 완료 기록의 QA2개 pending이다.
+AppSidebar 폴더 메뉴→FolderPublicDialog에서 하위·향후 항목 공개를 확인한다. 상위 공개를 상속하는 항목의 개별 해제는 비활성화하며 링크 복사는 허용한다. 공개 ExtLayout은 `/api/ext/tree`만 사용하고 ExtFolder/ExtMemo를 LNB와 함께 표시한다. 비공개 조상은 그리지 않는다. 모바일 공개 목록의 이동·닫기는 2026-11-17 브라우저에서 확인했다. 공개 설정 저장 실패 흐름과 실기기 동작은 별도 미검증이다. 공개 본문은 문서 role·체크 상태 표시 전용이며 공개 레이아웃은 브라우저 확대를 허용한다. 공개 조회는 15초 timeout과 기존 재시도를 사용한다. 근거: `_docs/complete/implementation/2026-11-17-public-page-audit.md`.

@@ -4,7 +4,7 @@ import type { PublicFolderNode } from '#shared/types/memo'
 const props = defineProps<{ folderId: string }>()
 const { data: folder, status, error, refresh } = useAsyncData(
   `ext-folder:${props.folderId}`,
-  () => $fetch<PublicFolderNode>(`/api/ext/folders/${encodeURIComponent(props.folderId)}`),
+  () => $fetch<PublicFolderNode>(`/api/ext/folders/${encodeURIComponent(props.folderId)}`, { timeout: 15_000 }),
   { getCachedData: () => undefined },
 )
 

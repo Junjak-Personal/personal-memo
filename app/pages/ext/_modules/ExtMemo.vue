@@ -17,12 +17,12 @@ const resolvePublicHref = (id: string) => publicMemoHref(publicTree.value, id)
 
 const { data: memo, error, status, refresh } = useAsyncData(
   `ext-${props.memoId}`,
-  () => $fetch<PublicMemo>(`/api/ext/${encodeURIComponent(props.memoId)}`),
+  () => $fetch<PublicMemo>(`/api/ext/${encodeURIComponent(props.memoId)}`, { timeout: 15_000 }),
   { getCachedData: () => undefined },
 )
 const { data: backlinks, error: backlinksError, status: backlinksStatus, refresh: refreshBacklinks } = useAsyncData(
   `ext-backlinks:${props.memoId}`,
-  () => $fetch<PublicMemoSummary[]>(`/api/ext/${encodeURIComponent(props.memoId)}/backlinks`),
+  () => $fetch<PublicMemoSummary[]>(`/api/ext/${encodeURIComponent(props.memoId)}/backlinks`, { timeout: 15_000 }),
   { getCachedData: () => undefined },
 )
 
@@ -36,20 +36,26 @@ const updatedLabel = computed(() =>
   memo.value?.updated ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', timeZone: 'Asia/Seoul' }).format(new Date(memo.value.updated)) : null,
 )
 
-function syncPublicLinks() {
-  if (publicRoot.value) disablePublicMemoLinks(publicRoot.value, resolvePublicHref)
+function syncPublicContent() {
+  const root = publicRoot.value
+  if (!root) return
+  disablePublicMemoLinks(root, resolvePublicHref)
+  // 공개 본문은 읽기 전용이다. 체크 상태만 표시하고 입력 가능한 컨트롤로 노출하지 않는다.
+  for (const checkbox of root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) {
+    if (!checkbox.disabled) checkbox.disabled = true
+  }
 }
 
 onMounted(() => {
   const root = publicRoot.value
   if (!root) return
-  syncPublicLinks()
-  linkObserver = new MutationObserver(syncPublicLinks)
+  syncPublicContent()
+  linkObserver = new MutationObserver(syncPublicContent)
   linkObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['href'] })
 })
 onBeforeUnmount(() => linkObserver?.disconnect())
 // 공개 목록의 지연 조회·새로고침은 본문 편집과 별개이므로 DOM의 링크만 갱신한다.
-watch(publicTree, syncPublicLinks, { flush: 'post' })
+watch(publicTree, syncPublicContent, { flush: 'post' })
 
 useHead({
   title: () => memo.value?.title || '메모',
@@ -87,7 +93,8 @@ useHead({
         :mention="false"
         :extensions="extensions"
         :editable="false"
-        :ui="{ base: 'sm:px-0 pt-6', content: 'mx-auto w-full max-w-4xl px-4 sm:px-14' }"
+        :editor-props="{ attributes: { role: 'document', 'aria-label': '공개 메모 본문', tabindex: '-1' } }"
+        :ui="{ base: 'sm:px-0 pt-6 [&_a[aria-disabled=true]]:text-muted [&_a[aria-disabled=true]]:no-underline [&_a[aria-disabled=true]]:cursor-default', content: 'mx-auto w-full max-w-4xl px-4 sm:px-14' }"
         data-testid="ext-body"
       />
       <section class="mx-auto mt-8 w-full max-w-4xl px-4 sm:px-14" aria-label="연결 메모" data-testid="ext-backlinks">

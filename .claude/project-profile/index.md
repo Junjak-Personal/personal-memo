@@ -49,6 +49,8 @@ Status tokens: `✅` scanned-from-code · `⏭️` Skipped (not applicable) · `
 
 ## Document buckets
 
+- [외부 공개 페이지 점검](../../_docs/complete/implementation/2026-11-17-public-page-audit.md): 공개 읽기 접근성·익명 탐색·접근 경계 점검.
+
 - [편집기·로딩·동기화·새로고침 보완](../../_docs/complete/implementation/2026-11-17-editor-sync-reliability.md): 목록 계층·체크박스·블록 조작·문서 도구·저장 경쟁 방지와 원문 복구. 검증·남은 실기기 QA 포함.
 
 - [공개 체험용 stage 환경](../../_docs/complete/implementation/2026-11-04-stage-demo.md): localhost:4701, 운영과 분리된 컨테이너·데이터·세션. 폴더5/메모15·공개 로그인·실제 편집/저장·재시드 확인, Website 연결. README·MIT·stage 시드 CI 포함. 추가 QA2개 pending.

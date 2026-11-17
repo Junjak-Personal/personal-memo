@@ -85,7 +85,7 @@ fn main() {
             let last_open = Arc::new(Mutex::new(None));
             let nav_last = last_open.clone();
             let handle = app.handle().clone();
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(setup_site.clone()))
                 .title(if local {
                     "Memo — 로컬 테스트"
                 } else {

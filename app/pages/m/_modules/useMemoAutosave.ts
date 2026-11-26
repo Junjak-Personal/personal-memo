@@ -92,6 +92,7 @@ interface Options {
   read: () => Required<MemoInput>
   /** 에디터로 한 번 읽고 다시 쓴 마크다운 — 왕복 검사용 */
   normalize: (markdown: string) => string
+  formatEquivalent?: (source: string, roundTrip: string) => boolean
   /** 저장 성공 뒤. id 나 제목이 바뀌었으면 화면이 트리·주소를 맞춘다 */
   onSaved: (saved: Memo, previous: Memo) => void
 }
@@ -144,7 +145,8 @@ export function useMemoAutosave(options: Options) {
     const run = async () => {
       if (!formatChecked) {
         const original = options.memo.content
-        if (canonicalMarkdown(options.normalize(original)) !== canonicalMarkdown(original)) {
+        const roundTrip = options.normalize(original)
+        if (canonicalMarkdown(roundTrip) !== canonicalMarkdown(original) && !options.formatEquivalent?.(original, roundTrip)) {
           state.value = { status: 'format' }
           preserveDraft()
           return false

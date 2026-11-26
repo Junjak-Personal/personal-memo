@@ -40,6 +40,7 @@ describe('공개 문서의 내부 링크 DOM 경계', () => {
     }
     expect(run(internal)).toBe(1)
     expect(run(internal, 'Enter')).toBe(1)
+    expect(run('/api/attachments/01M5D265Y7R61BQEFWDT6RA27E', 'Enter')).toBe(1)
     expect(run(internal, 'ArrowRight')).toBe(0)
     expect(run('https://example.com')).toBe(0)
   })
@@ -147,4 +148,13 @@ describe('공개 트리로 허용한 메모 링크', () => {
     expect(anchor.getAttribute('href')).toBeNull()
     expect(event.preventDefault).toHaveBeenCalledOnce()
   })
+})
+
+it('첨부 주소는 공개 메모 본문에서 링크와 포커스를 제거한다', () => {
+  const href = `/api/attachments/${publicId}`
+  const anchor = new Anchor(href)
+  disablePublicMemoLinks(rootOf(anchor), id => publicMemoHref(tree, id))
+  expect(anchor.getAttribute('href')).toBeNull()
+  expect(anchor.getAttribute('tabindex')).toBeNull()
+  expect(anchor.getAttribute('aria-disabled')).toBe('true')
 })

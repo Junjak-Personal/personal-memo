@@ -49,7 +49,7 @@ export CARGO_HOME="$PWD/_workspace/desktop-10/rust/cargo"
 - capability 목록은 비어 있고 원격 IPC 권한도 없다. 전역 Tauri API·fs/shell/http 플러그인을 열지 않는다. Dialog 플러그인은 Rust 메뉴에서만 사용한다.
 - 초기화 스크립트는 연결 안내의 주소를 설정하고, 허용 출처의 `/api/` fetch에만 `cache: no-store`를 적용한다. 외부 요청·정적 자원·본문·쿠키·signal/headers/credentials 옵션은 그대로 둔다.
 - 서버의 API 응답에도 no-store를 설정한다(이미지 라우트의 명시적 private immutable 캐시는 유지). 로그아웃은 기존 훅을 실행한 뒤 세션 쿠키를 Max-Age=0으로 삭제한다. 이 서버 변경은 운영에 배포하지 않았다.
-- 같은 출처의 새 창은 기존 창으로, 외부 http/https/mailto는 OS 기본 브라우저로 보낸다. file/data/javascript/blob/기타 앱 스킴의 최상위 탐색·다운로드·웹 권한 요청은 거절한다. 외부 링크 연속 열기는 800ms 제한이다.
+- 같은 출처의 새 창은 기존 창으로, 외부 http/https/mailto는 OS 기본 브라우저로 보낸다. 다운로드는 같은 출처의 `/api/attachments/<ULID>` 주소에만 허용한다. file/data/javascript/blob/기타 앱 스킴의 최상위 탐색과 웹 권한 요청은 거절한다. 외부 링크 연속 열기는 800ms 제한이다.
 - 서버가 제공하는 원격 코드의 무결성·가용성은 기존 HTTPS 서버에 의존한다. 서버 파일·실제 계정은 이 작업에서 변경하지 않았다.
 
 ## 검사

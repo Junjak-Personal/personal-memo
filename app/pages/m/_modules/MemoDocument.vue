@@ -12,13 +12,16 @@ import type { Editor, JSONContent } from '@tiptap/vue-3'
 import type { RouteLocationNormalized } from 'vue-router'
 import type { Memo } from '#shared/types/memo'
 import { toDisplaySrc, toOriginalSrc, toStoredSrc } from '#shared/utils/asset-path'
+import { ATTACHMENT_NAME_HEADER } from '#shared/utils/attachments'
 import { cleanTags, MAX_TAG_LENGTH, MAX_TAGS, sameTags, TAG_DELIMITER } from '#shared/utils/tags'
 import { isScheduled } from '#shared/utils/todo'
+import { equivalentEditorMarkdown } from '~/utils/canonical-editor-markdown'
 import { emojiItems } from '~/utils/editor-emoji'
 import { memoExtensions } from '~/utils/editor-extensions'
 import { MemoBlockSelection } from '~/utils/editor-interactions'
 import { MemoOutlineExtension } from '~/utils/memo-outline'
 import { type MemoDraft, markDraftConflict, notifyMemoSaved, removeDraft, removeSavedDraft, writeDraft } from '~/utils/memo-drafts'
+import { AttachmentDownload, AttachmentUpload } from './editor/AttachmentUploadExtension'
 import { ImageUpload } from './editor/ImageUploadExtension'
 import { blockHandleOptions, blockHandleUi } from './editor/drag-handle-options'
 import MobileBlockMove from './editor/MobileBlockMove.vue'
@@ -66,6 +69,8 @@ const mobileMenu = useMobileMenuNavigation()
 const startup = useStartupLoading()
 // await 뒤에 현재 route/id를 읽으면 새 요청으로 바뀔 수 있다. 이 문서를 만든 요청을 미리 고정한다.
 const openingMemoId = props.memoId
+const openingReloadTick = activeMemo.tick.value
+const reloadScroll = useState<{ memoId: string; tick: number; top: number } | null>('memo-reload-scroll', () => null)
 const menuSequence = mobileMenu.pending.value?.memoId === openingMemoId ? mobileMenu.pending.value.sequence : null
 const calendarSync = useCalendarSyncStatus()
 const todo = useTodo()
@@ -76,7 +81,7 @@ const { data: memo, error } = await useAsyncData(
    * tick 을 넣는다 — 같은 메모를 다시 세울 때([id].vue) 새 화면이 붙기 전까지 이전 화면이 떠 있어서, key 가 같으면
    * 이전 화면의 데이터를 나눠 쓰고 새로 받지 않는다 (폴더를 옮긴 뒤에도 옛 폴더·이미지 주소가 나왔다 — 2026-10-16 실측)
    */
-  `memo-${props.memoId}#${activeMemo.tick.value}`,
+  `memo-${openingMemoId}#${openingReloadTick}`,
   () => $fetch<Memo>(`/api/memos/${encodeURIComponent(props.memoId)}`, { timeout: 15_000 }),
   // 열 때마다 서버에서 새로 받는다 — 옮기거나 밖에서 고친 뒤 다시 세울 때 옛 내용이 나오면 안 된다
   { getCachedData: () => undefined },
@@ -114,6 +119,8 @@ let sourceRequest: Promise<boolean> | null = null
 let alive = true
 const remoteChanged = ref(false)
 const remoteChecking = ref(false)
+const remoteChangeMessage = '다른 곳에서 메모가 바뀌었습니다'
+const formatChangeMessage = '앱에서 저장하면 문서 형식이 바뀝니다'
 const blockProperties = useTemplateRef<{ show: () => void }>('blockProperties')
 const mobileBlockProperties = useTemplateRef<{ show: () => void }>('mobileBlockProperties')
 /** 원본 보기 창에 띄울 원본 주소 */
@@ -132,6 +139,10 @@ const autosave = memo.value
         const manager = editorRef.value?.editor?.markdown
         return manager ? manager.serialize(manager.parse(markdown)) : markdown
       },
+      formatEquivalent: (original, roundTrip) => {
+        const manager = editorRef.value?.editor?.markdown
+        return !!manager && equivalentEditorMarkdown(manager.instance, original, roundTrip)
+      },
       onSaved,
     })
   : null
@@ -144,6 +155,11 @@ const bridge = useNativeBridge(() => editorRef.value?.editor, () => (linkOpen.va
 const saveState = computed<SaveState>(() => {
   const state = autosave?.state.value ?? { status: 'saved' }
   return state.status === 'saved' && title.value !== savedTitle.value ? { status: 'dirty' } : state
+})
+const floatingNotice = computed(() => {
+  if (sourceOpen.value || sourceOpening.value || blockMoveActive.value) return null
+  if (saveState.value.status === 'format') return { kind: 'format', title: formatChangeMessage } as const
+  return remoteChanged.value ? { kind: 'remote', title: remoteChangeMessage } as const : null
 })
 if (autosave) activeMemo.register({ id: autosave.currentId, folder: () => currentFolder.value, flush: flushAll, refresh: refreshCurrentMemo })
 /** 할 일 체크 — 사이드바 트리가 원본이다(useTodo). 이 메모가 할 일이 아니면 null */
@@ -171,7 +187,7 @@ const extensions = memoExtensions(
     toDisplay: (src: string) => toDisplaySrc(folder, src),
     toStored: (src: string) => toStoredSrc(folder, src),
   },
-  [ImageUpload.configure({ upload: uploadImage }), MemoOutlineExtension],
+  [ImageUpload.configure({ upload: uploadImage }), AttachmentUpload.configure({ upload: uploadAttachment }), AttachmentDownload, MemoOutlineExtension],
   {
     interactive: true,
     title: (id, fallback) => referenceTitles.value ? (referenceTitles.value.get(id) ?? '삭제되었거나 열 수 없는 메모') : fallback,
@@ -189,11 +205,13 @@ const editorProps = {
 onMounted(() => {
   // Suspense가 실제로 붙인 문서만 완료한다. 취소되어 버려진 async branch는 mounted되지 않는다.
   if (menuSequence !== null) mobileMenu.memoReady(openingMemoId, menuSequence)
-  // 메모끼리는 같은 자리에서 바꿔 끼워서([id].vue) 이전 메모의 스크롤 위치가 남는다 — 새 메모는 맨 위부터
-  rootRef.value?.closest('[data-slot="body"]')?.scrollTo({ top: 0 })
+  const previousScroll = reloadScroll.value
+  reloadScroll.value = null
+  const top = previousScroll?.memoId === openingMemoId && previousScroll.tick === openingReloadTick ? previousScroll.top : 0
+  if (top === 0) rootRef.value?.closest('[data-slot="body"]')?.scrollTo({ top })
   document.addEventListener('visibilitychange', onVisibility)
   window.addEventListener('beforeunload', beforeUnload)
-  attachBridge()
+  finishEditorOpening(top)
   if (!error.value && memo.value && !memo.value.unreadable) void navigation.recordOpened(memo.value.id)
   if (error.value || !memo.value || !autosave) startup.memoReady(openingMemoId)
   void calendarSync.refresh()
@@ -245,14 +263,17 @@ async function saveBeforeLeaving(to: RouteLocationNormalized) {
   return false
 }
 
-/** UEditor 가 editor 를 만든 뒤에 네이티브 툴바를 붙인다. 몇 프레임 늦을 수 있어 기다린다 */
-function attachBridge(tries = 30) {
+/** 에디터 DOM이 붙을 때까지 기다린 뒤 스크롤을 복원하고 네이티브 툴바를 연결한다. */
+function finishEditorOpening(top: number, tries = 30) {
+  if (!alive) return
   const editor = editorRef.value?.editor
-  if (editor) {
+  const root = rootRef.value
+  if (editor && root?.contains(editor.view.dom)) {
+    if (top !== 0) root.closest('[data-slot="body"]')?.scrollTo({ top })
     bridge.attach(editor)
     startup.memoReady(openingMemoId)
   }
-  else if (tries > 0) requestAnimationFrame(() => attachBridge(tries - 1))
+  else if (tries > 0) requestAnimationFrame(() => finishEditorOpening(top, tries - 1))
 }
 
 async function leaveWithoutSaving(path: string) {
@@ -290,7 +311,11 @@ async function refreshCurrentMemo(manual: boolean) {
     const fresh = await $fetch<Memo>(`/api/memos/${encodeURIComponent(id)}`, { timeout: 15_000 })
     if (!alive || !activeMemo.isOpen(id) || id !== autosave.currentId() || version !== autosave.currentVersion() || snapshot !== JSON.stringify({ title: title.value, content: content.value, date: date.value, dateEnd: dateEnd.value, tags: tags.value }) || saveState.value.status !== 'saved') return !manual
     remoteChanged.value = fresh.version !== version || fresh.folder !== currentFolder.value
-    if (manual && remoteChanged.value) activeMemo.reload()
+    if (manual && remoteChanged.value) {
+      const panel = rootRef.value?.closest('[data-slot="body"]')
+      if (panel) reloadScroll.value = { memoId: id, tick: activeMemo.tick.value + 1, top: panel.scrollTop }
+      activeMemo.reload()
+    }
     return true
   } catch (error) {
     if (manual) toast.add({ color: 'error', title: apiMessage(error, '메모를 새로고침하지 못했습니다') })
@@ -547,13 +572,24 @@ function pasteMarkdown(event: ClipboardEvent) {
   return editor.chain().focus().insertContent(text, { contentType: 'markdown' }).run()
 }
 
+async function uploadAttachment(file: File, signal: AbortSignal) {
+  const id = autosave?.currentId() ?? openingMemoId
+  const { href } = await $fetch(`/api/memos/${encodeURIComponent(id)}/attachments`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream', [ATTACHMENT_NAME_HEADER]: encodeURIComponent(file.name) },
+    body: file,
+    signal,
+  })
+  return href
+}
+
 function onNodeChange(event: { node: JSONContent | null; pos: number }) {
   selectedNode.value = event
 }
 
 function showTextBubble({ editor, view, state }: MenuContext) {
   if (coarsePointer || blockMoveActive.value) return false
-  if (editor.isActive('imageUpload') || editor.isActive('image') || state.selection instanceof CellSelection || state.selection instanceof MemoBlockSelection) return false
+  if (editor.isActive('attachmentUpload') || editor.isActive('imageUpload') || editor.isActive('image') || state.selection instanceof CellSelection || state.selection instanceof MemoBlockSelection) return false
   return view.hasFocus() && !state.selection.empty
 }
 
@@ -634,8 +670,71 @@ function showTableBubble({ editor, view, state }: MenuContext) {
         </div>
       </Teleport>
 
+      <Teleport to="#app-header-secondary" defer>
+        <p role="status" class="sr-only">{{ floatingNotice?.title }}</p>
+        <div v-if="floatingNotice" class="pointer-events-none absolute inset-x-0 top-full z-20 flex justify-end px-3 pt-3 sm:px-4">
+          <UAlert
+            v-if="floatingNotice.kind === 'format'"
+            color="warning"
+            variant="outline"
+            icon="i-material-symbols-warning-outline"
+            :title="floatingNotice.title"
+            description="각주나 일부 HTML은 저장할 때 사라지거나 일반 글자로 바뀔 수 있습니다."
+            :ui="{ title: 'text-default', description: 'text-muted', actions: 'justify-end' }"
+            class="pointer-events-auto max-w-sm bg-default px-3 py-2.5 shadow-md"
+            data-testid="memo-format-alert"
+          >
+            <template #actions>
+              <UButton
+                color="neutral"
+                variant="outline"
+                size="sm"
+                class="min-h-11 lg:min-h-8"
+                data-testid="memo-format-source-open"
+                @click="openSource"
+              >
+                원문 편집
+              </UButton>
+              <UButton
+                color="warning"
+                size="sm"
+                class="min-h-11 lg:min-h-8"
+                data-testid="memo-format-save-accept"
+                @click="autosave.acceptFormat()"
+              >
+                형식 변경 후 저장
+              </UButton>
+            </template>
+          </UAlert>
+          <UAlert
+            v-else
+            color="info"
+            variant="outline"
+            orientation="horizontal"
+            :title="floatingNotice.title"
+            :description="saveState.status === 'saved' ? undefined : '저장 상태를 확인해 주세요.'"
+            :ui="{ title: 'text-default' }"
+            class="pointer-events-auto max-w-sm bg-default px-3 py-2 shadow-md"
+            data-testid="memo-remote-changed"
+          >
+            <template #actions>
+              <UButton
+                color="neutral"
+                variant="outline"
+                size="sm"
+                class="min-h-11 lg:min-h-8"
+                :loading="remoteChecking"
+                data-testid="memo-remote-refresh"
+                @click="refreshCurrentMemo(true)"
+              >
+                새 내용 불러오기
+              </UButton>
+            </template>
+          </UAlert>
+        </div>
+      </Teleport>
+
       <div class="mx-auto w-full max-w-4xl px-4 pt-6 sm:px-14 sm:pt-10">
-        <UAlert v-if="remoteChanged" color="info" variant="subtle" title="다른 곳에서 메모가 바뀌었습니다" description="현재 입력을 보존하고 있습니다. 새 내용을 불러오려면 저장 상태를 확인한 뒤 새로고침하세요." class="mb-6" data-testid="memo-remote-changed" :actions="[{ label: '새 내용 불러오기', variant: 'outline', loading: remoteChecking, onClick: () => refreshCurrentMemo(true) }]" />
         <UAlert
           v-if="memo.unreadable"
           color="warning"
@@ -672,17 +771,6 @@ function showTableBubble({ editor, view, state }: MenuContext) {
             { label: '보관된 수정 버리기', color: 'neutral', variant: 'outline', onClick: discardStaleDraft },
             { label: '보관된 수정으로 덮어쓰기', color: 'warning', onClick: keepStaleDraft },
           ]"
-        />
-        <UAlert
-          v-if="autosave.state.value.status === 'format'"
-          color="warning"
-          variant="subtle"
-          icon="i-material-symbols-warning-outline"
-          title="앱에서 저장하면 이 파일의 형식이 바뀝니다"
-          description="다른 도구로 쓴 문법 중 이 앱이 모르는 것(각주, HTML 블록 등)은 저장할 때 사라지거나 글자로 바뀔 수 있습니다."
-          class="mb-6"
-          data-testid="memo-format-alert"
-          :actions="[{ label: '알겠습니다, 저장', color: 'warning', onClick: () => autosave?.acceptFormat() }]"
         />
         <div class="flex items-center gap-3">
           <UCheckbox

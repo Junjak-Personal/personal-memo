@@ -7,6 +7,7 @@ import type { DropdownMenuItem, EditorCustomHandlers, EditorSuggestionMenuItem, 
 import { mapEditorItems } from '@nuxt/ui/utils/editor'
 import type {} from '@tiptap/extension-table'
 import type { Editor, JSONContent } from '@tiptap/vue-3'
+import { ulid } from '#shared/utils/ulid'
 import type {} from '~/utils/editor-columns'
 import { tableEditFormat } from '~/utils/editor-table'
 
@@ -44,6 +45,7 @@ const NODE_LABELS: Record<string, string> = {
   blockquote: '인용',
   codeBlock: '코드 블록',
   image: '이미지',
+  attachmentUpload: '파일 첨부',
   table: '표',
   memoColumns: '열 배치',
   memoColumn: '열',
@@ -76,6 +78,12 @@ export const customHandlers = {
     execute: (editor: Editor) => editor.chain().focus().insertContent({ type: 'imageUpload' }),
     isActive: (editor: Editor) => editor.isActive('imageUpload'),
     isDisabled: undefined,
+  },
+  attachmentUpload: {
+    canExecute: (editor: Editor) => editor.can().insertContent({ type: 'attachmentUpload' }),
+    execute: (editor: Editor) => editor.chain().focus().insertContent({ type: 'attachmentUpload', attrs: { uploadId: ulid() } }),
+    isActive: (editor: Editor) => editor.isActive('attachmentUpload'),
+    isDisabled: (editor: Editor) => !editor.isEditable,
   },
   table: {
     canExecute: (editor: Editor) => editor.can().insertTable({ rows: 3, cols: 3, withHeaderRow: true }),
@@ -112,7 +120,10 @@ export const toolbarItems: (EditorToolbarItem<Handlers> & { 'data-testid'?: stri
     { kind: 'mark', mark: 'bold', icon: 'i-material-symbols-format-bold', tooltip: { text: '굵게' } },
     { kind: 'mark', mark: 'underline', icon: 'i-material-symbols-format-underlined', tooltip: { text: '밑줄' } },
   ],
-  [{ kind: 'imageUpload', icon: 'i-material-symbols-image-outline', tooltip: { text: '이미지' } }],
+  [
+    { kind: 'imageUpload', icon: 'i-material-symbols-image-outline', tooltip: { text: '이미지' } },
+    { kind: 'attachmentUpload', icon: 'i-material-symbols-attach-file', tooltip: { text: '파일 첨부' }, 'aria-label': '파일 첨부', 'data-testid': 'memo-attachment-insert' },
+  ],
   [
     {
       icon: 'i-material-symbols-view-column-outline',
@@ -165,6 +176,7 @@ export const suggestionItems = [
     { type: 'label', label: '넣기' },
     { kind: 'emoji', label: '이모지', icon: 'i-material-symbols-add-reaction-outline', keywords: ['emoji'] },
     { kind: 'imageUpload', label: '이미지', icon: 'i-material-symbols-image-outline', keywords: ['image', 'img', '사진'] },
+    { kind: 'attachmentUpload', label: '파일 첨부', icon: 'i-material-symbols-attach-file', keywords: ['file', 'attachment', '파일', '첨부'] },
     { kind: 'table', label: '표', icon: 'i-material-symbols-table-outline', keywords: ['table'] },
     ...COLUMN_TYPES,
     { kind: 'horizontalRule', label: '구분선', icon: 'i-material-symbols-horizontal-rule', keywords: ['hr', 'line', '선'] },

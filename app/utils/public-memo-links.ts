@@ -1,4 +1,5 @@
 import type { PublicTreeResponse } from '#shared/types/memo'
+import { attachmentIdFromHref } from '#shared/utils/attachments'
 import { memoLinkId } from '#shared/utils/memo-links'
 import { isUlid } from '#shared/utils/ulid'
 
@@ -43,11 +44,15 @@ function updateLink(anchor: Element, id: string, resolveHref: ResolveHref) {
     setAttribute(anchor, 'aria-disabled', null)
     return true
   }
+  disableLink(anchor)
+  return false
+}
+
+function disableLink(anchor: Element) {
   setAttribute(anchor, 'href', null)
   setAttribute(anchor, 'target', null)
   setAttribute(anchor, 'tabindex', null)
   setAttribute(anchor, 'aria-disabled', 'true')
-  return false
 }
 
 /** 참조형 Markdown의 일반 link mark도 공개 허용목록 안에서만 탐색한다. */
@@ -55,6 +60,7 @@ export function disablePublicMemoLinks(root: ParentNode, resolveHref: ResolveHre
   for (const anchor of root.querySelectorAll<HTMLAnchorElement>(selector)) {
     const id = sourceId(anchor)
     if (id) updateLink(anchor, id, resolveHref)
+    else if (attachmentIdFromHref(anchor.getAttribute('href'))) disableLink(anchor)
   }
 }
 
@@ -62,9 +68,10 @@ export function disablePublicMemoLinks(root: ParentNode, resolveHref: ResolveHre
 export function preventPublicMemoLink(event: MouseEvent | KeyboardEvent, resolveHref: ResolveHref = () => null) {
   if ('key' in event && event.key !== 'Enter') return
   const anchor = event.target instanceof Element ? event.target.closest(selector) : null
-  const id = anchor ? sourceId(anchor) : null
-  if (anchor && id && !updateLink(anchor, id, resolveHref)) {
-    event.preventDefault()
-    event.stopPropagation()
-  }
+  if (!anchor) return
+  const id = sourceId(anchor)
+  if (attachmentIdFromHref(anchor.getAttribute('href'))) disableLink(anchor)
+  else if (!id || updateLink(anchor, id, resolveHref)) return
+  event.preventDefault()
+  event.stopPropagation()
 }

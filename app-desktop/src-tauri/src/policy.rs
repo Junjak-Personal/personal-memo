@@ -50,6 +50,22 @@ pub fn destination(site: &Url, url: &Url) -> Destination {
     Destination::Blocked
 }
 
+pub fn allows_attachment_download(site: &Url, url: &Url) -> bool {
+    if destination(site, url) != Destination::Memo
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return false;
+    }
+    let Some(id) = url.path().strip_prefix("/api/attachments/") else {
+        return false;
+    };
+    id.len() == 26
+        && id
+            .bytes()
+            .all(|byte| b"0123456789ABCDEFGHJKMNPQRSTVWXYZ".contains(&byte))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,6 +137,31 @@ mod tests {
                 expected,
                 "{value}"
             );
+        }
+    }
+
+    #[test]
+    fn downloads_require_a_same_origin_attachment_address() {
+        let site = site_url(true, Some("http://127.0.0.1:4747")).unwrap();
+        let id = "01JME2GHXJ5MDJFK0RQ1S0Y8K7";
+        assert!(allows_attachment_download(
+            &site,
+            &site.join(&format!("/api/attachments/{id}")).unwrap()
+        ));
+        for url in [
+            format!("http://127.0.0.1:4748/api/attachments/{id}"),
+            format!("http://someone@127.0.0.1:4747/api/attachments/{id}"),
+            format!("https://example.com/api/attachments/{id}"),
+            format!("http://127.0.0.1:4747/api/attachments/{id}/file"),
+            format!("http://127.0.0.1:4747/api/attachments/{id}?name=file"),
+            format!("http://127.0.0.1:4747/api/attachments/{id}#file"),
+            format!("http://127.0.0.1:4747/api/originals/assets/{id}.jpg"),
+            "http://127.0.0.1:4747/api/attachments/invalid".into(),
+        ] {
+            assert!(!allows_attachment_download(
+                &site,
+                &Url::parse(&url).unwrap()
+            ));
         }
     }
 }

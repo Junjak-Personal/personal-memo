@@ -8,6 +8,7 @@ import { canonicalMarkdown } from '../../app/pages/m/_modules/useMemoAutosave'
 import type { Memo } from '../../shared/types/memo'
 import { MemoBlockSelection } from '../../app/utils/editor-interactions'
 import { applyMemoPaste } from '../../app/utils/editor-paste'
+import { equivalentEditorMarkdown } from '../../app/utils/canonical-editor-markdown'
 
 const run = document.querySelector<HTMLButtonElement>('#run')!
 const status = document.querySelector<HTMLElement>('#status')!
@@ -145,6 +146,66 @@ run.addEventListener('click', async () => {
   results.replaceChildren()
   status.dataset.state = 'running'
   status.textContent = '실제 에디터·임시 저장소 검사 중'
+  await check('외부 목록·구분선·코드 펜스·기본 HTML 표기는 같은 내용으로 비교한다', () => {
+    const sources = [
+      '* 부모\n    * 자식\n* 다음',
+      '1) 첫째\n2) 둘째',
+      '앞 문단\n\n***\n\n뒤 문단',
+      '~~~json\n{"ok":true}\n~~~',
+      '<p>합성 문단</p>\n<p><strong>굵음</strong></p>',
+      '<p>합성 문단</p>\n<p><strong>굵음</strong></p>\n\n보통 문단',
+      '앞부분<br />다음 줄',
+      '* 수식 $x$ 및 비용 $5 또는 $7',
+    ]
+    for (const source of sources) {
+      const editor = makeEditor(source)
+      try {
+        assert(editor.markdown, 'Markdown 관리자 없음')
+        const roundTrip = editor.getMarkdown()
+        assert(canonicalMarkdown(source) !== canonicalMarkdown(roundTrip), `기존 비교 불일치 재현 실패: ${source}`)
+        assert(equivalentEditorMarkdown(editor.markdown.instance, source, roundTrip), `같은 내용을 다르게 비교함: ${source} → ${roundTrip}`)
+      } finally { editor.destroy() }
+    }
+  })
+  await check('실제 에디터에서 사라지는 문서 형식은 비교에서 보호한다', () => {
+    const sources = [
+      '<section data-origin="fixture">합성 본문</section>',
+      '- 첫째\n\n- 둘째',
+      '검증 문장[^1]\n\n[^1]: 주석 내용',
+      '[[다른 메모]]',
+      '앞부분<br role="presentation">다음 줄',
+      '$x<y$',
+      'H~2~O',
+    ]
+    for (const source of sources) {
+      const editor = makeEditor(source)
+      try {
+        assert(editor.markdown, 'Markdown 관리자 없음')
+        const roundTrip = editor.getMarkdown()
+        assert(canonicalMarkdown(source) !== canonicalMarkdown(roundTrip), `원문 형식 손실 재현 실패: ${source}`)
+        assert(!equivalentEditorMarkdown(editor.markdown.instance, source, roundTrip), `사라진 형식을 무시함: ${source} → ${roundTrip}`)
+      } finally { editor.destroy() }
+    }
+  })
+  await check('참조 정의·코드 정보·목록 깊이·링크·표 정렬 차이를 보호한다', () => {
+    const pairs = [
+      ['[표시][ref]\n\n[ref]: https://example.test', '[표시](https://example.test)'],
+      ['~~~js title=one\n  const x = 1\n~~~', '```js\n  const x = 1\n```'],
+      ['~~~js\n  const x = 1\n~~~', '```js\nconst x = 1\n```'],
+      ['$$\nx<y\n$$', '$$\nx&lt;y\n$$'],
+      ['<p>본문</p>\n<textarea>문자 그대로</p>\n\n', '<p>본문</p>\n<textarea>문자 그대로</p>\n'],
+      ['* 부모\n    * 자식', '- 부모\n- 자식'],
+      ['[표시](https://example.test/one)', '[표시](https://example.test/two)'],
+      ['| 항목 |\n| ---: |\n| 값 |', '| 항목 |\n| :--- |\n| 값 |'],
+    ] as const
+    const editor = makeEditor('합성 문단')
+    try {
+      assert(editor.markdown, 'Markdown 관리자 없음')
+      for (const [source, roundTrip] of pairs) {
+        assert(!equivalentEditorMarkdown(editor.markdown.instance, source, roundTrip), `형식 차이를 무시함: ${source} → ${roundTrip}`)
+      }
+    } finally { editor.destroy() }
+  })
   await check('빈 체크 항목 Enter는 목록에서 빠져나오고 앞 항목을 유지한다', () => {
     const editor = makeEditor('- [ ] 앞 항목\n- [ ] ')
     try {

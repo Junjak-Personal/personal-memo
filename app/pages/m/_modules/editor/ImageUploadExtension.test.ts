@@ -2,8 +2,10 @@ import { createRequire } from 'node:module'
 import type { JSONContent } from '@tiptap/core'
 import Image from '@tiptap/extension-image'
 import { describe, expect, it, vi } from 'vitest'
+import { AttachmentDownload, AttachmentUpload } from './AttachmentUploadExtension'
 import { ImageUpload } from './ImageUploadExtension'
 
+vi.mock('./AttachmentUploadNode.vue', () => ({ default: {} }))
 vi.mock('./ImageUploadNode.vue', () => ({ default: {} }))
 
 const require = createRequire(import.meta.resolve('@nuxt/ui'))
@@ -39,5 +41,32 @@ describe('업로드 전 이미지 자리의 저장·다시 열기', () => {
       expect(md.parse(source)).toEqual(old.parse(source))
       expect(md.serialize(md.parse(source))).toBe(old.serialize(old.parse(source)))
     }
+  })
+})
+
+describe('파일 첨부의 Markdown 저장·다시 열기', () => {
+  const md = new MarkdownManager({ extensions: [StarterKit, AttachmentUpload, AttachmentDownload, ImageUpload, Image] })
+  const attachmentMarker = '<div data-type="attachment-upload"></div>'
+
+  it('여러 첨부 자리를 제 위치에 저장하고 업로드를 식별하는 개별 ID는 문서에 쓰지 않는다', () => {
+    const source = `앞\n\n${attachmentMarker}\n\n${attachmentMarker}\n\n뒤`
+    const parsed = md.parse(source)
+    const [first, second] = parsed.content.filter((node: JSONContent) => node.type === 'attachmentUpload')
+    expect(first.attrs.uploadId).toBeTruthy()
+    expect(first.attrs.uploadId).not.toBe(second.attrs.uploadId)
+    expect(md.serialize(parsed)).toBe(source)
+  })
+
+  it('한글·공백·Markdown 문자가 들어 있는 첨부 이름을 그대로 보이는 링크로 복구한다', () => {
+    const href = '/api/attachments/01M5D265Y7R61BQEFWDT6RA27E'
+    const name = '한글  [첨부] (검토) * &copy; ` _~.pdf'
+    const source = doc({
+      type: 'paragraph',
+      content: [{ type: 'text', text: name, marks: [{ type: 'link', attrs: { href } }] }],
+    })
+    const stored = md.serialize(source)
+    const parsed = md.parse(stored)
+    expect(parsed.content[0].content[0]).toMatchObject({ text: name, marks: [{ type: 'link', attrs: { href } }] })
+    expect(md.serialize(parsed)).toBe(stored)
   })
 })

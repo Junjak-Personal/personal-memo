@@ -2,14 +2,14 @@
 
 mod policy;
 
-use policy::{destination, is_app, site_url, Destination};
+use policy::{allows_attachment_download, destination, is_app, site_url, Destination};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
 use std::time::{Duration, Instant};
 use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
-use tauri::webview::{NewWindowResponse, PermissionResponse};
+use tauri::webview::{DownloadEvent, NewWindowResponse, PermissionResponse};
 use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
@@ -82,6 +82,7 @@ fn main() {
                 .replace("__MEMO_SITE__", &format!("{:?}", setup_site.as_str()));
             let nav_site = setup_site.clone();
             let popup_site = setup_site.clone();
+            let download_site = setup_site.clone();
             let last_open = Arc::new(Mutex::new(None));
             let nav_last = last_open.clone();
             let handle = app.handle().clone();
@@ -114,7 +115,9 @@ fn main() {
                     }
                     NewWindowResponse::Deny
                 })
-                .on_download(|_, _| false)
+                .on_download(move |_, event| {
+                    matches!(event, DownloadEvent::Requested { url, .. } if allows_attachment_download(&download_site, &url))
+                })
                 .on_permission_request(|_, _| PermissionResponse::Deny)
                 .disable_drag_drop_handler()
                 .build()?;

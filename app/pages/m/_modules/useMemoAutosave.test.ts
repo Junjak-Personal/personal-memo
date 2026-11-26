@@ -48,6 +48,28 @@ describe('자동저장과 최신 로컬 보관의 일관성', () => {
     expect(fetch).not.toHaveBeenCalled()
     expect(await save.acceptFormat()).toBe(true)
   })
+  it.each([true, false])('첫 왕복 불일치에서 동등성 검사 결과(%s)에 따라 저장한다', async (equivalent) => {
+    const memo = { ...original, content: '* 기존 항목' }
+    const normalize = vi.fn(() => '- 기존 항목')
+    const formatEquivalent = vi.fn(() => equivalent)
+    const save = useMemoAutosave({ memo, read: () => ({ ...input }), normalize, formatEquivalent, onSaved: vi.fn() })
+    input.content = '- 수정한 항목'
+    save.changed()
+
+    expect(await save.flush()).toBe(equivalent)
+    expect(formatEquivalent).toHaveBeenCalledExactlyOnceWith(memo.content, '- 기존 항목')
+    expect(save.state.value.status).toBe(equivalent ? 'saved' : 'format')
+    expect(fetch).toHaveBeenCalledTimes(Number(equivalent))
+    if (equivalent) {
+      expect(fetch.mock.calls[0]?.[1]?.body?.content).toBe(input.content)
+      input.content = '- 다시 수정한 항목'
+      save.changed()
+      expect(await save.flush()).toBe(true)
+      expect(normalize).toHaveBeenCalledTimes(1)
+    } else {
+      expect(readDraft(memo.id)?.review).toBe('format')
+    }
+  })
   it('원문 편집으로 일시 중지하면 일반 보관이 원문 초안을 덮지 않는다', () => {
     const save = setup(); save.pause()
     const source = { id: original.id, baseVersion: 'v1', source: true, input: { ...input, content: '<div>원문</div>' }, savedAt: '2026-11-17T00:00:00Z' }
